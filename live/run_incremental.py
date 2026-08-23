@@ -193,6 +193,16 @@ def main() -> int:
                     "tracked": s.total_wallets_tracked,
                     "time": fmt_warsaw(ts) if ts is not None else "?",
                     "ts": ts,
+                    # --- Market regime metrics (Faza 0) - patrz scoring.py.
+                    # Niezalezne od "signal"/"composite" powyzej - osobny,
+                    # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
+                    # (to dopiero kolejna faza) - na razie tylko zapisujemy
+                    # surowe wskazniki do historii, zeby zaczac budowac dane
+                    # potrzebne pozniej do ustalenia progow.
+                    "goodPressure": round(s.good_trader_pressure, 4),
+                    "badPressure": round(s.bad_trader_pressure, 4),
+                    "divergence": round(s.smart_money_divergence, 4),
+                    "breadth": round(s.good_trader_breadth, 4),
                 }
             )
 
