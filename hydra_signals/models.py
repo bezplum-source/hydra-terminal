@@ -106,6 +106,21 @@ class WindowScore:
     # nazwą z briefu dla czytelności w danych/API.
     good_trader_breadth: float = 0.5
 
+    # --- Wallet Flip (Faza 3, brief regime-detection sekcja 9) ---
+    # Liczba POJEDYNCZYCH portfeli, które w TYM oknie odwróciły kierunek
+    # handlu po WCZEŚNIEJSZYM, wystarczająco długim ciągu transakcji w
+    # przeciwną stronę (próg: `ScoringConfig.min_flip_streak_trades`) - np.
+    # "SELL SELL SELL -> BUY" to jeden "bullish flip". Liczone NIEZALEŻNIE
+    # dla kohorty GOOD i BAD (analogicznie do good/bad_trader_pressure
+    # wyżej) - portfele NEUTRAL/UNRATED nie są liczone w żadnej z tych
+    # czterech liczb. Patrz `ScoringEngine.run()` po pełny opis mechanizmu
+    # (stateful, per-portfel, wznawialny między uruchomieniami procesu -
+    # `ScoringEngine.export_wallet_flip_state()`).
+    good_trader_bullish_flips: int = 0
+    good_trader_bearish_flips: int = 0
+    bad_trader_bullish_flips: int = 0
+    bad_trader_bearish_flips: int = 0
+
     def as_debug_line(self) -> str:
         """Renderuje wynik w formacie zbliżonym do wycieku z hydra.trading -
         głównie do wizualnej weryfikacji "czy to wygląda znajomo"."""
