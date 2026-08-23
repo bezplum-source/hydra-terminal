@@ -21,6 +21,11 @@ Cztery pliki, każdy z osobnym powodem istnienia:
   do wyświetlenia na wykresie. `live/build_site.py` bierze z niej tylko
   ostatnie `MAX_DISPLAY_CANDLES`, żeby strona i tak pozostała lekka nawet
   po miesiącach działania.
+- `regime_state.json` — Faza 2 (market regime detection, patrz
+  `hydra_signals/regime.py`): mały, jak `scoring_state.json` — bieżący
+  regime (BULL/BEAR/NEUTRAL) + liczniki persystencji. Pozwala
+  `RegimeEngine` wznowić się dokładnie tam, gdzie skończył poprzedni
+  proces, tak samo jak `ScoringEngine`.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ SCORING_STATE_PATH = DATA_DIR / "scoring_state.json"
 TRADE_BUFFER_PATH = DATA_DIR / "trade_buffer.csv"
 WALLETS_SEEN_PATH = DATA_DIR / "wallets_seen.txt"
 CANDLES_HISTORY_PATH = DATA_DIR / "candles_history.json"
+REGIME_STATE_PATH = DATA_DIR / "regime_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -103,6 +109,17 @@ def save_candles_history(candles: list[dict]) -> None:
     CANDLES_HISTORY_PATH.write_text(
         json.dumps(candles, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
+
+
+def load_regime_state() -> dict:
+    if not REGIME_STATE_PATH.exists():
+        return {}
+    return json.loads(REGIME_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_regime_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    REGIME_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
