@@ -40,6 +40,7 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
 )
 from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005  # noqa: E402
 from hydra_signals.models import Signal  # noqa: E402
+from hydra_signals import regime  # noqa: E402
 from hydra_signals.scoring import ScoringConfig, ScoringEngine  # noqa: E402
 
 from live import state as st  # noqa: E402
@@ -174,37 +175,46 @@ def main() -> int:
 
         for s in new_scores:
             ts = block_ts.get(s.window_end_block)
-            candles_history.append(
-                {
-                    "block": s.window_end_block,
-                    "price": round(s.price_usd, 2),
-                    "signal": s.signal.value,
-                    "composite": round(s.composite_score, 3),
-                    "indGoodShort": round(s.ind_good_short, 3),
-                    "indGoodLong": round(s.ind_good_long, 3),
-                    "indBadShort": round(s.ind_bad_short, 3),
-                    "indBadLong": round(s.ind_bad_long, 3),
-                    "goodBuyers": s.good_buyers,
-                    "goodSellers": s.good_sellers,
-                    "badBuyers": s.bad_buyers,
-                    "badSellers": s.bad_sellers,
-                    "pool": s.pool_size,
-                    "active": s.active_wallets,
-                    "tracked": s.total_wallets_tracked,
-                    "time": fmt_warsaw(ts) if ts is not None else "?",
-                    "ts": ts,
-                    # --- Market regime metrics (Faza 0) - patrz scoring.py.
-                    # Niezalezne od "signal"/"composite" powyzej - osobny,
-                    # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
-                    # (to dopiero kolejna faza) - na razie tylko zapisujemy
-                    # surowe wskazniki do historii, zeby zaczac budowac dane
-                    # potrzebne pozniej do ustalenia progow.
-                    "goodPressure": round(s.good_trader_pressure, 4),
-                    "badPressure": round(s.bad_trader_pressure, 4),
-                    "divergence": round(s.smart_money_divergence, 4),
-                    "breadth": round(s.good_trader_breadth, 4),
-                }
+            candle = {
+                "block": s.window_end_block,
+                "price": round(s.price_usd, 2),
+                "signal": s.signal.value,
+                "composite": round(s.composite_score, 3),
+                "indGoodShort": round(s.ind_good_short, 3),
+                "indGoodLong": round(s.ind_good_long, 3),
+                "indBadShort": round(s.ind_bad_short, 3),
+                "indBadLong": round(s.ind_bad_long, 3),
+                "goodBuyers": s.good_buyers,
+                "goodSellers": s.good_sellers,
+                "badBuyers": s.bad_buyers,
+                "badSellers": s.bad_sellers,
+                "pool": s.pool_size,
+                "active": s.active_wallets,
+                "tracked": s.total_wallets_tracked,
+                "time": fmt_warsaw(ts) if ts is not None else "?",
+                "ts": ts,
+                # --- Market regime metrics (Faza 0) - patrz scoring.py.
+                # Niezalezne od "signal"/"composite" powyzej - osobny,
+                # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
+                # (to dopiero Faza 2) - na razie tylko zapisujemy surowe
+                # wskazniki do historii, zeby zaczac budowac dane potrzebne
+                # pozniej do ustalenia progow.
+                "goodPressure": round(s.good_trader_pressure, 4),
+                "badPressure": round(s.bad_trader_pressure, 4),
+                "divergence": round(s.smart_money_divergence, 4),
+                "breadth": round(s.good_trader_breadth, 4),
+            }
+            # --- Momentum wieloczasowy (Faza 1) - patrz hydra_signals/regime.py.
+            # Liczony z JUZ ZAPISANEJ historii (candles_history PRZED
+            # dopisaniem tej swiecy), nie z surowych transakcji - stad
+            # dziala identycznie na zywo i w przyszlym backtescie offline.
+            # Wartosci beda "None" (null w JSON) dopoki historia nie urosnie
+            # na tyle, zeby dany horyzont (np. 30d) mial sie z czego liczyc.
+            momentum = regime.compute_momentum(
+                candles_history, current=candle, window_blocks=window_blocks
             )
+            candle.update(regime.momentum_to_json(momentum))
+            candles_history.append(candle)
 
     new_last_scored_end = max((s.window_end_block for s in new_scores), default=last_scored_end)
 
