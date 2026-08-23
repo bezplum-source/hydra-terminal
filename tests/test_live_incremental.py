@@ -94,9 +94,16 @@ class FakeChain:
                     out.append({"id": item["id"], "result": {"from": sender, "hash": tx_hash}})
             elif method == "eth_getBlockByNumber":
                 block = int(item["params"][0], 16)
-                # czas rosnie liniowo z blokiem - wystarczy do testu (nie
-                # musi byc realistyczne, tylko monotoniczne i deterministyczne)
-                out.append({"id": item["id"], "result": {"timestamp": hex(1_700_000_000 + block * 12)}})
+                if block > self.head:
+                    # Tak zachowuje sie prawdziwy RPC: blok, ktory jeszcze
+                    # nie zostal wykopany, po prostu nie istnieje - `null`,
+                    # nie jakis wymyslony znacznik czasu. Kluczowe dla testu
+                    # "otwartego okna" ponizej.
+                    out.append({"id": item["id"], "result": None})
+                else:
+                    # czas rosnie liniowo z blokiem - wystarczy do testu (nie
+                    # musi byc realistyczne, tylko monotoniczne i deterministyczne)
+                    out.append({"id": item["id"], "result": {"timestamp": hex(1_700_000_000 + block * 12)}})
             else:
                 raise AssertionError(f"nieobslugiwana metoda w fake transport: {method}")
         return out
@@ -216,3 +223,64 @@ def test_second_run_with_no_new_blocks_is_a_safe_noop(tmp_path, monkeypatch):
 
     assert candles_after_2 == candles_after_1
     assert state_after_2["last_processed_block"] == state_after_1["last_processed_block"]
+
+
+def test_still_open_window_is_deferred_not_dated_question_mark_or_duplicated(tmp_path, monkeypatch):
+    """Regresja na blad znaleziony na prawdziwym uruchomieniu (GitHub Actions):
+    najnowsza swieca odpowiadala oknu, ktore jeszcze sie nie domknelo wzgledem
+    aktualnego czola lancucha (`window_end_block` w PRZYSZLOSCI) -> RPC nie
+    mial dla niego znacznika czasu (`"time": "?"` na stronie), a w kolejnym
+    uruchomieniu te same transakcje zostalyby policzone PONOWNIE jako nowa
+    swieca o tym samym numerze bloku (duplikat w historii).
+
+    Test: w PIERWSZYM uruchomieniu lancuch konczy sie W SRODKU drugiego okna
+    (250-blokowego) - to okno NIE powinno zostac zaliczone do zadnej swiecy.
+    W DRUGIM uruchomieniu lancuch przesuwa sie na tyle, ze to okno sie
+    domyka - powinno zostac policzone DOKLADNIE RAZ, z prawdziwym znacznikiem
+    czasu (nie "?")."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "300")
+
+    chain = FakeChain()
+    # window_blocks domyslnie = 250. Okno 0 to bloki 0-249 (pelne, zamkniete
+    # skoro head >= 249). Okno 1 to bloki 250-499 - lancuch konczy sie na
+    # bloku 290, czyli okno 1 jest jeszcze OTWARTE (head < 499).
+    _seed_wallets(chain, start_block=0, end_block=291)
+    assert chain.head == 290
+
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    # --- Uruchomienie 1: okno 1 jest jeszcze otwarte ---
+    assert ri.main() == 0
+    candles_after_1 = st.load_candles_history()
+    blocks_after_1 = [c["block"] for c in candles_after_1]
+
+    assert 249 in blocks_after_1  # okno 0 (zamkniete) - policzone
+    assert 499 not in blocks_after_1  # okno 1 (jeszcze otwarte) - NIE policzone
+    assert all(b <= chain.head for b in blocks_after_1)  # zaden blok "z przyszlosci"
+    assert all(c["time"] != "?" for c in candles_after_1)  # zadnej brakujacej daty
+
+    state_after_1 = st.load_scoring_state()
+    # last_processed_block dalej normalnie postepuje do czola lancucha (nic
+    # nie jest ponownie pobierane) - tylko SCOROWANIE otwartego okna jest
+    # odlozone, sledzone osobnym polem stanu.
+    assert state_after_1["last_processed_block"] == chain.head
+    assert state_after_1["last_scored_window_end"] == 249
+
+    # --- Uplyw czasu: lancuch przesuwa sie na tyle, ze okno 1 sie domyka ---
+    _seed_wallets(chain, start_block=291, end_block=520)
+    assert chain.head > 499
+
+    # --- Uruchomienie 2: okno 1 powinno zostac policzone DOKLADNIE RAZ ---
+    assert ri.main() == 0
+    candles_after_2 = st.load_candles_history()
+    blocks_after_2 = [c["block"] for c in candles_after_2]
+
+    assert blocks_after_2.count(499) == 1  # brak duplikatu
+    assert all(c["time"] != "?" for c in candles_after_2)  # okno 1 ma juz prawdziwa date
+    assert all(b <= chain.head for b in blocks_after_2)
+    # historia z pierwszego uruchomienia nie zostala nadpisana/utracona
+    assert candles_after_2[: len(candles_after_1)] == candles_after_1
