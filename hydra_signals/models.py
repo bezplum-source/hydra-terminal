@@ -93,6 +93,19 @@ class WindowScore:
     composite_score: float
     signal: Signal
 
+    # --- Market regime metrics (Faza 0) ---
+    # Niezależne od LONG/SHORT powyżej — liczone na podstawie WOLUMENU
+    # (nie samej liczby portfeli), zgodnie z "Good/Bad Trader Pressure" z
+    # briefu regime-detection. Zakres -1.0..+1.0 (0.0 = brak przewagi/brak
+    # wolumenu w tym oknie). Patrz `ScoringEngine.run()` po opis liczenia.
+    good_trader_pressure: float = 0.0
+    bad_trader_pressure: float = 0.0
+    smart_money_divergence: float = 0.0
+    # Odsetek AKTYWNYCH dobrych portfeli, które w tym oknie były na plusie
+    # (net BUY) — identyczne z `good_buy_ratio_raw` powyżej, wystawione pod
+    # nazwą z briefu dla czytelności w danych/API.
+    good_trader_breadth: float = 0.5
+
     def as_debug_line(self) -> str:
         """Renderuje wynik w formacie zbliżonym do wycieku z hydra.trading -
         głównie do wizualnej weryfikacji "czy to wygląda znajomo"."""
