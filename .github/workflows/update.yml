@@ -2,10 +2,17 @@ name: Aktualizacja danych Hydra Terminal
 
 # Uruchamia sie co godzine (o minucie 7, nie 0 - zeby nie trafic w
 # najbardziej zatloczony moment infrastruktury GitHub Actions) i pobiera
-# nowe transakcje Swap z Uniswap V3, przelicza sygnal, i commituje
-# zaktualizowana strone z powrotem do repo. Netlify (podpiete jako
-# "continuous deployment" pod to repo) wdraza sie automatycznie po kazdym
-# takim commicie.
+# nowe transakcje Swap z Uniswap V3, przelicza sygnal, commituje
+# zaktualizowana strone z powrotem do repo, i publikuje ja na GitHub Pages.
+#
+# UWAGA: Netlify (dawniej podpiety jako "continuous deployment") zostal
+# porzucony jako hosting - jego model rozliczen "credits" (od 2026: darmowy
+# plan = 300 kredytow/miesiac, ~15 kredytow/deploy produkcyjny) nie ma
+# szans pokryc cyklu co godzine (do ~720 deployow/miesiac). GitHub Pages
+# jest darmowy i bez limitu liczby deployow - pasuje do tego cyklu.
+# WYMAGA jednorazowej reczonej konfiguracji w repo (Settings -> Pages ->
+# Build and deployment -> Source: "GitHub Actions") - bez tego krok
+# "actions/deploy-pages" ponizej zwroci blad przy pierwszym uruchomieniu.
 #
 # "workflow_dispatch" pozwala odpalic to recznie z zakladki Actions w
 # GitHub - przydatne przy pierwszym uruchomieniu, zeby nie czekac do
@@ -17,6 +24,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: hydra-update
@@ -82,3 +91,23 @@ jobs:
 
           echo "Nie udalo sie zapisac zmian po kilku probach."
           exit 1
+
+      - name: Skonfiguruj GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Przygotuj artefakt strony (folder site/)
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Opublikuj na GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
