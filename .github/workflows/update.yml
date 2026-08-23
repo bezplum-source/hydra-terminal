@@ -51,5 +51,34 @@ jobs:
           git config user.name "hydra-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/ site/
-          git diff --cached --quiet || git commit -m "Automatyczna aktualizacja danych ($(date -u +'%Y-%m-%d %H:%M UTC'))"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "Brak zmian do zacommitowania."
+            exit 0
+          fi
+
+          git commit -m "Automatyczna aktualizacja danych ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+
+          # Jesli w miedzyczasie ktos recznie zmienil cos w repo (np. edycja
+          # pliku przez przegladarke GitHub w tym samym momencie), zwykly
+          # "git push" zostanie odrzucony ("! [rejected] ... fetch first"),
+          # bo zdalna galaz "main" przesunela sie do przodu. Zamiast od razu
+          # poddawac caly job, probujemy kilka razy: pobierz najnowszy stan,
+          # przenies nasz commit na wierzch (rebase), sprobuj wyslac ponownie.
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "Push udany (proba $i)."
+              exit 0
+            fi
+            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Probuje ponownie..."
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow) - przerywam."
+              git rebase --abort || true
+              exit 1
+            fi
+            sleep $((RANDOM % 8 + 3))
+          done
+
+          echo "Nie udalo sie zapisac zmian po kilku probach."
+          exit 1
