@@ -82,6 +82,7 @@ def main() -> int:
     trade_buffer = st.load_trade_buffer()
     wallets_seen = st.load_wallets_seen()
     candles_history = st.load_candles_history()
+    regime_state = st.load_regime_state()
 
     head = int(rpc.call("eth_blockNumber", []), 16)
     log(f"Aktualne czolo lancucha: blok {head}")
@@ -152,6 +153,11 @@ def main() -> int:
     price_source = trimmed_buffer if trimmed_buffer else new_trades
     price_at_block = st.price_at_block_factory(price_source)
 
+    # Faza 2 (market regime BULL/BEAR/NEUTRAL) - patrz hydra_signals/regime.py.
+    # Osobny silnik, osobny stan na dysku - wznawia sie miedzy godzinowymi
+    # uruchomieniami dokladnie tak samo jak ScoringEngine powyzej.
+    regime_engine = regime.RegimeEngine(initial_state=regime_state)
+
     new_scores = []
     if scoreable_trades:
         new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
@@ -214,6 +220,12 @@ def main() -> int:
                 candles_history, current=candle, window_blocks=window_blocks
             )
             candle.update(regime.momentum_to_json(momentum))
+            # --- BULL/BEAR score + regime (Faza 2) - patrz hydra_signals/regime.py.
+            # Wywolywane PO doliczeniu momentum (candle ma juz wszystkie pola
+            # potrzebne do compute_regime_score), PO KOLEI dla kazdej nowej
+            # swiecy w tym uruchomieniu - tak, jakby kazda przyszla osobno,
+            # w swoim wlasnym godzinowym uruchomieniu.
+            candle.update(regime_engine.process_candle(candle))
             candles_history.append(candle)
 
     new_last_scored_end = max((s.window_end_block for s in new_scores), default=last_scored_end)
@@ -226,6 +238,7 @@ def main() -> int:
     st.save_trade_buffer(trimmed_buffer)
     st.save_wallets_seen(engine.total_tracked)
     st.save_candles_history(candles_history)
+    st.save_regime_state(regime_engine.export_state())
 
     build_site(candles_history)
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
