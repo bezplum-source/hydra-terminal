@@ -1,0 +1,55 @@
+name: Aktualizacja danych Hydra Terminal
+
+# Uruchamia sie co godzine (o minucie 7, nie 0 - zeby nie trafic w
+# najbardziej zatloczony moment infrastruktury GitHub Actions) i pobiera
+# nowe transakcje Swap z Uniswap V3, przelicza sygnal, i commituje
+# zaktualizowana strone z powrotem do repo. Netlify (podpiete jako
+# "continuous deployment" pod to repo) wdraza sie automatycznie po kazdym
+# takim commicie.
+#
+# "workflow_dispatch" pozwala odpalic to recznie z zakladki Actions w
+# GitHub - przydatne przy pierwszym uruchomieniu, zeby nie czekac do
+# najblizszej pelnej godziny.
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hydra-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Ustaw Pythona
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zainstaluj zaleznosci
+        run: pip install -r requirements.txt
+
+      - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
+        run: python -m pytest tests/ -q
+
+      - name: Pobierz nowe dane on-chain i przelicz sygnal
+        env:
+          ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}
+        run: python live/run_incremental.py
+
+      - name: Zacommituj zaktualizowane dane i strone
+        run: |
+          git config user.name "hydra-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ site/
+          git diff --cached --quiet || git commit -m "Automatyczna aktualizacja danych ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git push
