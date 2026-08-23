@@ -353,29 +353,6 @@
   .tooltip .t-signal.long { color: var(--good-glow); }
   .tooltip .t-signal.short { color: var(--bad-glow); }
 
-  /* ---------- indicators ---------- */
-  .indicator-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-  @media (max-width: 640px) { .indicator-grid { grid-template-columns: 1fr; } }
-
-  .indicator {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 15px 17px;
-    background: rgba(255, 255, 255, 0.025);
-    transition: border-color 0.25s ease;
-  }
-  .indicator:hover { border-color: var(--border-strong); }
-
-  .indicator-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .indicator-name { font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
-  .indicator-swatch { width: 8px; height: 8px; border-radius: 2px; }
-  .indicator-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-secondary); }
-
-  svg.mini { width: 100%; height: 56px; display: block; overflow: visible; }
-  .mini-line { fill: none; stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round; }
-  .mini-ref { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; }
-  .mini-dot { stroke: var(--bg-elevated); stroke-width: 1.5; }
-
   /* ---------- table ---------- */
   .table-scroll { overflow-x: auto; }
 
@@ -445,9 +422,9 @@
       <span class="eyebrow">Aktywny sygnał</span>
       <span class="pill" id="heroPill">LONG</span>
       <span class="hero-price" id="heroPrice">$0.00</span>
+      <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
       <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span></span>
-      <span class="hero-meta">dane zaktualizowane do <span id="heroDataTime">-</span> &middot; blok <span id="heroBlock">-</span> &middot; czas: Warszawa (CEST)</span>
     </div>
     <div class="stat-grid">
       <div class="stat">
@@ -486,7 +463,6 @@
   <section class="card reveal reveal-2">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
-      <span class="card-note">świece 250-blokowe &middot; najedź, by zobaczyć szczegóły</span>
     </div>
     <div class="chart-wrap" id="mainChartWrap">
       <svg class="chart" id="mainChart" viewBox="0 0 1000 300" preserveAspectRatio="none">
@@ -502,15 +478,6 @@
   </section>
 
   <section class="card reveal reveal-3">
-    <div class="card-head">
-      <span class="card-title">Cztery wskaźniki (EMA presji kupna)</span>
-      <span class="card-note">0.5 = neutralnie &middot; &gt;0.5 = przewaga kupujących</span>
-    </div>
-    <p class="card-subnote">Sygnał (LONG/SHORT) i composite score liczone są z tych wygładzonych wskaźników EMA — z historii kilku-kilkunastu ostatnich świec, nie tylko z pojedynczego, ostatniego okna. Dlatego przy neutralnym rozkładzie kupno/sprzedaż w ostatnim oknie (np. 3&nbsp;/&nbsp;3) sygnał może wciąż pozostawać SHORT lub LONG — odzwierciedla to trend z poprzednich świec, który jeszcze się nie odwrócił.</p>
-    <div class="indicator-grid" id="indicatorGrid"></div>
-  </section>
-
-  <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
       <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału</span>
@@ -693,8 +660,6 @@ function buildMainChart() {
     tooltip.innerHTML = `<strong>${fmtUsd(c.price)}</strong><br>` +
       `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
       `${c.time} &middot; score ${(c.composite >= 0 ? '+' : '')}${c.composite.toFixed(3)}`;
-
-    updateIndicatorHover(idx);
   }
 
   overlay.addEventListener('mousemove', (e) => handleMove(e.clientX));
@@ -702,76 +667,6 @@ function buildMainChart() {
     hoverLine.style.opacity = 0;
     hoverDot.style.opacity = 0;
     tooltip.style.opacity = 0;
-    updateIndicatorHover(null);
-  });
-}
-
-const INDICATORS = [
-  { key: 'indGoodShort', label: 'GOOD &middot; EMA krótkie', color: 'var(--good-glow)', hint: 'good' },
-  { key: 'indGoodLong', label: 'GOOD &middot; EMA długie', color: 'var(--good-glow)', hint: 'good' },
-  { key: 'indBadShort', label: 'BAD &middot; EMA krótkie', color: 'var(--bad-glow)', hint: 'bad' },
-  { key: 'indBadLong', label: 'BAD &middot; EMA długie', color: 'var(--bad-glow)', hint: 'bad' },
-];
-
-let miniRefs = [];
-
-function buildIndicators() {
-  const grid = document.getElementById('indicatorGrid');
-  const candles = DATA.candles;
-  const n = candles.length;
-  const ns = 'http://www.w3.org/2000/svg';
-  const el = (tag, attrs) => {
-    const e = document.createElementNS(ns, tag);
-    for (const k in attrs) e.setAttribute(k, attrs[k]);
-    return e;
-  };
-
-  miniRefs = [];
-
-  INDICATORS.forEach((ind) => {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'indicator';
-
-    const head = document.createElement('div');
-    head.className = 'indicator-head';
-    head.innerHTML = `<span class="indicator-name"><span class="indicator-swatch" style="background:${ind.color}"></span>${ind.label}</span><span class="indicator-value" data-val></span>`;
-    wrapper.appendChild(head);
-
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('class', 'mini');
-    svg.setAttribute('viewBox', '0 0 1000 100');
-    svg.setAttribute('preserveAspectRatio', 'none');
-
-    const values = candles.map(c => c[ind.key]);
-    const [yMin, yMax] = niceDomain(values.concat([0.5]));
-    const W = 1000, H = 100, PAD = 6;
-    const x = (i) => (i / (n - 1)) * W;
-    const y = (v) => PAD + (H - 2 * PAD) - ((v - yMin) / (yMax - yMin)) * (H - 2 * PAD);
-
-    svg.appendChild(el('line', { class: 'mini-ref', x1: 0, x2: W, y1: y(0.5).toFixed(2), y2: y(0.5).toFixed(2) }));
-
-    let path = `M ${x(0)},${y(values[0]).toFixed(2)}`;
-    for (let k = 1; k < n; k++) path += ` L ${x(k)},${y(values[k]).toFixed(2)}`;
-    svg.appendChild(el('path', { d: path, class: 'mini-line', stroke: ind.color }));
-
-    const dot = el('circle', { class: 'mini-dot', r: 3.5, fill: ind.color, cx: x(n - 1), cy: y(values[n - 1]).toFixed(2) });
-    svg.appendChild(dot);
-
-    wrapper.appendChild(svg);
-    grid.appendChild(wrapper);
-
-    miniRefs.push({ svg, dot, x, y, values, valueEl: head.querySelector('[data-val]') });
-  });
-
-  updateIndicatorHover(DATA.candles.length - 1);
-}
-
-function updateIndicatorHover(idx) {
-  miniRefs.forEach((ref) => {
-    const i = idx === null ? ref.values.length - 1 : idx;
-    ref.dot.setAttribute('cx', ref.x(i));
-    ref.dot.setAttribute('cy', ref.y(ref.values[i]).toFixed(2));
-    ref.valueEl.textContent = ref.values[i].toFixed(3);
   });
 }
 
@@ -805,7 +700,7 @@ function renderFooter() {
 
 renderHero();
 buildMainChart();
-buildIndicators();
 buildHistory();
 renderFooter();
 </script>
+
