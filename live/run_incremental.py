@@ -83,6 +83,7 @@ def main() -> int:
     wallets_seen = st.load_wallets_seen()
     candles_history = st.load_candles_history()
     regime_state = st.load_regime_state()
+    wallet_flip_state = st.load_wallet_flip_state()
 
     head = int(rpc.call("eth_blockNumber", []), 16)
     log(f"Aktualne czolo lancucha: blok {head}")
@@ -148,6 +149,7 @@ def main() -> int:
         initial_ema=scoring_state if has_prior_state else None,
         initial_prev_signal=Signal(scoring_state.get("prev_signal", "HOLD")),
         initial_total_tracked=wallets_seen,
+        initial_wallet_flip_state=wallet_flip_state,
     )
 
     price_source = trimmed_buffer if trimmed_buffer else new_trades
@@ -209,6 +211,16 @@ def main() -> int:
                 "badPressure": round(s.bad_trader_pressure, 4),
                 "divergence": round(s.smart_money_divergence, 4),
                 "breadth": round(s.good_trader_breadth, 4),
+                # --- Wallet Flip (Faza 3) - patrz hydra_signals/scoring.py.
+                # Liczba portfeli, ktore w TYM oknie odwrocily kierunek po
+                # wystarczajaco dlugim ciagu transakcji w przeciwna strone -
+                # patrz docstring `ScoringEngine.run()`. Liczone osobno dla
+                # kohorty GOOD i BAD, niezaleznie od "signal"/"composite" i
+                # od reszty pol regime powyzej/ponizej.
+                "goodBullishFlips": s.good_trader_bullish_flips,
+                "goodBearishFlips": s.good_trader_bearish_flips,
+                "badBullishFlips": s.bad_trader_bullish_flips,
+                "badBearishFlips": s.bad_trader_bearish_flips,
             }
             # --- Momentum wieloczasowy (Faza 1) - patrz hydra_signals/regime.py.
             # Liczony z JUZ ZAPISANEJ historii (candles_history PRZED
@@ -239,6 +251,7 @@ def main() -> int:
     st.save_wallets_seen(engine.total_tracked)
     st.save_candles_history(candles_history)
     st.save_regime_state(regime_engine.export_state())
+    st.save_wallet_flip_state(engine.export_wallet_flip_state())
 
     build_site(candles_history)
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
