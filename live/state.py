@@ -2,7 +2,7 @@
 `data/` i commitowany do repo przez workflow GitHub Actions po każdym
 uruchomieniu (patrz `.github/workflows/update.yml`).
 
-Cztery pliki, każdy z osobnym powodem istnienia:
+Sześć plików, każdy z osobnym powodem istnienia:
 
 - `scoring_state.json` — mały: EMA (4 liczby) + ostatni sygnał + numer
   ostatnio przetworzonego bloku. Pozwala `ScoringEngine` wznowić się
@@ -26,6 +26,14 @@ Cztery pliki, każdy z osobnym powodem istnienia:
   regime (BULL/BEAR/NEUTRAL) + liczniki persystencji. Pozwala
   `RegimeEngine` wznowić się dokładnie tam, gdzie skończył poprzedni
   proces, tak samo jak `ScoringEngine`.
+- `wallet_flip_state.json` — Faza 3 (wallet flip, patrz
+  `hydra_signals/scoring.py`, sekcja "Wallet Flip" w `ScoringEngine`):
+  jeden wpis na KAŻDY portfel kiedykolwiek widziany (`{wallet: {"side":
+  ..., "streak": ...}}`) — rośnie tak samo wolno jak `wallets_seen.txt`
+  (ten sam zbiór adresów, tylko z dwoma dodatkowymi małymi polami), ale w
+  przeciwieństwie do `wallets_seen.txt` MUSI wznawiać się między
+  uruchomieniami, żeby nie "zapominać" w połowie ciągu transakcji portfela
+  przy każdym restarcie procesu (patrz `ScoringEngine.__init__`).
 """
 
 from __future__ import annotations
@@ -43,6 +51,7 @@ TRADE_BUFFER_PATH = DATA_DIR / "trade_buffer.csv"
 WALLETS_SEEN_PATH = DATA_DIR / "wallets_seen.txt"
 CANDLES_HISTORY_PATH = DATA_DIR / "candles_history.json"
 REGIME_STATE_PATH = DATA_DIR / "regime_state.json"
+WALLET_FLIP_STATE_PATH = DATA_DIR / "wallet_flip_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -120,6 +129,19 @@ def load_regime_state() -> dict:
 def save_regime_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     REGIME_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_wallet_flip_state() -> dict:
+    if not WALLET_FLIP_STATE_PATH.exists():
+        return {}
+    return json.loads(WALLET_FLIP_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_wallet_flip_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    WALLET_FLIP_STATE_PATH.write_text(
+        json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
 
 
 def price_at_block_factory(trades: list[Trade]):
