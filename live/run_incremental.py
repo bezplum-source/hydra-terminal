@@ -122,6 +122,24 @@ def main() -> int:
     lookback_start = to_block - cfg.classification_lookback_blocks
     trimmed_buffer = [t for t in combined_buffer if t.block > lookback_start]
 
+    # NIE scoruj okna (swiecy), ktore jeszcze sie nie "domknelo" wzgledem
+    # aktualnego czola lancucha - inaczej `window_end_block` bedzie w
+    # PRZYSZLOSCI (blok jeszcze niewykopany), eth_getBlockByNumber zwroci
+    # null (stad "?" zamiast daty), a w kolejnym uruchomieniu te same
+    # transakcje zostalyby policzone PONOWNIE jako nowa swieca z tym samym
+    # numerem bloku (duplikat w historii). Zamiast tego: transakcje z
+    # jeszcze otwartego okna zostaja w buforze (`trimmed_buffer`, ponizej) i
+    # doczekaja sie zaliczenia do swiecy w PRZYSZLYM uruchomieniu, gdy okno
+    # sie juz domknie - `last_scored_window_end` (osobny od
+    # `last_processed_block`!) pamieta, dokad juz faktycznie doliczylismy
+    # swiece, wiec nic nie zostanie policzone dwa razy ani pominiete.
+    window_blocks = cfg.window_blocks
+    last_closed_end = ((to_block + 1) // window_blocks) * window_blocks - 1
+    last_scored_end = scoring_state.get("last_scored_window_end", -1)
+
+    scoreable_trades = [t for t in combined_buffer if last_scored_end < t.block <= last_closed_end]
+    classification_history = [t for t in combined_buffer if t.block <= last_scored_end]
+
     has_prior_state = bool(scoring_state)
     engine = ScoringEngine(
         cfg,
@@ -134,9 +152,14 @@ def main() -> int:
     price_at_block = st.price_at_block_factory(price_source)
 
     new_scores = []
-    if new_trades:
-        new_scores = engine.run(new_trades, price_at_block, history_trades=trade_buffer)
+    if scoreable_trades:
+        new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
     log(f"Nowe swiece (okna) w tym uruchomieniu: {len(new_scores)}")
+    if new_trades and not scoreable_trades:
+        log(
+            "Najnowsze transakcje naleza jeszcze do niedomknietego okna - "
+            "zostana doliczone do swiecy w kolejnym uruchomieniu."
+        )
 
     if new_scores:
         block_numbers = [s.window_end_block for s in new_scores]
@@ -173,8 +196,11 @@ def main() -> int:
                 }
             )
 
+    new_last_scored_end = max((s.window_end_block for s in new_scores), default=last_scored_end)
+
     new_state = engine.export_state()
     new_state["last_processed_block"] = to_block
+    new_state["last_scored_window_end"] = new_last_scored_end
     new_state["updated_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     st.save_scoring_state(new_state)
     st.save_trade_buffer(trimmed_buffer)
