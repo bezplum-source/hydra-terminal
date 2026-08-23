@@ -177,6 +177,44 @@ class ScoringEngine:
             good_ratio_raw = good_buyers / good_total if good_total > 0 else 0.5
             bad_ratio_raw = bad_buyers / bad_total if bad_total > 0 else 0.5
 
+            # --- Market regime metrics (Faza 0, niezależne od LONG/SHORT) ---
+            # W przeciwieństwie do good_ratio_raw/bad_ratio_raw powyżej (liczba
+            # portfeli net-buy vs net-sell), to jest przewaga liczona na
+            # WOLUMENIE (rozmiar transakcji w ETH) - "Good/Bad Trader
+            # Pressure" z briefu regime-detection. Zakres -1.0 (czysty SELL)
+            # do +1.0 (czysty BUY), 0.0 gdy w oknie nie było żadnego wolumenu
+            # danej kohorty. Nie wpływa na EMA/composite/signal powyżej -
+            # to osobny, równoległy tor liczony wyłącznie do zapisu w historii.
+            good_buy_volume = good_sell_volume = 0.0
+            bad_buy_volume = bad_sell_volume = 0.0
+            for t in window_trades:
+                if t.wallet in good_wallets:
+                    if t.side is Side.BUY:
+                        good_buy_volume += t.size_eth
+                    else:
+                        good_sell_volume += t.size_eth
+                elif t.wallet in bad_wallets:
+                    if t.side is Side.BUY:
+                        bad_buy_volume += t.size_eth
+                    else:
+                        bad_sell_volume += t.size_eth
+
+            good_total_volume = good_buy_volume + good_sell_volume
+            bad_total_volume = bad_buy_volume + bad_sell_volume
+            good_trader_pressure = (
+                (good_buy_volume - good_sell_volume) / good_total_volume
+                if good_total_volume > 0
+                else 0.0
+            )
+            bad_trader_pressure = (
+                (bad_buy_volume - bad_sell_volume) / bad_total_volume
+                if bad_total_volume > 0
+                else 0.0
+            )
+            # Dobrzy kupują, źli sprzedają jednocześnie -> duża dodatnia
+            # rozbieżność (bardzo bycze). Odwrotnie -> duża ujemna (niedźwiedzie).
+            smart_money_divergence = good_trader_pressure - bad_trader_pressure
+
             self._ema_good_short = self._update_ema(
                 self._ema_good_short, good_ratio_raw, cfg.ema_short_span
             )
@@ -227,6 +265,10 @@ class ScoringEngine:
                     ind_bad_long=self._ema_bad_long,
                     composite_score=composite,
                     signal=signal,
+                    good_trader_pressure=good_trader_pressure,
+                    bad_trader_pressure=bad_trader_pressure,
+                    smart_money_divergence=smart_money_divergence,
+                    good_trader_breadth=good_ratio_raw,
                 )
             )
 
