@@ -76,3 +76,139 @@ def test_momentum_to_json_flattens_with_expected_key_names():
     assert flat["momentum_4h_good"] is None
     assert flat["momentum_4h_bad"] is None
     assert flat["momentum_4h_divergence"] is None
+
+
+# ---------------------------------------------------------------------------
+# Faza 2: BULL_SCORE / BEAR_SCORE + maszyna stanow
+# ---------------------------------------------------------------------------
+
+
+def test_extreme_bull_inputs_max_out_bull_score_and_zero_bear_score():
+    candle = {
+        "goodPressure": 1.0,
+        "badPressure": -1.0,
+        "divergence": 2.0,
+        "breadth": 1.0,
+        "momentum_1h_good": 1.0,
+    }
+    score = regime.compute_regime_score(candle)
+    assert score.bull_score == 90.0
+    assert score.bear_score == 0.0
+    assert score.momentum_horizon_used == "1h"
+
+
+def test_extreme_bear_inputs_max_out_bear_score_and_zero_bull_score():
+    candle = {
+        "goodPressure": -1.0,
+        "badPressure": 1.0,
+        "divergence": -2.0,
+        "breadth": 0.0,
+        "momentum_1h_good": -1.0,
+    }
+    score = regime.compute_regime_score(candle)
+    assert score.bear_score == 90.0
+    assert score.bull_score == 0.0
+
+
+def test_fully_neutral_inputs_split_score_evenly_between_bull_and_bear():
+    # Wszystko dokladnie w punkcie neutralnym (0 pressure/divergence, 0.5
+    # breadth), brak momentum w ogole (candle bez zadnego pola momentum_*)
+    # -> traktowane jako 0.0 (neutralnie), NIE karane ani premiowane.
+    candle = {"goodPressure": 0.0, "badPressure": 0.0, "divergence": 0.0, "breadth": 0.5}
+    score = regime.compute_regime_score(candle)
+    assert score.bull_score == 45.0
+    assert score.bear_score == 45.0
+    assert score.momentum_horizon_used is None
+
+
+def test_regime_engine_requires_confirmation_periods_before_entering_bull():
+    strong_bull_candle = {
+        "goodPressure": 1.0, "badPressure": -1.0, "divergence": 2.0,
+        "breadth": 1.0, "momentum_1h_good": 1.0,
+    }
+    engine = regime.RegimeEngine(regime.RegimeConfig(min_confirmation_periods=3))
+
+    result1 = engine.process_candle(strong_bull_candle)
+    assert result1["regime"] == "NEUTRAL"
+    assert result1["regimeEvent"] is None
+
+    result2 = engine.process_candle(strong_bull_candle)
+    assert result2["regime"] == "NEUTRAL"
+    assert result2["regimeEvent"] is None
+
+    # 3. z rzedu spelniajaca warunek -> dopiero teraz przejscie + event
+    result3 = engine.process_candle(strong_bull_candle)
+    assert result3["regime"] == "BULL"
+    assert result3["regimeEvent"] == "START_BULL_MARKET"
+
+
+def test_a_single_weak_candle_resets_the_confirmation_streak():
+    strong_bull_candle = {
+        "goodPressure": 1.0, "badPressure": -1.0, "divergence": 2.0,
+        "breadth": 1.0, "momentum_1h_good": 1.0,
+    }
+    neutral_candle = {"goodPressure": 0.0, "badPressure": 0.0, "divergence": 0.0, "breadth": 0.5}
+    engine = regime.RegimeEngine(regime.RegimeConfig(min_confirmation_periods=3))
+
+    engine.process_candle(strong_bull_candle)
+    engine.process_candle(strong_bull_candle)
+    engine.process_candle(neutral_candle)  # przerywa streak
+    result = engine.process_candle(strong_bull_candle)
+    assert result["regime"] == "NEUTRAL"  # tylko 1 z rzedu po przerwaniu, nie 3
+
+
+def test_regime_exits_immediately_below_exit_threshold_no_confirmation_needed():
+    strong_bull_candle = {
+        "goodPressure": 1.0, "badPressure": -1.0, "divergence": 2.0,
+        "breadth": 1.0, "momentum_1h_good": 1.0,
+    }
+    neutral_candle = {"goodPressure": 0.0, "badPressure": 0.0, "divergence": 0.0, "breadth": 0.5}
+    cfg = regime.RegimeConfig(min_confirmation_periods=3)
+    engine = regime.RegimeEngine(cfg)
+
+    for _ in range(3):
+        engine.process_candle(strong_bull_candle)
+    assert engine.regime == "BULL"
+
+    # Jeden slaby okres wystarczy, zeby WYJSC z BULL (bez wymogu persystencji)
+    result = engine.process_candle(neutral_candle)
+    assert result["regime"] == "NEUTRAL"
+    assert result["regimeEvent"] == "END_BULL_MARKET"
+
+
+def test_bear_side_is_symmetric():
+    strong_bear_candle = {
+        "goodPressure": -1.0, "badPressure": 1.0, "divergence": -2.0,
+        "breadth": 0.0, "momentum_1h_good": -1.0,
+    }
+    cfg = regime.RegimeConfig(min_confirmation_periods=2)
+    engine = regime.RegimeEngine(cfg)
+
+    engine.process_candle(strong_bear_candle)
+    result = engine.process_candle(strong_bear_candle)
+    assert result["regime"] == "BEAR"
+    assert result["regimeEvent"] == "START_BEAR_MARKET"
+
+
+def test_regime_engine_state_round_trips_via_export_state():
+    # Ten sam test co dla ScoringEngine w tests/test_resume.py, tylko dla
+    # RegimeEngine: podzielenie tej samej sekwencji swiec na dwa oddzielne
+    # "uruchomienia procesu" (drugie wznowione ze stanu pierwszego) musi
+    # dac IDENTYCZNY wynik co jeden ciagly przebieg.
+    candles = [
+        {"goodPressure": 1.0, "badPressure": -1.0, "divergence": 2.0, "breadth": 1.0, "momentum_1h_good": 1.0}
+        for _ in range(5)
+    ]
+    cfg = regime.RegimeConfig(min_confirmation_periods=3)
+
+    continuous = regime.RegimeEngine(cfg)
+    continuous_results = [continuous.process_candle(c) for c in candles]
+
+    part1_engine = regime.RegimeEngine(cfg)
+    part1_results = [part1_engine.process_candle(c) for c in candles[:2]]
+    resumed_state = part1_engine.export_state()
+
+    part2_engine = regime.RegimeEngine(cfg, initial_state=resumed_state)
+    part2_results = [part2_engine.process_candle(c) for c in candles[2:]]
+
+    assert part1_results + part2_results == continuous_results
