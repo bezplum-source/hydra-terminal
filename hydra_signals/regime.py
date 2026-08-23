@@ -181,6 +181,24 @@ class RegimeConfig:
     # przeciągane.
     min_confirmation_periods: int = 3
 
+    # --- Faza 4 (CAPITULATION/DISTRIBUTION, sekcje 18-19 briefu) ---
+    # WARTOŚCI STARTOWE jak reszta progów w tej klasie. Świadomie MNIEJ
+    # ekstremalne niż przykładowe liczby z briefu (Good +0.60/Bad -0.70) -
+    # przy tak rzadkich zdarzeniach i wciąż małej bazie portfeli (patrz
+    # `hydrav2-automation.md`), dosłowne przykładowe progi z briefu
+    # prawdopodobnie nigdy by się nie uaktywniły; 0.4 to świadomy
+    # kompromis do przestrojenia po backteście (Faza 5).
+    capitulation_good_pressure_threshold: float = 0.4
+    capitulation_bad_pressure_threshold: float = -0.4
+    distribution_good_pressure_threshold: float = -0.4
+    distribution_bad_pressure_threshold: float = 0.4
+    # Bonus pewności, gdy zdarzenie jest dodatkowo potwierdzone przez
+    # Wallet Flip (Faza 3) - "zwiększona aktywność dobrych traderów" z
+    # sekcji 19 briefu, zoperacjonalizowana jako: przynajmniej jeden
+    # potwierdzony flip dobrego tradera W TĄ SAMĄ stronę co zdarzenie
+    # (bullish flip dla CAPITULATION, bearish flip dla DISTRIBUTION).
+    special_event_flip_confidence_bonus: float = 10.0
+
 
 def _linear_score(value: float, lo: float, hi: float, weight: float) -> float:
     """Mapuje `value` liniowo z zakresu [lo, hi] na [0, weight], z clampem
@@ -333,6 +351,8 @@ class RegimeEngine:
         else:
             confidence = round(max(0.0, 100.0 - abs(score.bull_score - score.bear_score)), 1)
 
+        special = detect_special_event(candle, self.cfg)
+
         return {
             "bullScore": score.bull_score,
             "bearScore": score.bear_score,
@@ -340,4 +360,90 @@ class RegimeEngine:
             "regimeEvent": event,
             "regimeConfidence": confidence,
             "regimeMomentumHorizon": score.momentum_horizon_used,
+            "specialEvent": special.event,
+            "specialEventConfidence": special.confidence,
         }
+
+
+# ---------------------------------------------------------------------------
+# Faza 4: CAPITULATION / DISTRIBUTION (sekcje 18-19 briefu regime-detection).
+# Buduje WYŁĄCZNIE na goodPressure/badPressure (Faza 0, JUŻ w rekordzie
+# świecy) i opcjonalnie na liczbach flipów dobrych traderów (Faza 3) jako
+# sygnale WZMACNIAJĄCYM pewność, nie jako twardym warunku - przy wciąż
+# małej bazie portfeli (patrz `hydrav2-automation.md`) liczba flipów w
+# pojedynczym oknie bywa zerem nawet przy realnym capitulation/distribution,
+# więc wymaganie flipa jako WARUNKU KONIECZNEGO zablokowałoby event prawie
+# zawsze - stąd tylko bonus do confidence, zgodnie z duchem sekcji 19
+# briefu ("szczególnie gdy występuje zwiększona aktywność...").
+#
+# CELOWO stateless, w przeciwieństwie do `RegimeEngine` - w odróżnieniu od
+# BULL/BEAR (sekcja 16 briefu wprost wymaga persystencji/potwierdzenia
+# przez kilka świec z rzędu), CAPITULATION/DISTRIBUTION z definicji opisują
+# POJEDYNCZY, gwałtowny moment (sekcja 18: "słabe ręce sprzedają, podczas
+# gdy dobrzy absorbują podaż") - wymaganie kilku świec z rzędu byłoby
+# sprzeczne z naturą zjawiska. Brief WPROST zabrania też wiązania tego z
+# maszyną stanów BULL/BEAR ("Nie traktuj tego automatycznie jako
+# START_BULL") - stąd `detect_special_event` nie zmienia `self.regime` w
+# `RegimeEngine.process_candle` powyżej, tylko dokleja dwa dodatkowe,
+# czysto informacyjne pola.
+#
+# CAPITULATION wymaga good_pressure >= capitulation_good_pressure_threshold
+# ORAZ bad_pressure <= capitulation_bad_pressure_threshold jednoczesnie;
+# DISTRIBUTION wymaga dokladnie odwrotnych znakow - przy sensownej
+# konfiguracji (progi tego samego typu po przeciwnych stronach zera) te
+# dwa warunki są WZAJEMNIE WYKLUCZAJĄCE SIĘ (good_pressure nie może być
+# jednocześnie >= dodatniego progu i <= ujemnego progu), więc jedno pole
+# `specialEvent` (zamiast dwóch osobnych booleanów) wystarcza.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SpecialEvent:
+    event: str | None  # "CAPITULATION" | "DISTRIBUTION" | None
+    confidence: float  # 0-100, heurystyka jak `regimeConfidence` - NIE skalibrowana probabilistyka
+
+
+def detect_special_event(candle: dict, cfg: RegimeConfig | None = None) -> SpecialEvent:
+    """Wykrywa CAPITULATION/DISTRIBUTION (sekcje 18-19 briefu) dla JEDNEJ
+    świecy - czysta funkcja, bez stanu (patrz komentarz nad `SpecialEvent`
+    wyżej po uzasadnienie). Wywoływana z `RegimeEngine.process_candle()`,
+    ale nie wpływa na `self.regime`/`self.bull_streak`/`self.bear_streak`.
+    """
+    cfg = cfg or RegimeConfig()
+    good_pressure = candle.get("goodPressure", 0.0)
+    bad_pressure = candle.get("badPressure", 0.0)
+    good_bullish_flips = candle.get("goodBullishFlips", 0) or 0
+    good_bearish_flips = candle.get("goodBearishFlips", 0) or 0
+
+    is_capitulation = (
+        good_pressure >= cfg.capitulation_good_pressure_threshold
+        and bad_pressure <= cfg.capitulation_bad_pressure_threshold
+    )
+    is_distribution = (
+        good_pressure <= cfg.distribution_good_pressure_threshold
+        and bad_pressure >= cfg.distribution_bad_pressure_threshold
+    )
+
+    if is_capitulation:
+        good_component = _linear_score(
+            good_pressure, cfg.capitulation_good_pressure_threshold, 1.0, 50.0
+        )
+        bad_component = _linear_score(
+            -bad_pressure, -cfg.capitulation_bad_pressure_threshold, 1.0, 50.0
+        )
+        flip_bonus = cfg.special_event_flip_confidence_bonus if good_bullish_flips > 0 else 0.0
+        confidence = round(min(100.0, good_component + bad_component + flip_bonus), 1)
+        return SpecialEvent(event="CAPITULATION", confidence=confidence)
+
+    if is_distribution:
+        good_component = _linear_score(
+            -good_pressure, -cfg.distribution_good_pressure_threshold, 1.0, 50.0
+        )
+        bad_component = _linear_score(
+            bad_pressure, cfg.distribution_bad_pressure_threshold, 1.0, 50.0
+        )
+        flip_bonus = cfg.special_event_flip_confidence_bonus if good_bearish_flips > 0 else 0.0
+        confidence = round(min(100.0, good_component + bad_component + flip_bonus), 1)
+        return SpecialEvent(event="DISTRIBUTION", confidence=confidence)
+
+    return SpecialEvent(event=None, confidence=0.0)
