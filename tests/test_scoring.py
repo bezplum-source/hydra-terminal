@@ -69,3 +69,54 @@ def test_only_buys_pushes_toward_long_when_good_cohort_exists():
     # "zlych", composite score jest wtedy jednoznacznie dodatni.
     assert any(s.ind_good_short > 0.5 for s in scores)
     assert any(s.signal == Signal.LONG for s in scores)
+
+
+def test_good_bad_pressure_divergence_breadth_are_volume_based_and_independent_of_signal():
+    # Faza 0 (market regime metrics) - dobrzy/zli sklasyfikowani na podstawie
+    # historii (round-trip: kupno + sprzedaz z zyskiem/strata), potem w
+    # oknie testowym dobrzy WYLACZNIE kupuja, zli WYLACZNIE sprzedaja, z
+    # jawnie zadanymi wolumenami - zeby dalo sie policzyc oczekiwany wynik
+    # recznie i sprawdzic, ze pressure/divergence/breadth licza sie z
+    # WOLUMENU, a nie z liczby portfeli (ktora jest tu po 2 na kohorte).
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 1.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 1.0),  # zysk -> GOOD
+        make_trade("g2", 1, Side.BUY, 100.0, 1.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 1.0),  # zysk -> GOOD
+        make_trade("b1", 1, Side.BUY, 100.0, 1.0),
+        make_trade("b1", 2, Side.SELL, 75.0, 1.0),  # strata -> BAD
+        make_trade("b2", 1, Side.BUY, 100.0, 1.0),
+        make_trade("b2", 2, Side.SELL, 70.0, 1.0),  # strata -> BAD
+    ]
+    window_trades = [
+        make_trade("g1", 150, Side.BUY, 150.0, 3.0),
+        make_trade("g2", 150, Side.BUY, 150.0, 1.0),
+        make_trade("b1", 150, Side.SELL, 150.0, 2.0),
+        make_trade("b2", 150, Side.SELL, 150.0, 1.0),
+    ]
+
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        good_pct=0.5,
+        bad_pct=0.5,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 150.0, history_trades=history)
+
+    assert len(scores) == 1
+    s = scores[0]
+    # good: 4 ETH BUY, 0 SELL -> pressure = (4-0)/4 = +1.0 (czysty BUY)
+    assert s.good_trader_pressure == 1.0
+    # bad: 0 ETH BUY, 3 ETH SELL -> pressure = (0-3)/3 = -1.0 (czysty SELL)
+    assert s.bad_trader_pressure == -1.0
+    # dobrzy kupuja, zli sprzedaja jednoczesnie -> maksymalna rozbieznosc
+    assert s.smart_money_divergence == 2.0
+    # obaj dobrzy portfele sa net-buyerami w tym oknie -> breadth = 100%
+    assert s.good_trader_breadth == 1.0
+    # to NIE wplywa na istniejacy tor LONG/SHORT - w tym oknie dobrzy kupuja
+    # bez kohorty przeciwnej o wiekszej wadze, wiec sygnal i tak powinien
+    # dzialac dokladnie tak jak przed dodaniem tych pol (nie sprawdzamy tu
+    # konkretnej wartosci - tylko ze pole istnieje i engine sie nie wywalil).
+    assert s.signal in (Signal.LONG, Signal.SHORT, Signal.HOLD)
