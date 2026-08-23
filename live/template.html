@@ -1,0 +1,811 @@
+<title>Hydra Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0C0C10;
+    --bg-elevated: #131318;
+    --bg-elevated-2: #1A1A21;
+    --border: #2A2A33;
+    --border-strong: #3A3A45;
+
+    --text-primary: #F3F1EC;
+    --text-secondary: #A8A6B0;
+    --text-muted: #6E6C78;
+
+    --accent: #C4821E;
+    --accent-glow: #FFC94A;
+    --accent-soft: rgba(196, 130, 30, 0.16);
+
+    --good: #1FA65F;
+    --good-glow: #3DFF9B;
+    --good-soft: rgba(31, 166, 95, 0.16);
+
+    --bad: #B8253F;
+    --bad-glow: #FF3B5C;
+    --bad-soft: rgba(184, 37, 63, 0.16);
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.85);
+
+    --font-display: 'Bebas Neue', 'Oswald', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(640px 460px at 12% -5%, rgba(196, 130, 30, 0.22), transparent 60%),
+      radial-gradient(560px 420px at 92% 8%, rgba(184, 37, 63, 0.16), transparent 60%),
+      radial-gradient(900px 700px at 50% 110%, rgba(31, 166, 95, 0.08), transparent 60%);
+    animation: ambientPulse 9s ease-in-out infinite;
+  }
+
+  @keyframes ambientPulse {
+    0%, 100% { opacity: 0.75; }
+    50% { opacity: 1; }
+  }
+
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 32px 20px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal { animation: fadeUp 0.8s cubic-bezier(.2, .8, .25, 1) both; }
+  .reveal-1 { animation-delay: 0.55s; }
+  .reveal-2 { animation-delay: 0.7s; }
+  .reveal-3 { animation-delay: 0.85s; }
+  .reveal-4 { animation-delay: 1.0s; }
+
+  /* ---------- header ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 6px;
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+
+  .brand-mark {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 42px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    color: var(--text-primary);
+    position: relative;
+    display: inline-block;
+    text-shadow: 0 0 22px rgba(255, 201, 74, 0.35), 0 0 4px rgba(255, 201, 74, 0.5);
+    opacity: 0;
+    animation: brandIn 0.9s cubic-bezier(.2, .8, .25, 1) 0.15s both;
+  }
+
+  @keyframes brandIn {
+    from { opacity: 0; transform: scale(0.82); filter: blur(6px); }
+    to { opacity: 1; transform: scale(1); filter: blur(0); }
+  }
+
+  .brand-mark::after {
+    content: 'HYDRA';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.85) 50%, transparent 65%);
+    background-size: 300% 100%;
+    background-position: 150% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shine 2.2s ease-in-out 1.1s 1;
+  }
+
+  @keyframes shine {
+    0% { background-position: 150% 0; }
+    100% { background-position: -150% 0; }
+  }
+
+  .brand-sub {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    opacity: 0;
+    animation: fadeUp 0.7s ease 0.5s both;
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 8px; opacity: 0; animation: fadeUp 0.7s ease 0.5s both; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+  }
+
+  .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+  .chip--warn {
+    color: var(--accent-glow);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: var(--accent-soft);
+  }
+  .chip--warn .chip-dot { background: var(--accent-glow); box-shadow: 0 0 8px var(--accent-glow); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    background: linear-gradient(165deg, var(--bg-elevated), var(--bg-elevated-2));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 28px;
+    display: grid;
+    grid-template-columns: minmax(230px, 330px) 1fr;
+    gap: 26px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @media (max-width: 720px) {
+    .hero { grid-template-columns: 1fr; }
+  }
+
+  .hero-signal {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    justify-content: center;
+    padding-right: 22px;
+    border-right: 1px solid var(--border);
+  }
+
+  @media (max-width: 720px) {
+    .hero-signal { border-right: none; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 22px; }
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+    padding: 9px 18px;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: 28px;
+    letter-spacing: 0.06em;
+  }
+
+  .pill::before { content: ''; width: 10px; height: 10px; border-radius: 50%; }
+
+  .pill--long {
+    color: var(--good-glow);
+    background: var(--good-soft);
+    border: 1px solid color-mix(in srgb, var(--good) 55%, transparent);
+    animation: pulseGood 2.6s ease-in-out infinite;
+  }
+  .pill--long::before { background: var(--good-glow); box-shadow: 0 0 10px var(--good-glow); }
+
+  .pill--short {
+    color: var(--bad-glow);
+    background: var(--bad-soft);
+    border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
+    animation: pulseBad 2.6s ease-in-out infinite;
+  }
+  .pill--short::before { background: var(--bad-glow); box-shadow: 0 0 10px var(--bad-glow); }
+
+  @keyframes pulseGood {
+    0%, 100% { box-shadow: 0 0 14px -4px rgba(61, 255, 155, 0.35); }
+    50% { box-shadow: 0 0 26px 0px rgba(61, 255, 155, 0.55); }
+  }
+  @keyframes pulseBad {
+    0%, 100% { box-shadow: 0 0 14px -4px rgba(255, 59, 92, 0.35); }
+    50% { box-shadow: 0 0 26px 0px rgba(255, 59, 92, 0.55); }
+  }
+
+  .hero-price {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 38px;
+    font-weight: 500;
+    line-height: 1.1;
+  }
+
+  .hero-delta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; }
+
+  .hero-meta { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+  .hero-meta span { color: var(--text-primary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .stat {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color 0.25s ease, background 0.25s ease;
+  }
+  .stat:hover { border-color: var(--border-strong); background: rgba(255, 255, 255, 0.05); }
+
+  .stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
+  .stat-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 500; color: var(--text-primary); }
+  .stat-hint { font-size: 11.5px; color: var(--text-secondary); }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 24px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    box-shadow: var(--shadow), 0 0 0 1px rgba(196, 130, 30, 0.2), 0 0 40px -12px rgba(255, 201, 74, 0.3);
+  }
+
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    letter-spacing: 0.03em;
+    color: var(--text-primary);
+  }
+
+  .card-note { font-size: 12px; color: var(--text-muted); }
+  .card-subnote { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin: -6px 0 18px; max-width: 66ch; }
+
+  /* ---------- main chart ---------- */
+  .chart-wrap { position: relative; width: 100%; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .chart-grid line { stroke: var(--border); stroke-width: 1; }
+  .chart-axis-label { font-family: var(--font-mono); font-size: 10.5px; fill: var(--text-muted); }
+
+  .band-long { fill: var(--good-soft); }
+  .band-short { fill: var(--bad-soft); }
+
+  .price-area { fill: url(#priceGradient); }
+  .price-line {
+    fill: none;
+    stroke: var(--accent-glow);
+    stroke-width: 2.25;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 6px rgba(255, 201, 74, 0.45));
+  }
+
+  .hover-line { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+  .hover-dot { fill: var(--accent-glow); stroke: var(--bg-elevated); stroke-width: 2; opacity: 0; }
+  .chart-overlay { fill: transparent; cursor: crosshair; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    opacity: 0;
+    transform: translate(-50%, -112%);
+    white-space: nowrap;
+    transition: opacity 0.08s ease;
+    z-index: 5;
+  }
+
+  .tooltip strong { color: var(--text-primary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .tooltip .t-signal { font-weight: 600; }
+  .tooltip .t-signal.long { color: var(--good-glow); }
+  .tooltip .t-signal.short { color: var(--bad-glow); }
+
+  /* ---------- indicators ---------- */
+  .indicator-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  @media (max-width: 640px) { .indicator-grid { grid-template-columns: 1fr; } }
+
+  .indicator {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 15px 17px;
+    background: rgba(255, 255, 255, 0.025);
+    transition: border-color 0.25s ease;
+  }
+  .indicator:hover { border-color: var(--border-strong); }
+
+  .indicator-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .indicator-name { font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .indicator-swatch { width: 8px; height: 8px; border-radius: 2px; }
+  .indicator-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-secondary); }
+
+  svg.mini { width: 100%; height: 56px; display: block; overflow: visible; }
+  .mini-line { fill: none; stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round; }
+  .mini-ref { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; }
+  .mini-dot { stroke: var(--bg-elevated); stroke-width: 1.5; }
+
+  /* ---------- table ---------- */
+  .table-scroll { overflow-x: auto; }
+
+  table.history { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
+
+  table.history th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 0 10px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.history td { padding: 11px 10px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: middle; }
+  table.history tr:last-child td { border-bottom: none; }
+  table.history tr { transition: background 0.15s ease; }
+  table.history tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+
+  table.history td.num, table.history th.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
+
+  .row-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; }
+  .row-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .row-pill.long { color: var(--good-glow); background: var(--good-soft); }
+  .row-pill.long::before { background: var(--good-glow); box-shadow: 0 0 6px var(--good-glow); }
+  .row-pill.short { color: var(--bad-glow); background: var(--bad-soft); }
+  .row-pill.short::before { background: var(--bad-glow); box-shadow: 0 0 6px var(--bad-glow); }
+
+  .pct.up { color: var(--good-glow); }
+  .pct.down { color: var(--bad-glow); }
+
+  /* ---------- footer ---------- */
+  .foot { display: flex; flex-direction: column; gap: 6px; color: var(--text-muted); font-size: 12px; line-height: 1.6; padding-top: 8px; }
+  .foot a { color: var(--text-secondary); }
+  .foot code { color: var(--text-secondary); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-delay: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .brand-mark::after { display: none; }
+    .pill--long, .pill--short { animation: none !important; box-shadow: none; }
+    body::before { animation: none; opacity: 0.85; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">HYDRA</span>
+      <span class="brand-sub">terminal &middot; ETH/USD on-chain signal</span>
+    </div>
+    <div class="topbar-right">
+      <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 USDC/WETH</span>
+    </div>
+  </header>
+
+  <section class="hero reveal reveal-1">
+    <div class="hero-signal">
+      <span class="eyebrow">Aktywny sygnał</span>
+      <span class="pill" id="heroPill">LONG</span>
+      <span class="hero-price" id="heroPrice">$0.00</span>
+      <span class="hero-delta" id="heroDelta">+0.00%</span>
+      <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span></span>
+      <span class="hero-meta">dane zaktualizowane do <span id="heroDataTime">-</span> &middot; blok <span id="heroBlock">-</span> &middot; czas: Warszawa (CEST)</span>
+    </div>
+    <div class="stat-grid">
+      <div class="stat">
+        <span class="stat-label">Śledzone portfele</span>
+        <span class="stat-value" id="statTracked">-</span>
+        <span class="stat-hint">łącznie, narastająco</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Aktywne w oknie</span>
+        <span class="stat-value" id="statActive">-</span>
+        <span class="stat-hint">ostatnia świeca (250 bloków)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Pula scoringu</span>
+        <span class="stat-value" id="statPool">-</span>
+        <span class="stat-hint">portfele GOOD w oknie</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Composite score</span>
+        <span class="stat-value" id="statScore">-</span>
+        <span class="stat-hint">EMA z historii, próg decyzji: 0.0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Good: kupuje / sprzedaje</span>
+        <span class="stat-value" id="statGood">-</span>
+        <span class="stat-hint">surowo, tylko ostatnie okno</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Bad: kupuje / sprzedaje</span>
+        <span class="stat-value" id="statBad">-</span>
+        <span class="stat-hint">surowo, tylko ostatnie okno</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-2">
+    <div class="card-head">
+      <span class="card-title">Cena i sygnał w czasie</span>
+      <span class="card-note">świece 250-blokowe &middot; najedź, by zobaczyć szczegóły</span>
+    </div>
+    <div class="chart-wrap" id="mainChartWrap">
+      <svg class="chart" id="mainChart" viewBox="0 0 1000 300" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FFC94A" stop-opacity="0.32"></stop>
+            <stop offset="100%" stop-color="#FFC94A" stop-opacity="0"></stop>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="tooltip" id="mainTooltip"></div>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-3">
+    <div class="card-head">
+      <span class="card-title">Cztery wskaźniki (EMA presji kupna)</span>
+      <span class="card-note">0.5 = neutralnie &middot; &gt;0.5 = przewaga kupujących</span>
+    </div>
+    <p class="card-subnote">Sygnał (LONG/SHORT) i composite score liczone są z tych wygładzonych wskaźników EMA — z historii kilku-kilkunastu ostatnich świec, nie tylko z pojedynczego, ostatniego okna. Dlatego przy neutralnym rozkładzie kupno/sprzedaż w ostatnim oknie (np. 3&nbsp;/&nbsp;3) sygnał może wciąż pozostawać SHORT lub LONG — odzwierciedla to trend z poprzednich świec, który jeszcze się nie odwrócił.</p>
+    <div class="indicator-grid" id="indicatorGrid"></div>
+  </section>
+
+  <section class="card reveal reveal-4">
+    <div class="card-head">
+      <span class="card-title">Historia sygnałów</span>
+      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału</span>
+    </div>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>Sygnał</th>
+            <th>Start</th>
+            <th>Koniec</th>
+            <th class="num">Cena start</th>
+            <th class="num">Cena koniec</th>
+            <th class="num">Wynik</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot reveal reveal-4">
+    <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z puli Uniswap V3 USDC/WETH (Ethereum mainnet), pobranych na żywo przez RPC.</span>
+    <span>To narzędzie badawcze, nie porada inwestycyjna.</span>
+  </footer>
+
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const fmtUsd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+
+function animateNumber(el, target, opts) {
+  opts = opts || {};
+  if (REDUCE_MOTION) { el.textContent = opts.format ? opts.format(target) : target; return; }
+  const duration = opts.duration || 900;
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const val = target * eased;
+    el.textContent = opts.format ? opts.format(val) : Math.round(val);
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderHero() {
+  const candles = DATA.candles;
+  const latest = candles[candles.length - 1];
+  const streak = DATA.streaks[0];
+
+  const pill = document.getElementById('heroPill');
+  pill.textContent = latest.signal;
+  pill.className = 'pill ' + (latest.signal === 'LONG' ? 'pill--long' : 'pill--short');
+
+  animateNumber(document.getElementById('heroPrice'), latest.price, { duration: 1100, format: fmtUsd });
+
+  const delta = document.getElementById('heroDelta');
+  delta.textContent = fmtPct(streak.pct) + ' od początku sygnału';
+  delta.style.color = streak.pct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
+
+  document.getElementById('heroStart').textContent = streak.startTime;
+  document.getElementById('heroDataTime').textContent = latest.time;
+  document.getElementById('heroBlock').textContent = latest.block.toLocaleString('en-US');
+
+  animateNumber(document.getElementById('statTracked'), latest.tracked, { format: (v) => Math.round(v).toLocaleString('en-US') });
+  animateNumber(document.getElementById('statActive'), latest.active, { format: (v) => Math.round(v).toLocaleString('en-US') });
+  animateNumber(document.getElementById('statPool'), latest.pool, { format: (v) => Math.round(v).toLocaleString('en-US') });
+  document.getElementById('statScore').textContent = (latest.composite >= 0 ? '+' : '') + latest.composite.toFixed(3);
+  document.getElementById('statGood').textContent = latest.goodBuyers + ' / ' + latest.goodSellers;
+  document.getElementById('statBad').textContent = latest.badBuyers + ' / ' + latest.badSellers;
+}
+
+function niceDomain(values) {
+  const min = Math.min(...values), max = Math.max(...values);
+  const pad = (max - min) * 0.08 || 1;
+  return [min - pad, max + pad];
+}
+
+function buildMainChart() {
+  const svg = document.getElementById('mainChart');
+  const candles = DATA.candles;
+  const n = candles.length;
+  const W = 1000, H = 300, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+
+  const prices = candles.map(c => c.price);
+  const [yMin, yMax] = niceDomain(prices);
+
+  const x = (i) => PAD_L + (i / (n - 1)) * plotW;
+  const y = (v) => PAD_T + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && candles[j + 1].signal === candles[i].signal) j++;
+    const x0 = x(i) - (i === 0 ? 0 : (x(i) - x(i - 1)) / 2);
+    const x1 = x(j) + (j === n - 1 ? 0 : (x(j + 1) - x(j)) / 2);
+    svg.appendChild(el('rect', {
+      x: x0.toFixed(2), y: PAD_T, width: Math.max(0, x1 - x0).toFixed(2), height: plotH,
+      class: candles[i].signal === 'LONG' ? 'band-long' : 'band-short'
+    }));
+    i = j + 1;
+  }
+
+  const gridG = el('g', { class: 'chart-grid' });
+  for (let k = 0; k <= 2; k++) {
+    const v = yMin + (k / 2) * (yMax - yMin);
+    const yy = y(v);
+    gridG.appendChild(el('line', { x1: PAD_L, x2: W - PAD_R, y1: yy.toFixed(2), y2: yy.toFixed(2) }));
+    const label = el('text', { class: 'chart-axis-label', x: 4, y: (yy + 3).toFixed(2) });
+    label.textContent = '$' + Math.round(v).toLocaleString('en-US');
+    svg.appendChild(label);
+  }
+  svg.appendChild(gridG);
+
+  let areaPath = `M ${x(0)},${y(prices[0])}`;
+  let linePath = `M ${x(0)},${y(prices[0])}`;
+  for (let k = 1; k < n; k++) {
+    areaPath += ` L ${x(k)},${y(prices[k])}`;
+    linePath += ` L ${x(k)},${y(prices[k])}`;
+  }
+  areaPath += ` L ${x(n - 1)},${PAD_T + plotH} L ${x(0)},${PAD_T + plotH} Z`;
+
+  svg.appendChild(el('path', { d: areaPath, class: 'price-area' }));
+  const lineEl = el('path', { d: linePath, class: 'price-line' });
+  svg.appendChild(lineEl);
+
+  if (!REDUCE_MOTION && lineEl.getTotalLength) {
+    const len = lineEl.getTotalLength();
+    lineEl.style.strokeDasharray = len;
+    lineEl.style.strokeDashoffset = len;
+    lineEl.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.2,.8,.25,1) 0.9s';
+    requestAnimationFrame(() => requestAnimationFrame(() => { lineEl.style.strokeDashoffset = '0'; }));
+  }
+
+  const t0 = el('text', { class: 'chart-axis-label', x: PAD_L, y: H - 6 });
+  t0.textContent = candles[0].time;
+  const t1 = el('text', { class: 'chart-axis-label', x: W - PAD_R, y: H - 6, 'text-anchor': 'end' });
+  t1.textContent = candles[n - 1].time;
+  svg.appendChild(t0); svg.appendChild(t1);
+
+  const hoverLine = el('line', { class: 'hover-line', x1: 0, x2: 0, y1: PAD_T, y2: PAD_T + plotH });
+  const hoverDot = el('circle', { class: 'hover-dot', r: 4 });
+  svg.appendChild(hoverLine);
+  svg.appendChild(hoverDot);
+
+  const overlay = el('rect', { class: 'chart-overlay', x: PAD_L, y: PAD_T, width: plotW, height: plotH });
+  svg.appendChild(overlay);
+
+  const tooltip = document.getElementById('mainTooltip');
+
+  function handleMove(evtX) {
+    const rect = svg.getBoundingClientRect();
+    const relX = ((evtX - rect.left) / rect.width) * W;
+    let idx = Math.round(((relX - PAD_L) / plotW) * (n - 1));
+    idx = Math.max(0, Math.min(n - 1, idx));
+    const c = candles[idx];
+
+    hoverLine.setAttribute('x1', x(idx)); hoverLine.setAttribute('x2', x(idx));
+    hoverLine.style.opacity = 1;
+    hoverDot.setAttribute('cx', x(idx)); hoverDot.setAttribute('cy', y(c.price));
+    hoverDot.style.opacity = 1;
+
+    const leftPct = (x(idx) / W) * 100;
+    tooltip.style.left = leftPct + '%';
+    tooltip.style.top = ((y(c.price) / H) * 100) + '%';
+    tooltip.style.opacity = 1;
+    tooltip.innerHTML = `<strong>${fmtUsd(c.price)}</strong><br>` +
+      `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
+      `${c.time} &middot; score ${(c.composite >= 0 ? '+' : '')}${c.composite.toFixed(3)}`;
+
+    updateIndicatorHover(idx);
+  }
+
+  overlay.addEventListener('mousemove', (e) => handleMove(e.clientX));
+  overlay.addEventListener('mouseleave', () => {
+    hoverLine.style.opacity = 0;
+    hoverDot.style.opacity = 0;
+    tooltip.style.opacity = 0;
+    updateIndicatorHover(null);
+  });
+}
+
+const INDICATORS = [
+  { key: 'indGoodShort', label: 'GOOD &middot; EMA krótkie', color: 'var(--good-glow)', hint: 'good' },
+  { key: 'indGoodLong', label: 'GOOD &middot; EMA długie', color: 'var(--good-glow)', hint: 'good' },
+  { key: 'indBadShort', label: 'BAD &middot; EMA krótkie', color: 'var(--bad-glow)', hint: 'bad' },
+  { key: 'indBadLong', label: 'BAD &middot; EMA długie', color: 'var(--bad-glow)', hint: 'bad' },
+];
+
+let miniRefs = [];
+
+function buildIndicators() {
+  const grid = document.getElementById('indicatorGrid');
+  const candles = DATA.candles;
+  const n = candles.length;
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  miniRefs = [];
+
+  INDICATORS.forEach((ind) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'indicator';
+
+    const head = document.createElement('div');
+    head.className = 'indicator-head';
+    head.innerHTML = `<span class="indicator-name"><span class="indicator-swatch" style="background:${ind.color}"></span>${ind.label}</span><span class="indicator-value" data-val></span>`;
+    wrapper.appendChild(head);
+
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'mini');
+    svg.setAttribute('viewBox', '0 0 1000 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    const values = candles.map(c => c[ind.key]);
+    const [yMin, yMax] = niceDomain(values.concat([0.5]));
+    const W = 1000, H = 100, PAD = 6;
+    const x = (i) => (i / (n - 1)) * W;
+    const y = (v) => PAD + (H - 2 * PAD) - ((v - yMin) / (yMax - yMin)) * (H - 2 * PAD);
+
+    svg.appendChild(el('line', { class: 'mini-ref', x1: 0, x2: W, y1: y(0.5).toFixed(2), y2: y(0.5).toFixed(2) }));
+
+    let path = `M ${x(0)},${y(values[0]).toFixed(2)}`;
+    for (let k = 1; k < n; k++) path += ` L ${x(k)},${y(values[k]).toFixed(2)}`;
+    svg.appendChild(el('path', { d: path, class: 'mini-line', stroke: ind.color }));
+
+    const dot = el('circle', { class: 'mini-dot', r: 3.5, fill: ind.color, cx: x(n - 1), cy: y(values[n - 1]).toFixed(2) });
+    svg.appendChild(dot);
+
+    wrapper.appendChild(svg);
+    grid.appendChild(wrapper);
+
+    miniRefs.push({ svg, dot, x, y, values, valueEl: head.querySelector('[data-val]') });
+  });
+
+  updateIndicatorHover(DATA.candles.length - 1);
+}
+
+function updateIndicatorHover(idx) {
+  miniRefs.forEach((ref) => {
+    const i = idx === null ? ref.values.length - 1 : idx;
+    ref.dot.setAttribute('cx', ref.x(i));
+    ref.dot.setAttribute('cy', ref.y(ref.values[i]).toFixed(2));
+    ref.valueEl.textContent = ref.values[i].toFixed(3);
+  });
+}
+
+function buildHistory() {
+  const tbody = document.getElementById('historyBody');
+  DATA.streaks.forEach((s) => {
+    const tr = document.createElement('tr');
+    const isLong = s.signal === 'LONG';
+    tr.innerHTML = `
+      <td><span class="row-pill ${isLong ? 'long' : 'short'}">${s.signal}</span></td>
+      <td>${s.startTime}</td>
+      <td>${s.endTime}</td>
+      <td class="num">${fmtUsd(s.startPrice)}</td>
+      <td class="num">${fmtUsd(s.endPrice)}</td>
+      <td class="num pct ${s.pct >= 0 ? 'up' : 'down'}">${fmtPct(s.pct)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderFooter() {
+  const candles = DATA.candles;
+  const el = document.getElementById('footerStats');
+  if (!el || !candles.length) return;
+  const latest = candles[candles.length - 1];
+  const first = candles[0];
+  el.innerHTML = 'Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z puli Uniswap V3 USDC/WETH (Ethereum mainnet), pobranych na żywo przez RPC &middot; ' +
+    latest.tracked.toLocaleString('en-US') + ' śledzonych portfeli &middot; historia widoczna na wykresie: ' +
+    first.time + ' &ndash; ' + latest.time + ' &middot; strona aktualizuje się automatycznie co ok. godzinę.';
+}
+
+renderHero();
+buildMainChart();
+buildIndicators();
+buildHistory();
+renderFooter();
+</script>

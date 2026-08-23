@@ -1,0 +1,233 @@
+"""Agregacja okienna (świece 250-blokowe) + wygładzanie EMA + decyzja
+LONG/SHORT/HOLD.
+
+To jest właściwy "silnik sygnału" - odpowiednik tego, co na hydra.trading
+najwyraźniej odpalane jest co ~250 bloków (~1h) i produkuje linie
+"weight" / "Candle" widoczne w wycieknietym debug-dumpie.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Callable, Iterable, List
+
+from .models import Cohort, Side, Signal, Trade, WindowScore
+from .wallets import classify_wallets, compute_wallet_stats
+
+
+@dataclass
+class ScoringConfig:
+    window_blocks: int = 250  # ~1h przy ~14.4s/blok (Ethereum PoS)
+
+    # Ile bloków historii bierzemy pod uwagę przy rankingu portfeli.
+    # 250*24 = ok. 24h ruchomego okna reputacji.
+    classification_lookback_blocks: int = 250 * 24
+
+    min_trades_for_classification: int = 5
+    good_pct: float = 0.15
+    bad_pct: float = 0.15
+
+    # EMA - liczone w jednostkach "świec" (okien), nie bloków.
+    ema_short_span: int = 3
+    ema_long_span: int = 12
+
+    # Wagi funkcji łączącej wskaźniki w jeden composite score.
+    w_good_short: float = 1.0
+    w_good_long: float = 0.5
+    w_bad_short: float = 1.0
+    w_bad_long: float = 0.5
+
+    # Pasmo histerezy wokół zera - poniżej tego progu sygnał się NIE zmienia
+    # (zapobiega "migotaniu" przy score bliskim 0). Ustaw 0.0 dla natychmiastowego
+    # przełączania po znaku, co bliżej odzwierciedla częstotliwość zmian
+    # widoczną w historii sygnałów hydra.trading.
+    signal_threshold: float = 0.0
+
+
+class ScoringEngine:
+    """Stateful silnik: EMA i poprzedni sygnał są trzymane między oknami.
+
+    Domyślna konstrukcja (bez `initial_*`) zachowuje się dokładnie tak jak
+    wcześniej — EMA startuje "na zimno" (None), sygnał startowy to HOLD,
+    zbiór śledzonych portfeli pusty. Parametry `initial_*` istnieją, żeby
+    silnik dało się **wznowić** między osobnymi uruchomieniami procesu (np.
+    cykliczny job w GitHub Actions) bez utraty ciągłości EMA i bez zerowania
+    licznika portfeli śledzonych "od zawsze" - patrz `export_state()` niżej
+    oraz `live/run_incremental.py`, który z tego korzysta.
+    """
+
+    def __init__(
+        self,
+        config: ScoringConfig | None = None,
+        *,
+        initial_ema: dict[str, float | None] | None = None,
+        initial_prev_signal: Signal | None = None,
+        initial_total_tracked: Iterable[str] | None = None,
+    ) -> None:
+        self.cfg = config or ScoringConfig()
+        ema = initial_ema or {}
+        self._ema_good_short: float | None = ema.get("good_short")
+        self._ema_good_long: float | None = ema.get("good_long")
+        self._ema_bad_short: float | None = ema.get("bad_short")
+        self._ema_bad_long: float | None = ema.get("bad_long")
+        self._prev_signal: Signal = initial_prev_signal or Signal.HOLD
+        # Zbiór WSZYSTKICH portfeli kiedykolwiek widzianych - narastający
+        # między wywołaniami `run()`, a przy wznowieniu - między osobnymi
+        # uruchomieniami procesu (patrz `initial_total_tracked`).
+        self.total_tracked: set[str] = set(initial_total_tracked or ())
+
+    def export_state(self) -> dict:
+        """Serializowalny (do JSON) zrzut stanu EMA/sygnału - do zapisania na
+        dysk i podania jako `initial_ema`/`initial_prev_signal` przy
+        kolejnym uruchomieniu procesu. `total_tracked` (zbiór portfeli)
+        eksportuje się osobno, przez `self.total_tracked` (może być duży)."""
+        return {
+            "good_short": self._ema_good_short,
+            "good_long": self._ema_good_long,
+            "bad_short": self._ema_bad_short,
+            "bad_long": self._ema_bad_long,
+            "prev_signal": self._prev_signal.value,
+        }
+
+    def _update_ema(self, current: float | None, new_value: float, span: int) -> float:
+        alpha = 2.0 / (span + 1)
+        if current is None:
+            return new_value
+        return alpha * new_value + (1 - alpha) * current
+
+    def run(
+        self,
+        trades: Iterable[Trade],
+        price_at_block: Callable[[int], float],
+        *,
+        history_trades: Iterable[Trade] = (),
+    ) -> List[WindowScore]:
+        """Liczy WindowScore dla okien pokrytych przez `trades`.
+
+        `history_trades` to opcjonalny, dodatkowy zbiór WCZEŚNIEJ już
+        zaobserwowanych transakcji (np. z bufora trzymanego na dysku między
+        uruchomieniami) - używany WYŁĄCZNIE jako kontekst do klasyfikacji
+        portfeli w oknie `classification_lookback_blocks` (żeby okno tuż po
+        wznowieniu procesu miało tę samą "rozgrzaną" pulę GOOD/BAD, co przy
+        ciągłym działaniu). Sam nie generuje nowych `WindowScore` - tylko
+        `trades` definiuje, które okna zostaną w tym wywołaniu policzone.
+
+        Numeracja okien jest liczona względem STAŁEJ, globalnej siatki
+        (`block // window_blocks`), a nie względem pierwszego bloku w tym
+        wywołaniu - inaczej granice świec przesuwałyby się przy każdym
+        wznowieniu procesu z innym pierwszym blokiem w porcji danych.
+        """
+        trades_sorted = sorted(trades, key=lambda t: t.block)
+        if not trades_sorted:
+            return []
+
+        cfg = self.cfg
+
+        buckets: dict[int, list[Trade]] = defaultdict(list)
+        for t in trades_sorted:
+            idx = t.block // cfg.window_blocks
+            buckets[idx].append(t)
+
+        all_trades_so_far: list[Trade] = list(history_trades)
+        results: list[WindowScore] = []
+
+        for idx in sorted(buckets):
+            window_trades = buckets[idx]
+            window_end_block = (idx + 1) * cfg.window_blocks - 1
+
+            all_trades_so_far.extend(window_trades)
+            self.total_tracked.update(t.wallet for t in window_trades)
+
+            lookback_start = window_end_block - cfg.classification_lookback_blocks
+            lookback_trades = [t for t in all_trades_so_far if t.block > lookback_start]
+
+            stats = compute_wallet_stats(
+                lookback_trades, min_trades=cfg.min_trades_for_classification
+            )
+            classify_wallets(stats, good_pct=cfg.good_pct, bad_pct=cfg.bad_pct)
+
+            good_wallets = {w for w, s in stats.items() if s.cohort is Cohort.GOOD}
+            bad_wallets = {w for w, s in stats.items() if s.cohort is Cohort.BAD}
+
+            net_direction: dict[str, float] = defaultdict(float)
+            for t in window_trades:
+                net_direction[t.wallet] += t.size_eth if t.side is Side.BUY else -t.size_eth
+
+            good_buyers = good_sellers = bad_buyers = bad_sellers = 0
+            for wallet, net in net_direction.items():
+                if net == 0:
+                    continue
+                if wallet in good_wallets:
+                    if net > 0:
+                        good_buyers += 1
+                    else:
+                        good_sellers += 1
+                elif wallet in bad_wallets:
+                    if net > 0:
+                        bad_buyers += 1
+                    else:
+                        bad_sellers += 1
+
+            good_total = good_buyers + good_sellers
+            bad_total = bad_buyers + bad_sellers
+
+            # Brak aktywności w danej kohorcie w tym oknie -> traktujemy jako
+            # neutralne 0.5 (brak przesunięcia), zamiast propagować NaN.
+            good_ratio_raw = good_buyers / good_total if good_total > 0 else 0.5
+            bad_ratio_raw = bad_buyers / bad_total if bad_total > 0 else 0.5
+
+            self._ema_good_short = self._update_ema(
+                self._ema_good_short, good_ratio_raw, cfg.ema_short_span
+            )
+            self._ema_good_long = self._update_ema(
+                self._ema_good_long, good_ratio_raw, cfg.ema_long_span
+            )
+            self._ema_bad_short = self._update_ema(
+                self._ema_bad_short, bad_ratio_raw, cfg.ema_short_span
+            )
+            self._ema_bad_long = self._update_ema(
+                self._ema_bad_long, bad_ratio_raw, cfg.ema_long_span
+            )
+
+            # Dobrzy kupują -> byczo (+). Źli kupują -> traktujemy jako
+            # kontrariański sygnał niedźwiedzi (-). Zgodnie z opisem
+            # "Bad traders buy? Sell." z hydra.trading.
+            composite = (
+                cfg.w_good_short * (self._ema_good_short - 0.5)
+                + cfg.w_good_long * (self._ema_good_long - 0.5)
+                - cfg.w_bad_short * (self._ema_bad_short - 0.5)
+                - cfg.w_bad_long * (self._ema_bad_long - 0.5)
+            )
+
+            if composite > cfg.signal_threshold:
+                signal = Signal.LONG
+            elif composite < -cfg.signal_threshold:
+                signal = Signal.SHORT
+            else:
+                signal = self._prev_signal
+            self._prev_signal = signal
+
+            results.append(
+                WindowScore(
+                    window_end_block=window_end_block,
+                    price_usd=price_at_block(window_end_block),
+                    total_wallets_tracked=len(self.total_tracked),
+                    active_wallets=len(net_direction),
+                    pool_size=good_total,
+                    good_buyers=good_buyers,
+                    good_sellers=good_sellers,
+                    bad_buyers=bad_buyers,
+                    bad_sellers=bad_sellers,
+                    good_buy_ratio_raw=good_ratio_raw,
+                    bad_buy_ratio_raw=bad_ratio_raw,
+                    ind_good_short=self._ema_good_short,
+                    ind_good_long=self._ema_good_long,
+                    ind_bad_short=self._ema_bad_short,
+                    ind_bad_long=self._ema_bad_long,
+                    composite_score=composite,
+                    signal=signal,
+                )
+            )
+
+        return results

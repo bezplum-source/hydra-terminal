@@ -1,0 +1,136 @@
+"""Testy generowania statycznej strony (`live/build_site.py`) z historii
+świec — bez żadnej sieci ani prawdziwego RPC, tylko poprawność złożenia
+HTML z szablonu + danych."""
+
+from __future__ import annotations
+
+import json
+
+from live import build_site as bs
+
+
+def _sample_candles():
+    return [
+        {
+            "block": 100249,
+            "price": 2000.0,
+            "signal": "HOLD",
+            "composite": 0.0,
+            "indGoodShort": 0.5,
+            "indGoodLong": 0.5,
+            "indBadShort": 0.5,
+            "indBadLong": 0.5,
+            "goodBuyers": 0,
+            "goodSellers": 0,
+            "badBuyers": 0,
+            "badSellers": 0,
+            "pool": 0,
+            "active": 0,
+            "tracked": 10,
+            "time": "01.01.2026, 12:00",
+        },
+        {
+            "block": 100499,
+            "price": 2100.0,
+            "signal": "LONG",
+            "composite": 0.3,
+            "indGoodShort": 0.7,
+            "indGoodLong": 0.6,
+            "indBadShort": 0.4,
+            "indBadLong": 0.45,
+            "goodBuyers": 5,
+            "goodSellers": 1,
+            "badBuyers": 1,
+            "badSellers": 4,
+            "pool": 6,
+            "active": 11,
+            "tracked": 15,
+            "time": "01.01.2026, 13:00",
+        },
+        {
+            "block": 100749,
+            "price": 2050.0,
+            "signal": "LONG",
+            "composite": 0.2,
+            "indGoodShort": 0.65,
+            "indGoodLong": 0.6,
+            "indBadShort": 0.42,
+            "indBadLong": 0.46,
+            "goodBuyers": 4,
+            "goodSellers": 2,
+            "badBuyers": 2,
+            "badSellers": 3,
+            "pool": 6,
+            "active": 11,
+            "tracked": 16,
+            "time": "01.01.2026, 14:00",
+        },
+    ]
+
+
+def test_build_streaks_groups_consecutive_same_signal_and_orders_newest_first():
+    candles = _sample_candles()
+    streaks = bs._build_streaks(candles)
+    # HOLD (1 swieca) i LONG (2 swiece) -> 2 streaki, najnowszy (LONG) pierwszy
+    assert len(streaks) == 2
+    assert streaks[0]["signal"] == "LONG"
+    assert streaks[0]["startBlock"] == 100499
+    assert streaks[0]["endBlock"] == 100749
+    assert streaks[1]["signal"] == "HOLD"
+
+
+def test_build_site_writes_valid_html_with_embedded_data(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site(_sample_candles())
+
+    out = site_dir / "index.html"
+    assert out.exists()
+    html = out.read_text(encoding="utf-8")
+
+    assert html.startswith("<!doctype html>")
+    assert "__DATA_JSON__" not in html
+    assert "<script>" in html and "</script>" in html
+
+    # Wyciagnij wstrzykniety JSON i zweryfikuj, ze to poprawne dane.
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert len(data["candles"]) == 3
+    assert data["candles"][-1]["price"] == 2050.0
+    assert len(data["streaks"]) == 2
+
+
+def test_build_site_caps_display_candles(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+    monkeypatch.setattr(bs, "MAX_DISPLAY_CANDLES", 2)
+
+    bs.build_site(_sample_candles())
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    # tylko ostatnie 2 z 3 powinny trafic na strone (limit wyswietlania)
+    assert len(data["candles"]) == 2
+    assert data["candles"][0]["block"] == 100499
+    assert data["candles"][1]["block"] == 100749
+
+
+def test_build_site_empty_history_does_not_crash(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site([])
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert data["candles"] == []
+    assert data["streaks"] == []
