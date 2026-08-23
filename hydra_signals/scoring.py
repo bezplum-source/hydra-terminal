@@ -44,6 +44,15 @@ class ScoringConfig:
     # widoczną w historii sygnałów hydra.trading.
     signal_threshold: float = 0.0
 
+    # Ile KOLEJNYCH transakcji w JEDNĄ stronę portfel musi wykonać, zanim
+    # następna transakcja w przeciwną stronę liczy się jako potwierdzony
+    # "wallet flip" (Faza 3, brief regime-detection sekcja 9) - np. przy
+    # wartości domyślnej 3: "SELL SELL SELL -> BUY" to flip, ale
+    # "SELL SELL -> BUY" (streak tylko 2) już nie. WARTOŚĆ STARTOWA, nie
+    # wynik optymalizacji - do przestrojenia dopiero po backteście (Faza 5),
+    # analogicznie do progów w `regime.RegimeConfig`.
+    min_flip_streak_trades: int = 3
+
 
 class ScoringEngine:
     """Stateful silnik: EMA i poprzedni sygnał są trzymane między oknami.
@@ -64,6 +73,7 @@ class ScoringEngine:
         initial_ema: dict[str, float | None] | None = None,
         initial_prev_signal: Signal | None = None,
         initial_total_tracked: Iterable[str] | None = None,
+        initial_wallet_flip_state: dict[str, dict] | None = None,
     ) -> None:
         self.cfg = config or ScoringConfig()
         ema = initial_ema or {}
@@ -77,17 +87,47 @@ class ScoringEngine:
         # uruchomieniami procesu (patrz `initial_total_tracked`).
         self.total_tracked: set[str] = set(initial_total_tracked or ())
 
+        # Wallet Flip (Faza 3) - stan PER PORTFEL, ograniczony do dwóch
+        # małych pól ("ostatni kierunek", "długość bieżącego ciągu") -
+        # dokładnie jak `total_tracked` wyżej, rośnie z liczbą portfeli, ale
+        # wolno (te same adresy Ethereum ~42 znaki, ten sam rząd wielkości
+        # co `wallets_seen.txt`). Musi wznawiać się MIĘDZY uruchomieniami
+        # procesu tak samo jak EMA - bez tego każde uruchomienie widziałoby
+        # każdy portfel "po raz pierwszy" i nigdy nie wykryłoby żadnego
+        # flipa (patrz pętla w `run()` niżej: pierwsza widziana transakcja
+        # portfela tylko zakłada streak, nigdy nie liczy się jako flip).
+        flip_state = initial_wallet_flip_state or {}
+        self._wallet_flip_last_side: dict[str, str] = {
+            w: s["side"] for w, s in flip_state.items()
+        }
+        self._wallet_flip_streak: dict[str, int] = {
+            w: s["streak"] for w, s in flip_state.items()
+        }
+
     def export_state(self) -> dict:
         """Serializowalny (do JSON) zrzut stanu EMA/sygnału - do zapisania na
         dysk i podania jako `initial_ema`/`initial_prev_signal` przy
-        kolejnym uruchomieniu procesu. `total_tracked` (zbiór portfeli)
-        eksportuje się osobno, przez `self.total_tracked` (może być duży)."""
+        kolejnym uruchomieniu procesu. `total_tracked` (zbiór portfeli) i
+        stan Wallet Flip eksportują się osobno (mogą być duże) - patrz
+        `self.total_tracked` i `export_wallet_flip_state()`."""
         return {
             "good_short": self._ema_good_short,
             "good_long": self._ema_good_long,
             "bad_short": self._ema_bad_short,
             "bad_long": self._ema_bad_long,
             "prev_signal": self._prev_signal.value,
+        }
+
+    def export_wallet_flip_state(self) -> dict[str, dict]:
+        """Serializowalny (do JSON) zrzut stanu Wallet Flip (Faza 3) - jeden
+        wpis na KAŻDY portfel, który kiedykolwiek zawarł transakcję:
+        `{wallet: {"side": "BUY"|"SELL", "streak": N}}`. Do podania jako
+        `initial_wallet_flip_state` przy kolejnym uruchomieniu procesu -
+        patrz `live/state.py` (`load_wallet_flip_state`/
+        `save_wallet_flip_state`) i `live/run_incremental.py`."""
+        return {
+            w: {"side": self._wallet_flip_last_side[w], "streak": self._wallet_flip_streak[w]}
+            for w in self._wallet_flip_last_side
         }
 
     def _update_ema(self, current: float | None, new_value: float, span: int) -> float:
@@ -112,6 +152,10 @@ class ScoringEngine:
         wznowieniu procesu miało tę samą "rozgrzaną" pulę GOOD/BAD, co przy
         ciągłym działaniu). Sam nie generuje nowych `WindowScore` - tylko
         `trades` definiuje, które okna zostaną w tym wywołaniu policzone.
+        Analogicznie NIE zasila stanu Wallet Flip (Faza 3) - ten wznawia się
+        wyłącznie przez `initial_wallet_flip_state`/`export_wallet_flip_state`,
+        tak samo jak EMA nie jest odtwarzana z `history_trades` - patrz
+        `__init__`.
 
         Numeracja okien jest liczona względem STAŁEJ, globalnej siatki
         (`block // window_blocks`), a nie względem pierwszego bloku w tym
@@ -215,6 +259,58 @@ class ScoringEngine:
             # rozbieżność (bardzo bycze). Odwrotnie -> duża ujemna (niedźwiedzie).
             smart_money_divergence = good_trader_pressure - bad_trader_pressure
 
+            # --- Wallet Flip (Faza 3, brief regime-detection sekcja 9) ---
+            # Przetwarzamy `window_trades` W KOLEJNOŚCI CZASU (już posortowane
+            # - patrz `trades_sorted`/`buckets` wyżej) i śledzimy per portfel
+            # (`self._wallet_flip_last_side`/`self._wallet_flip_streak`,
+            # wznawialne między uruchomieniami - patrz `__init__`): każda
+            # transakcja W TĄ SAMĄ stronę co poprzednia wydłuża streak;
+            # transakcja W PRZECIWNĄ stronę kończy streak, a jeśli ten streak
+            # miał długość >= `cfg.min_flip_streak_trades`, liczymy to jako
+            # POTWIERDZONY flip w BIEŻĄCYM oknie (blok transakcji wyzwalającej
+            # i tak należy do tego okna, bo iterujemy `window_trades`).
+            # Pierwsza transakcja portfela w ogóle (brak zapisanego
+            # `last_side`) tylko zakłada streak - NIGDY nie liczy się jako
+            # flip (nie ma z czym porównać - odpowiednik "brak look-ahead"
+            # z sekcji 21 briefu, zastosowany tu przez analogię: nie
+            # zgadujemy kierunku "sprzed początku danych").
+            # Kohorta (GOOD/BAD) brana jest z `good_wallets`/`bad_wallets`
+            # WYLICZONYCH DLA TEGO OKNA (jak w bloku Fazy 0 powyżej) - portfel
+            # NEUTRAL/UNRATED nie jest liczony w żadnej z czterech liczb.
+            good_bullish_flips = good_bearish_flips = 0
+            bad_bullish_flips = bad_bearish_flips = 0
+            for t in window_trades:
+                wallet = t.wallet
+                new_side = t.side.value
+                last_side = self._wallet_flip_last_side.get(wallet)
+                streak = self._wallet_flip_streak.get(wallet, 0)
+
+                if last_side is None:
+                    self._wallet_flip_last_side[wallet] = new_side
+                    self._wallet_flip_streak[wallet] = 1
+                    continue
+
+                if new_side == last_side:
+                    self._wallet_flip_streak[wallet] = streak + 1
+                    continue
+
+                # Zmiana kierunku - potwierdzony flip tylko, jesli PRZED nia
+                # portfel mial wystarczajaco dlugi ciag w poprzednia strone.
+                if streak >= cfg.min_flip_streak_trades:
+                    if wallet in good_wallets:
+                        if t.side is Side.BUY:
+                            good_bullish_flips += 1
+                        else:
+                            good_bearish_flips += 1
+                    elif wallet in bad_wallets:
+                        if t.side is Side.BUY:
+                            bad_bullish_flips += 1
+                        else:
+                            bad_bearish_flips += 1
+
+                self._wallet_flip_last_side[wallet] = new_side
+                self._wallet_flip_streak[wallet] = 1
+
             self._ema_good_short = self._update_ema(
                 self._ema_good_short, good_ratio_raw, cfg.ema_short_span
             )
@@ -269,6 +365,10 @@ class ScoringEngine:
                     bad_trader_pressure=bad_trader_pressure,
                     smart_money_divergence=smart_money_divergence,
                     good_trader_breadth=good_ratio_raw,
+                    good_trader_bullish_flips=good_bullish_flips,
+                    good_trader_bearish_flips=good_bearish_flips,
+                    bad_trader_bullish_flips=bad_bullish_flips,
+                    bad_trader_bearish_flips=bad_bearish_flips,
                 )
             )
 
