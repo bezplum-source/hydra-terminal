@@ -1,0 +1,87 @@
+name: Aktualizacja danych Hyperliquid ETH-PERP
+
+# Faza H0 briefu Hyperliquid (patrz Projekt Claude, dokument
+# "hydrav2-hyperliquid-brief.md") - OSOBNY workflow od "update.yml"
+# (Uniswap/ETH), bo model wykonania jest inny: tamten to krotkie "zapytaj
+# RPC i zgasn" (kilkanascie sekund), ten trzyma otwarte polaczenie
+# WebSocket do Hyperliquid przez WIEKSZOSC godziny (Hyperliquid nie ma
+# publicznego REST-owego "co sie stalo w ostatniej godzinie" - jedyny
+# sposob zlapania firehose'u transakcji to trzymane polaczenie WS).
+#
+# Cron przesuniety wzgledem "update.yml" (minuta 20, nie 7) - zeby oba
+# joby nie walczyly o runnery w tej samej minucie.
+#
+# Koszt: zero - repo jest publiczne, GitHub Actions na standardowych
+# runnerach dla repo publicznych to bez limitu minut i bez oplat
+# (zweryfikowane w changelogu cenowym GitHub z konca 2025 - to sie nie
+# zmienia, zmieniaja sie tylko stawki dla repo prywatnych).
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hydra-hyperliquid-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    # 55 minut nasluchu (HYPERLIQUID_LISTEN_SECONDS w listenerze, domyslnie
+    # 50 minut) + zapas na checkout/install/commit - nastepne uruchomienie
+    # (cron co godzine) i tak nie nadejdzie wczesniej.
+    timeout-minutes: 58
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Ustaw Pythona
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zainstaluj zaleznosci
+        run: pip install -r requirements.txt
+
+      - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
+        run: python -m pytest tests/ -q
+
+      - name: Nasluchuj transakcje ETH-PERP na Hyperliquid (WebSocket, ~50 min)
+        run: python live/hyperliquid_listener.py
+
+      - name: Zacommituj zaktualizowany bufor transakcji
+        run: |
+          git config user.name "hydra-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/hyperliquid_trades_buffer.jsonl
+
+          if git diff --cached --quiet; then
+            echo "Brak zmian do zacommitowania."
+            exit 0
+          fi
+
+          git commit -m "Hyperliquid ETH-PERP: aktualizacja bufora transakcji ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+
+          # Ten sam wzorzec retry co w update.yml - jesli w miedzyczasie
+          # "update.yml" (albo recznie ktos) zapisal cos innego w repo,
+          # zwykly push zostanie odrzucony.
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "Push udany (proba $i)."
+              exit 0
+            fi
+            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Probuje ponownie..."
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow) - przerywam."
+              git rebase --abort || true
+              exit 1
+            fi
+            sleep $((RANDOM % 8 + 3))
+          done
+
+          echo "Nie udalo sie zapisac zmian po kilku probach."
+          exit 1
