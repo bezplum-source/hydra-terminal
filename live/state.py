@@ -53,13 +53,27 @@ który tylko zbiera surowe transakcje, patrz plik siódmy wyżej):
 - `hyperliquid_scoring_state.json` — mały, jak `scoring_state.json`: cztery
   liczby EMA (`hydra_signals.hyperliquid_wallets.HyperliquidScoringEngine`)
   + `last_processed_ts_ms` (dokąd już policzono — odpowiednik
-  `last_processed_block` dla Uniswap) + ostatnia znana wartość
-  `composite_perp`/dojrzałości (`last_composite_perp`/`last_is_mature`),
-  żeby `live/run_incremental.py` miał czym blendować nawet w uruchomieniu,
-  w którym Hyperliquid nie dorzucił żadnej nowej transakcji (patrz
-  `HyperliquidScoringEngine.run`, zwraca `None` w takim wypadku - stan EMA
-  zostaje wtedy nietknięty, ale blend i tak potrzebuje ostatniej znanej
-  liczby).
+  `last_processed_block` dla Uniswap) + `last_perp_snapshot` (słownik z
+  ostatnią znaną wartością `composite_perp`/dojrzałości/liczników
+  diagnostycznych — patrz Faza H3 niżej), żeby `live/run_incremental.py`
+  miał czym blendować i czym wypełnić kartę diagnostyczną nawet w
+  uruchomieniu, w którym Hyperliquid nie dorzucił żadnej nowej transakcji
+  (patrz `HyperliquidScoringEngine.run`, zwraca `None` w takim wypadku -
+  stan EMA zostaje wtedy nietknięty). **Uwaga migracyjna**: pliki zapisane
+  jeszcze PRZED Fazą H3 mają zamiast `last_perp_snapshot` dwa starsze,
+  płaskie klucze `last_composite_perp`/`last_is_mature` — `live/run_incremental.py`
+  obsługuje oba warianty (patrz komentarz w `main()`), więc nie trzeba nic
+  ręcznie migrować na dysku.
+
+Dziewiąty plik, dodany w Fazie H3 briefu Hyperliquid (front-end) — zapisywany
+i czytany przez `update.yml`/`run_incremental.py`, analogicznie do
+`wallets_seen.txt` dla Uniswap:
+
+- `hyperliquid_wallets_seen.txt` — jeden adres na linię, WSZYSTKIE unikalne
+  portfele Hyperliquid kiedykolwiek zaobserwowane — źródło liczby "śledzone
+  portfele" w nowej karcie diagnostycznej "ETH-PERP · Hyperliquid" na
+  stronie. Czysto diagnostyczny, NIE wpływa na `composite_perp` ani na
+  żadną logikę scoringu (patrz `HyperliquidScoringEngine.total_tracked`).
 """
 
 from __future__ import annotations
@@ -80,6 +94,7 @@ REGIME_STATE_PATH = DATA_DIR / "regime_state.json"
 WALLET_FLIP_STATE_PATH = DATA_DIR / "wallet_flip_state.json"
 HYPERLIQUID_TRADES_BUFFER_PATH = DATA_DIR / "hyperliquid_trades_buffer.jsonl"
 HYPERLIQUID_SCORING_STATE_PATH = DATA_DIR / "hyperliquid_scoring_state.json"
+HYPERLIQUID_WALLETS_SEEN_PATH = DATA_DIR / "hyperliquid_wallets_seen.txt"
 
 
 def load_scoring_state() -> dict:
@@ -213,6 +228,18 @@ def load_hyperliquid_scoring_state() -> dict:
 def save_hyperliquid_scoring_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     HYPERLIQUID_SCORING_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_hyperliquid_wallets_seen() -> set[str]:
+    if not HYPERLIQUID_WALLETS_SEEN_PATH.exists():
+        return set()
+    text = HYPERLIQUID_WALLETS_SEEN_PATH.read_text(encoding="utf-8").strip()
+    return set(text.split()) if text else set()
+
+
+def save_hyperliquid_wallets_seen(wallets: set[str]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    HYPERLIQUID_WALLETS_SEEN_PATH.write_text("\n".join(sorted(wallets)) + "\n", encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
