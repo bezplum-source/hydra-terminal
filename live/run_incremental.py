@@ -38,10 +38,20 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
     batch_call_with_retry,
     fetch_trades_from_chain_batched,
 )
+from hydra_signals.data_sources import hyperliquid_ws as hl_ws  # noqa: E402
 from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005  # noqa: E402
+from hydra_signals.hyperliquid_wallets import (  # noqa: E402
+    HyperliquidScoringConfig,
+    HyperliquidScoringEngine,
+)
 from hydra_signals.models import Signal  # noqa: E402
 from hydra_signals import regime  # noqa: E402
-from hydra_signals.scoring import ScoringConfig, ScoringEngine  # noqa: E402
+from hydra_signals.scoring import (  # noqa: E402
+    ScoringConfig,
+    ScoringEngine,
+    blend_composite,
+    decide_signal,
+)
 
 from live import state as st  # noqa: E402
 from live.build_site import build_site  # noqa: E402
@@ -58,6 +68,13 @@ CALLS_PER_BATCH = int(os.environ.get("HYDRA_CALLS_PER_BATCH", "80"))
 # na kilka dni) - nie probuj dogonic WSZYSTKIEGO zaleglego w jednym
 # uruchomieniu, tylko tyle, ile bezpiecznie miesci sie w jednym jobie.
 MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_MAX_NEW_BLOCKS_PER_RUN", "20000"))
+
+# Faza H2 (brief hydrav2-hyperliquid-brief.md) - waga composite_perp w
+# zblendowanej wartosci ktora steruje glownym sygnalem LONG/SHORT
+# ("composite = (1-w)*spot + w*perp"). WARTOSC STARTOWA zaakceptowana wprost
+# przez uzytkownika (50/50), do przestrojenia pozniej - patrz
+# hydra_signals.scoring.DEFAULT_PERP_WEIGHT.
+HYPERLIQUID_PERP_WEIGHT = float(os.environ.get("HYDRA_PERP_WEIGHT", "0.5"))
 
 
 def log(msg: str) -> None:
@@ -84,6 +101,61 @@ def main() -> int:
     candles_history = st.load_candles_history()
     regime_state = st.load_regime_state()
     wallet_flip_state = st.load_wallet_flip_state()
+    hyperliquid_scoring_state = st.load_hyperliquid_scoring_state()
+
+    # --- Faza H2 (brief Hyperliquid) - osobny, rownolegly silnik na danych
+    # z Hyperliquid (zbieranych przez OSOBNY workflow/listener, patrz
+    # hyperliquid_listener.py), wznawiany miedzy uruchomieniami dokladnie
+    # jak ScoringEngine/RegimeEngine ponizej. "Okno" tego silnika to NIE
+    # stala siatka czasowa, tylko "wszystko, co przyszlo od ostatniego
+    # uruchomienia tego skryptu" - patrz HyperliquidScoringEngine.run.
+    # Liczone TUTAJ (przed petla po nowych swiecach Uniswap nizej), zeby
+    # jego wlasny kursor (`last_processed_ts_ms`) posuwal sie NIEZALEZNIE
+    # od tego, czy w tym konkretnym uruchomieniu Uniswap w ogole domknal
+    # jakies okno - dokladnie zgodnie z zasada "dwa niezalezne rurociagi".
+    hl_raw_records = st.load_hyperliquid_trades_buffer()
+    hl_trades = [hl_ws.json_record_to_trade(r) for r in hl_raw_records]
+
+    last_hl_ts_ms = hyperliquid_scoring_state.get("last_processed_ts_ms")
+    if last_hl_ts_ms is None:
+        new_hl_trades = hl_trades
+        history_hl_trades: list = []
+    else:
+        new_hl_trades = [t for t in hl_trades if t.ts_ms > last_hl_ts_ms]
+        history_hl_trades = [t for t in hl_trades if t.ts_ms <= last_hl_ts_ms]
+
+    hl_engine = HyperliquidScoringEngine(HyperliquidScoringConfig(), initial_ema=hyperliquid_scoring_state)
+    hl_score = None
+    if new_hl_trades:
+        hl_window_end_ts_ms = max(t.ts_ms for t in new_hl_trades)
+        hl_score = hl_engine.run(
+            new_hl_trades, history_trades=history_hl_trades, window_end_ts_ms=hl_window_end_ts_ms
+        )
+
+    if hl_score is not None:
+        composite_perp = hl_score.composite_score if hl_score.is_mature else None
+        perp_is_mature = hl_score.is_mature
+        new_hl_state = hl_engine.export_state()
+        new_hl_state["last_processed_ts_ms"] = hl_score.window_end_ts_ms
+        new_hl_state["last_composite_perp"] = composite_perp
+        new_hl_state["last_is_mature"] = perp_is_mature
+        st.save_hyperliquid_scoring_state(new_hl_state)
+        log(
+            f"Hyperliquid: {hl_score.n_new_trades} nowych transakcji, "
+            f"{hl_score.n_classified_wallets} sklasyfikowanych portfeli "
+            f"({'dojrzale' if perp_is_mature else 'jeszcze NIEDOJRZALE - composite_perp=None'})."
+        )
+    else:
+        # Brak nowych transakcji Hyperliquid od ostatniego uruchomienia (np.
+        # listener jeszcze sie nie zdazyl odpalic w tej godzinie) - NIE
+        # dotykamy zapisanego stanu (EMA zamrozone), tylko odczytujemy
+        # OSTATNIA znana wartosc z poprzedniego uruchomienia.
+        composite_perp = hyperliquid_scoring_state.get("last_composite_perp")
+        perp_is_mature = hyperliquid_scoring_state.get("last_is_mature", False)
+        if not perp_is_mature:
+            composite_perp = None
+
+    final_prev_signal = Signal(scoring_state.get("final_prev_signal", "HOLD"))
 
     head = int(rpc.call("eth_blockNumber", []), 16)
     log(f"Aktualne czolo lancucha: blok {head}")
@@ -183,11 +255,36 @@ def main() -> int:
 
         for s in new_scores:
             ts = block_ts.get(s.window_end_block)
+
+            # --- Faza H2 (brief Hyperliquid) - to TU nastepuje zlaczenie
+            # dwoch niezaleznych torow w jedna decyzje. `s.composite_score`/
+            # `s.signal` (silnik ScoringEngine powyzej) NIE sa modyfikowane -
+            # zostaja jako `compositeSpot`/`signalSpotOnly`, czysto
+            # diagnostyczne (patrz brief, "Pelna przejrzystosc w hero").
+            # `composite_perp` policzone raz, PRZED ta petla (patrz wyzej) -
+            # ta sama wartosc stosowana do wszystkich nowych swiec w tym
+            # uruchomieniu (zwykle jest ich jedna; w rzadkim przypadku
+            # nadrabiania zaleglosci - swiadome uproszczenie, jak wiele
+            # innych progow/przyblizen w tym projekcie).
+            composite_final = blend_composite(
+                s.composite_score, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
+            )
+            final_signal = decide_signal(
+                composite_final, threshold=cfg.signal_threshold, prev_signal=final_prev_signal
+            )
+            final_prev_signal = final_signal
+
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
-                "signal": s.signal.value,
-                "composite": round(s.composite_score, 3),
+                "signal": final_signal.value,
+                "composite": round(composite_final, 3),
+                # --- Faza H2 (brief Hyperliquid) - rozbicie widoczne juz w
+                # danych, zeby przyszla Faza H3 (frontend) mogla to po
+                # prostu wyswietlic bez przeliczania niczego dodatkowo.
+                "compositeSpot": round(s.composite_score, 3),
+                "compositePerp": round(composite_perp, 3) if composite_perp is not None else None,
+                "signalSpotOnly": s.signal.value,
                 "indGoodShort": round(s.ind_good_short, 3),
                 "indGoodLong": round(s.ind_good_long, 3),
                 "indBadShort": round(s.ind_bad_short, 3),
@@ -245,6 +342,10 @@ def main() -> int:
     new_state = engine.export_state()
     new_state["last_processed_block"] = to_block
     new_state["last_scored_window_end"] = new_last_scored_end
+    # Faza H2 (brief Hyperliquid) - histereza NIEZALEZNA od `prev_signal`
+    # powyzej (ten ostatni to nadal wylacznie spot, wewnetrzny stan
+    # ScoringEngine) - patrz docstring `hydra_signals.scoring.decide_signal`.
+    new_state["final_prev_signal"] = final_prev_signal.value
     new_state["updated_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     st.save_scoring_state(new_state)
     st.save_trade_buffer(trimmed_buffer)
