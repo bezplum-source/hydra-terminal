@@ -1,5 +1,5 @@
 from hydra_signals.models import Side, Trade, Signal
-from hydra_signals.scoring import ScoringConfig, ScoringEngine
+from hydra_signals.scoring import ScoringConfig, ScoringEngine, blend_composite, decide_signal
 
 
 def make_trade(wallet, block, side, price, size):
@@ -120,3 +120,40 @@ def test_good_bad_pressure_divergence_breadth_are_volume_based_and_independent_o
     # dzialac dokladnie tak jak przed dodaniem tych pol (nie sprawdzamy tu
     # konkretnej wartosci - tylko ze pole istnieje i engine sie nie wywalil).
     assert s.signal in (Signal.LONG, Signal.SHORT, Signal.HOLD)
+
+
+# =====================================================================
+# Faza H2 (brief hydrav2-hyperliquid-brief.md) - blend composite_spot/perp
+# =====================================================================
+
+
+def test_blend_composite_returns_spot_unchanged_when_perp_is_none():
+    # "Graceful degradation" z briefu - brak/niedojrzale dane Hyperliquid
+    # (composite_perp=None) NIE moga zmienic zachowania wzgledem stanu
+    # sprzed Fazy H2, niezaleznie od wagi.
+    assert blend_composite(0.42, None) == 0.42
+    assert blend_composite(-0.17, None, perp_weight=0.9) == -0.17
+
+
+def test_blend_composite_averages_with_default_weight():
+    assert blend_composite(1.0, 0.0) == 0.5
+    assert blend_composite(0.2, 0.6) == 0.4
+
+
+def test_blend_composite_respects_custom_weight():
+    # waga=0 -> czysty spot, waga=1 -> czysty perp.
+    assert blend_composite(0.5, -0.5, perp_weight=0.0) == 0.5
+    assert blend_composite(0.5, -0.5, perp_weight=1.0) == -0.5
+    assert blend_composite(1.0, 0.0, perp_weight=0.25) == 0.75
+
+
+def test_decide_signal_matches_sign_of_composite():
+    assert decide_signal(0.1, threshold=0.0, prev_signal=Signal.HOLD) == Signal.LONG
+    assert decide_signal(-0.1, threshold=0.0, prev_signal=Signal.HOLD) == Signal.SHORT
+
+
+def test_decide_signal_holds_previous_within_threshold_band():
+    # Wewnatrz pasma histerezy (-threshold, +threshold) sygnal NIE zmienia
+    # sie - dokladnie ta sama logika co wewnatrz ScoringEngine.run.
+    assert decide_signal(0.05, threshold=0.1, prev_signal=Signal.SHORT) == Signal.SHORT
+    assert decide_signal(-0.05, threshold=0.1, prev_signal=Signal.LONG) == Signal.LONG
