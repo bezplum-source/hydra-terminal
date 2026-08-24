@@ -42,8 +42,24 @@ nie przez `update.yml`:
 - `hyperliquid_trades_buffer.jsonl` — surowe transakcje ETH-PERP z Hyperliquid
   (jedna transakcja = jedna linia JSON), ROLNIA jak `trade_buffer.csv`:
   przycinana do `hydra_signals.data_sources.hyperliquid_ws.DEFAULT_BUFFER_LOOKBACK_HOURS`
-  przy każdym uruchomieniu listenera. Faza H0 tylko zbiera — klasyfikacja
-  portfeli z tego bufora to Faza H1 (jeszcze niezaimplementowana).
+  przy każdym uruchomieniu listenera. Zbierany przez OSOBNY workflow
+  (`.github/workflows/hyperliquid-update.yml`), CZYTANY przez `update.yml`
+  (`live/run_incremental.py`) — patrz ósmy plik niżej.
+
+Ósmy plik, dodany w Fazie H2 briefu Hyperliquid — zapisywany i czytany
+przez `update.yml`/`run_incremental.py` (NIE przez `hyperliquid-update.yml`,
+który tylko zbiera surowe transakcje, patrz plik siódmy wyżej):
+
+- `hyperliquid_scoring_state.json` — mały, jak `scoring_state.json`: cztery
+  liczby EMA (`hydra_signals.hyperliquid_wallets.HyperliquidScoringEngine`)
+  + `last_processed_ts_ms` (dokąd już policzono — odpowiednik
+  `last_processed_block` dla Uniswap) + ostatnia znana wartość
+  `composite_perp`/dojrzałości (`last_composite_perp`/`last_is_mature`),
+  żeby `live/run_incremental.py` miał czym blendować nawet w uruchomieniu,
+  w którym Hyperliquid nie dorzucił żadnej nowej transakcji (patrz
+  `HyperliquidScoringEngine.run`, zwraca `None` w takim wypadku - stan EMA
+  zostaje wtedy nietknięty, ale blend i tak potrzebuje ostatniej znanej
+  liczby).
 """
 
 from __future__ import annotations
@@ -63,6 +79,7 @@ CANDLES_HISTORY_PATH = DATA_DIR / "candles_history.json"
 REGIME_STATE_PATH = DATA_DIR / "regime_state.json"
 WALLET_FLIP_STATE_PATH = DATA_DIR / "wallet_flip_state.json"
 HYPERLIQUID_TRADES_BUFFER_PATH = DATA_DIR / "hyperliquid_trades_buffer.jsonl"
+HYPERLIQUID_SCORING_STATE_PATH = DATA_DIR / "hyperliquid_scoring_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -185,6 +202,17 @@ def save_hyperliquid_trades_buffer(records: list[dict]) -> None:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
             f.write("\n")
+
+
+def load_hyperliquid_scoring_state() -> dict:
+    if not HYPERLIQUID_SCORING_STATE_PATH.exists():
+        return {}
+    return json.loads(HYPERLIQUID_SCORING_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_hyperliquid_scoring_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    HYPERLIQUID_SCORING_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
