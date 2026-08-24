@@ -31,6 +31,19 @@
     --bad-glow: #FF3B5C;
     --bad-soft: rgba(184, 37, 63, 0.16);
 
+    /* Regime (BULL/BEAR/NEUTRAL) - paleta CELOWO odrębna od LONG/SHORT (--good/--bad),
+       żeby dwie różne osie (sygnał vs regime) nigdy się wizualnie nie zlewały, nawet
+       gdy akurat wskazują ten sam kierunek. BULL reużywa --accent (już używany do ceny
+       i marki, semantycznie neutralny), BEAR dostaje nowy fiolet. */
+    --regime-bull: var(--accent);
+    --regime-bull-glow: var(--accent-glow);
+    --regime-bull-soft: var(--accent-soft);
+    --regime-bear: #7C5CFF;
+    --regime-bear-glow: #B7A3FF;
+    --regime-bear-soft: rgba(124, 92, 255, 0.16);
+    --regime-neutral: #8A8894;
+    --regime-neutral-soft: rgba(168, 166, 176, 0.12);
+
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.85);
 
     --font-display: 'Bebas Neue', 'Oswald', system-ui, sans-serif;
@@ -173,6 +186,13 @@
   }
   .chip--warn .chip-dot { background: var(--accent-glow); box-shadow: 0 0 8px var(--accent-glow); }
 
+  .chip--ok {
+    color: var(--good-glow);
+    border-color: color-mix(in srgb, var(--good) 45%, var(--border));
+    background: var(--good-soft);
+  }
+  .chip--ok .chip-dot { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
+
   /* ---------- hero ---------- */
   .hero {
     background: linear-gradient(165deg, var(--bg-elevated), var(--bg-elevated-2));
@@ -250,6 +270,92 @@
     0%, 100% { box-shadow: 0 0 14px -4px rgba(255, 59, 92, 0.35); }
     50% { box-shadow: 0 0 26px 0px rgba(255, 59, 92, 0.55); }
   }
+
+  /* Regime pill: KWADRATOWY znacznik (nie kółko) i BEZ pulsowania - celowo inny język
+     wizualny niż .pill (LONG/SHORT), żeby dwie różne osie nie wyglądały jak to samo. */
+  .regime-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+    padding: 7px 15px;
+    border-radius: 9px;
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: 0.05em;
+  }
+  .regime-pill::before { content: ''; width: 9px; height: 9px; border-radius: 3px; flex: none; }
+
+  .regime-pill--bull {
+    color: var(--regime-bull-glow);
+    background: var(--regime-bull-soft);
+    border: 1px solid color-mix(in srgb, var(--regime-bull) 55%, transparent);
+  }
+  .regime-pill--bull::before { background: var(--regime-bull-glow); box-shadow: 0 0 8px var(--regime-bull-glow); }
+
+  .regime-pill--bear {
+    color: var(--regime-bear-glow);
+    background: var(--regime-bear-soft);
+    border: 1px solid color-mix(in srgb, var(--regime-bear) 55%, transparent);
+  }
+  .regime-pill--bear::before { background: var(--regime-bear-glow); box-shadow: 0 0 8px var(--regime-bear-glow); }
+
+  .regime-pill--neutral {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+  }
+  .regime-pill--neutral::before { background: var(--text-muted); }
+
+  .regime-pill--none {
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed var(--border);
+  }
+  .regime-pill--none::before { background: var(--text-muted); }
+
+  /* Tug-of-war: bull vs bear score, znormalizowane do 100% szerokości (patrz JS - suma
+     bull+bear świadomie nie sięga 100, komponent Capital Flow jeszcze nieaktywny). */
+  .tow-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+  }
+  .tow-bull { height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--regime-bull) 65%, transparent), var(--regime-bull-glow)); }
+  .tow-bear { height: 100%; background: linear-gradient(90deg, var(--regime-bear-glow), color-mix(in srgb, var(--regime-bear) 65%, transparent)); }
+  .tow-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); margin-top: 7px; }
+  .tow-labels strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+  .regime-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  @media (max-width: 640px) { .regime-meta-grid { grid-template-columns: 1fr 1fr; } }
+
+  .flip-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .flip-chip {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 11px;
+  }
+  .flip-chip b { color: var(--text-primary); font-weight: 600; }
+  .flip-up { color: var(--regime-bull-glow); }
+  .flip-down { color: var(--regime-bear-glow); }
+
+  .caveat {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+  }
+  .caveat strong { color: var(--text-secondary); }
 
   .hero-price {
     font-family: var(--font-mono);
@@ -335,6 +441,18 @@
   .hover-dot { fill: var(--accent-glow); stroke: var(--bg-elevated); stroke-width: 2; opacity: 0; }
   .chart-overlay { fill: transparent; cursor: crosshair; }
 
+  /* ---------- regime ribbon + event markers (pod wykresem ceny, ten sam <svg>) ---------- */
+  .regime-band-bull { fill: var(--regime-bull); opacity: 0.55; }
+  .regime-band-bear { fill: var(--regime-bear); opacity: 0.55; }
+  .regime-band-neutral { fill: var(--regime-neutral); opacity: 0.32; }
+  .regime-band-none { fill: rgba(255, 255, 255, 0.035); }
+
+  .marker-start-bull { fill: var(--regime-bull-glow); }
+  .marker-start-bear { fill: var(--regime-bear-glow); }
+  .marker-end { fill: none; stroke: var(--text-muted); stroke-width: 1.4; }
+  .marker-special-bull { fill: var(--regime-bull-glow); stroke: var(--bg-elevated); stroke-width: 1; }
+  .marker-special-bear { fill: var(--regime-bear-glow); stroke: var(--bg-elevated); stroke-width: 1; }
+
   .tooltip {
     position: absolute;
     pointer-events: none;
@@ -387,6 +505,14 @@
   .row-pill.long::before { background: var(--good-glow); box-shadow: 0 0 6px var(--good-glow); }
   .row-pill.short { color: var(--bad-glow); background: var(--bad-soft); }
   .row-pill.short::before { background: var(--bad-glow); box-shadow: 0 0 6px var(--bad-glow); }
+  .row-pill.bull { color: var(--regime-bull-glow); background: var(--regime-bull-soft); }
+  .row-pill.bull::before { background: var(--regime-bull-glow); box-shadow: 0 0 6px var(--regime-bull-glow); }
+  .row-pill.bear { color: var(--regime-bear-glow); background: var(--regime-bear-soft); }
+  .row-pill.bear::before { background: var(--regime-bear-glow); box-shadow: 0 0 6px var(--regime-bear-glow); }
+  .row-pill.muted { color: var(--text-muted); background: rgba(255, 255, 255, 0.03); }
+  .row-pill.muted::before { background: var(--text-muted); }
+
+  .empty-state { padding: 26px 10px !important; text-align: center; color: var(--text-muted); font-size: 13px; }
 
   .pct.up { color: var(--good-glow); }
   .pct.down { color: var(--bad-glow); }
@@ -422,6 +548,7 @@
     </div>
     <div class="topbar-right">
       <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 USDC/WETH</span>
+      <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
 
@@ -468,12 +595,61 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-2">
+  <section class="card reveal reveal-2" id="regimeCard">
+    <div class="card-head">
+      <span class="card-title">Regime rynkowy</span>
+      <span class="card-note">BULL / BEAR / NEUTRAL &middot; niezależne od sygnału LONG/SHORT powyżej</span>
+    </div>
+    <div class="card-subnote">Osobny, wolniejszy tor detekcji reżimu rynku (presja dobrych/złych traderów, momentum wieloczasowe, capitulation/distribution) — może wskazywać inny kierunek niż aktywny sygnał LONG/SHORT. Eksperymentalne, w trakcie kalibracji.</div>
+
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <span class="regime-pill regime-pill--none" id="regimePill">BRAK DANYCH</span>
+      <span class="hero-meta" id="regimeEventNote"></span>
+    </div>
+
+    <div style="margin-top:18px;">
+      <div class="tow-track">
+        <div class="tow-bull" id="towBull" style="width:50%"></div>
+        <div class="tow-bear" id="towBear" style="width:50%"></div>
+      </div>
+      <div class="tow-labels">
+        <span>BYCZY <strong id="towBullVal">-</strong></span>
+        <span>NIEDŹWIEDZI <strong id="towBearVal">-</strong></span>
+      </div>
+    </div>
+
+    <div class="regime-meta-grid">
+      <div class="stat">
+        <span class="stat-label">Confidence</span>
+        <span class="stat-value" id="regimeConfidence">-</span>
+        <span class="stat-hint">heurystyka czytelności, nieskalibrowana</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Horyzont momentum</span>
+        <span class="stat-value" id="regimeHorizon">-</span>
+        <span class="stat-hint">najdłuższy dostępny w historii</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Historia danych</span>
+        <span class="stat-value" id="regimeMaturity">-</span>
+        <span class="stat-hint" id="regimeMaturityHint">świec zebranych do teraz</span>
+      </div>
+    </div>
+
+    <div class="flip-row" id="flipRow"></div>
+
+    <div class="caveat">
+      <strong>Uczciwie o ograniczeniach:</strong> suma BYCZY+NIEDŹWIEDZI świadomie nie sięga 100 — komponent Capital Flow (E) nie jest jeszcze aktywny (sufit 90). Progi i wagi to wartości startowe, nieprzestrojone jeszcze backtestem. Długie horyzonty momentum (7&ndash;30 dni) będą puste, dopóki nie zbierze się tyle historii.
+    </div>
+  </section>
+
+  <section class="card reveal reveal-3">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
     </div>
+    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź, by zobaczyć szczegóły danej świecy.</div>
     <div class="chart-wrap" id="mainChartWrap">
-      <svg class="chart" id="mainChart" viewBox="0 0 1000 300" preserveAspectRatio="none">
+      <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
         <defs>
           <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#FFC94A" stop-opacity="0.32"></stop>
@@ -485,7 +661,27 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-3">
+  <section class="card reveal reveal-3" id="eventLogCard">
+    <div class="card-head">
+      <span class="card-title">Zdarzenia regime</span>
+      <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
+    </div>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>Zdarzenie</th>
+            <th>Kiedy</th>
+            <th class="num">Cena</th>
+            <th class="num">Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="eventLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
       <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału</span>
@@ -515,11 +711,20 @@
 </div>
 
 <script>
-const DATA = {"candles":[{"block":25813749,"price":2418.23,"signal":"LONG","composite":1.5,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.0,"indBadLong":0.0,"goodBuyers":2,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":2,"active":75,"tracked":75,"time":"23.08.2026, 00:44","ts":1787438663},{"block":25813999,"price":2418.23,"signal":"LONG","composite":1.5,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.0,"indBadLong":0.0,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":1,"active":57,"tracked":120,"time":"23.08.2026, 01:34","ts":1787441675},{"block":25814249,"price":2426.56,"signal":"LONG","composite":1.212,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.25,"indBadLong":0.077,"goodBuyers":3,"goodSellers":0,"badBuyers":1,"badSellers":1,"pool":3,"active":81,"tracked":186,"time":"23.08.2026, 02:24","ts":1787444675},{"block":25814499,"price":2428.1,"signal":"LONG","composite":0.189,"indGoodShort":0.5,"indGoodLong":0.846,"indBadShort":0.625,"indBadLong":0.219,"goodBuyers":0,"goodSellers":2,"badBuyers":2,"badSellers":0,"pool":2,"active":71,"tracked":242,"time":"23.08.2026, 03:14","ts":1787447675},{"block":25814749,"price":2423.67,"signal":"SHORT","composite":-0.086,"indGoodShort":0.25,"indGoodLong":0.716,"indBadShort":0.562,"indBadLong":0.262,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":0,"pool":1,"active":131,"tracked":352,"time":"23.08.2026, 04:04","ts":1787450675},{"block":25814999,"price":2421.62,"signal":"LONG","composite":0.324,"indGoodShort":0.625,"indGoodLong":0.76,"indBadShort":0.531,"indBadLong":0.299,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":1,"active":45,"tracked":385,"time":"23.08.2026, 04:54","ts":1787453687},{"block":25815249,"price":2411.35,"signal":"LONG","composite":0.242,"indGoodShort":0.312,"indGoodLong":0.643,"indBadShort":0.266,"indBadLong":0.253,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":1,"pool":1,"active":60,"tracked":427,"time":"23.08.2026, 05:45","ts":1787456723},{"block":25815499,"price":2406.28,"signal":"LONG","composite":0.765,"indGoodShort":0.656,"indGoodLong":0.698,"indBadShort":0.133,"indBadLong":0.214,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":2,"pool":1,"active":28,"tracked":441,"time":"23.08.2026, 06:35","ts":1787459735},{"block":25815749,"price":2364.38,"signal":"LONG","composite":1.043,"indGoodShort":0.828,"indGoodLong":0.744,"indBadShort":0.066,"indBadLong":0.181,"goodBuyers":3,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":3,"active":55,"tracked":478,"time":"23.08.2026, 07:25","ts":1787462747},{"block":25815999,"price":2374.69,"signal":"LONG","composite":0.908,"indGoodShort":0.664,"indGoodLong":0.707,"indBadShort":0.033,"indBadLong":0.153,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":2,"pool":2,"active":44,"tracked":504,"time":"23.08.2026, 08:15","ts":1787465747},{"block":25816249,"price":2393.06,"signal":"LONG","composite":0.838,"indGoodShort":0.832,"indGoodLong":0.752,"indBadShort":0.267,"indBadLong":0.207,"goodBuyers":2,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":2,"active":10,"tracked":506,"time":"23.08.2026, 09:05","ts":1787468747},{"block":25817249,"price":2417.97,"signal":"LONG","composite":0.225,"indGoodShort":0.416,"indGoodLong":0.636,"indBadShort":0.383,"indBadLong":0.252,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":0,"pool":1,"active":21,"tracked":519,"time":"23.08.2026, 12:26","ts":1787480783},{"block":25817499,"price":2415.59,"signal":"LONG","composite":0.467,"indGoodShort":0.458,"indGoodLong":0.615,"indBadShort":0.192,"indBadLong":0.213,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":2,"pool":2,"active":55,"tracked":556,"time":"23.08.2026, 13:16","ts":1787483795},{"block":25817749,"price":2426.01,"signal":"LONG","composite":0.448,"indGoodShort":0.604,"indGoodLong":0.636,"indBadShort":0.346,"indBadLong":0.257,"goodBuyers":3,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":4,"active":58,"tracked":595,"time":"23.08.2026, 14:06","ts":1787486795},{"block":25817999,"price":2426.94,"signal":"LONG","composite":0.001,"indGoodShort":0.552,"indGoodLong":0.615,"indBadShort":0.673,"indBadLong":0.371,"goodBuyers":0,"goodSellers":0,"badBuyers":2,"badSellers":0,"pool":0,"active":55,"tracked":629,"time":"23.08.2026, 14:56","ts":1787489807},{"block":25818249,"price":2454.56,"signal":"SHORT","composite":-0.15,"indGoodShort":0.443,"indGoodLong":0.572,"indBadShort":0.67,"indBadLong":0.417,"goodBuyers":1,"goodSellers":2,"badBuyers":2,"badSellers":1,"pool":3,"active":101,"tracked":704,"time":"23.08.2026, 15:46","ts":1787492807},{"block":25818499,"price":2452.24,"signal":"LONG","composite":0.24,"indGoodShort":0.471,"indGoodLong":0.561,"indBadShort":0.335,"indBadLong":0.353,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":4,"pool":2,"active":56,"tracked":742,"time":"23.08.2026, 16:37","ts":1787495831},{"block":25818749,"price":2434.93,"signal":"SHORT","composite":-0.132,"indGoodShort":0.486,"indGoodLong":0.551,"indBadShort":0.667,"indBadLong":0.452,"goodBuyers":0,"goodSellers":0,"badBuyers":4,"badSellers":0,"pool":0,"active":79,"tracked":787,"time":"23.08.2026, 17:27","ts":1787498843},{"block":25818999,"price":2445.41,"signal":"LONG","composite":0.336,"indGoodShort":0.743,"indGoodLong":0.62,"indBadShort":0.5,"indBadLong":0.434,"goodBuyers":2,"goodSellers":0,"badBuyers":1,"badSellers":2,"pool":2,"active":36,"tracked":807,"time":"23.08.2026, 18:17","ts":1787501843},{"block":25819249,"price":2444.35,"signal":"LONG","composite":0.777,"indGoodShort":0.871,"indGoodLong":0.679,"indBadShort":0.25,"indBadLong":0.367,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":1,"active":16,"tracked":816,"time":"23.08.2026, 19:07","ts":1787504855},{"block":25819499,"price":2442.15,"signal":"LONG","composite":0.154,"indGoodShort":0.686,"indGoodLong":0.651,"indBadShort":0.625,"indBadLong":0.465,"goodBuyers":0,"goodSellers":0,"badBuyers":1,"badSellers":0,"pool":0,"active":19,"tracked":825,"time":"23.08.2026, 19:57","ts":1787507855},{"block":25819749,"price":2445.91,"signal":"LONG","composite":0.109,"indGoodShort":0.593,"indGoodLong":0.628,"indBadShort":0.563,"indBadLong":0.47,"goodBuyers":1,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":2,"active":42,"tracked":846,"time":"23.08.2026, 20:47","ts":1787510855},{"block":25819999,"price":2446.77,"signal":"LONG","composite":0.082,"indGoodShort":0.546,"indGoodLong":0.608,"indBadShort":0.531,"indBadLong":0.475,"goodBuyers":0,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":0,"active":5,"tracked":849,"time":"23.08.2026, 21:37","ts":1787513879},{"block":25820249,"price":2446.19,"signal":"SHORT","composite":-0.32,"indGoodShort":0.273,"indGoodLong":0.515,"indBadShort":0.599,"indBadLong":0.504,"goodBuyers":0,"goodSellers":2,"badBuyers":4,"badSellers":2,"pool":2,"active":127,"tracked":935,"time":"23.08.2026, 22:28","ts":1787516903,"goodPressure":-1.0,"badPressure":-0.1129,"divergence":-0.8871,"breadth":0.0,"momentum_1h_good":-1.0,"momentum_1h_bad":-0.1129,"momentum_1h_divergence":-0.8871,"momentum_4h_good":-1.0,"momentum_4h_bad":-0.1129,"momentum_4h_divergence":-0.8871,"momentum_12h_good":-1.0,"momentum_12h_bad":-0.1129,"momentum_12h_divergence":-0.8871,"momentum_1d_good":-1.0,"momentum_1d_bad":-0.1129,"momentum_1d_divergence":-0.8871,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null},{"block":25820499,"price":2472.78,"signal":"SHORT","composite":-0.11,"indGoodShort":0.512,"indGoodLong":0.551,"indBadShort":0.633,"indBadLong":0.529,"goodBuyers":3,"goodSellers":1,"badBuyers":4,"badSellers":2,"pool":4,"active":175,"tracked":1040,"time":"23.08.2026, 23:18","ts":1787519927,"goodPressure":0.9579,"badPressure":0.6351,"divergence":0.3229,"breadth":0.75,"momentum_1h_good":1.9579,"momentum_1h_bad":0.748,"momentum_1h_divergence":1.21,"momentum_4h_good":0.9579,"momentum_4h_bad":0.6351,"momentum_4h_divergence":0.3229,"momentum_12h_good":0.9579,"momentum_12h_bad":0.6351,"momentum_12h_divergence":0.3229,"momentum_1d_good":0.9579,"momentum_1d_bad":0.6351,"momentum_1d_divergence":0.3229,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":63.91,"bearScore":26.09,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":62.2,"regimeMomentumHorizon":"1d"},{"block":25820749,"price":2461.3,"signal":"LONG","composite":0.309,"indGoodShort":0.756,"indGoodLong":0.62,"indBadShort":0.504,"indBadLong":0.505,"goodBuyers":5,"goodSellers":0,"badBuyers":3,"badSellers":5,"pool":5,"active":255,"tracked":1191,"time":"24.08.2026, 00:08","ts":1787522927,"goodPressure":0.804,"badPressure":-0.6096,"divergence":1.4136,"breadth":1.0,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":1,"badBearishFlips":0,"momentum_1h_good":-0.1539,"momentum_1h_bad":-1.2447,"momentum_1h_divergence":1.0907,"momentum_4h_good":0.804,"momentum_4h_bad":-0.6096,"momentum_4h_divergence":1.4136,"momentum_12h_good":0.804,"momentum_12h_bad":-0.6096,"momentum_12h_divergence":1.4136,"momentum_1d_good":0.804,"momentum_1d_bad":-0.6096,"momentum_1d_divergence":1.4136,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":79.49,"bearScore":10.51,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":31.0,"regimeMomentumHorizon":"1d","specialEvent":"CAPITULATION","specialEventConfidence":51.1},{"block":25820999,"price":2451.93,"signal":"LONG","composite":0.422,"indGoodShort":0.878,"indGoodLong":0.678,"indBadShort":0.538,"indBadLong":0.516,"goodBuyers":1,"goodSellers":0,"badBuyers":4,"badSellers":3,"pool":1,"active":147,"tracked":1271,"time":"24.08.2026, 00:58","ts":1787525927,"goodPressure":1.0,"badPressure":-0.1457,"divergence":1.1457,"breadth":1.0,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":3,"badBearishFlips":1,"momentum_1h_good":0.196,"momentum_1h_bad":0.4639,"momentum_1h_divergence":-0.2679,"momentum_4h_good":1.0,"momentum_4h_bad":-0.1457,"momentum_4h_divergence":1.1457,"momentum_12h_good":1.0,"momentum_12h_bad":-0.1457,"momentum_12h_divergence":1.1457,"momentum_1d_good":1.0,"momentum_1d_bad":-0.1457,"momentum_1d_divergence":1.1457,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":78.25,"bearScore":11.75,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":33.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821249,"price":2457.66,"signal":"LONG","composite":0.143,"indGoodShort":0.606,"indGoodLong":0.625,"indBadShort":0.519,"indBadLong":0.513,"goodBuyers":2,"goodSellers":4,"badBuyers":2,"badSellers":2,"pool":6,"active":180,"tracked":1358,"time":"24.08.2026, 01:48","ts":1787528927,"goodPressure":-0.9956,"badPressure":0.0613,"divergence":-1.0569,"breadth":0.3333,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":1,"badBearishFlips":1,"momentum_1h_good":-1.9956,"momentum_1h_bad":0.207,"momentum_1h_divergence":-2.2026,"momentum_4h_good":0.0044,"momentum_4h_bad":0.1742,"momentum_4h_divergence":-0.1698,"momentum_12h_good":-0.9956,"momentum_12h_bad":0.0613,"momentum_12h_divergence":-1.0569,"momentum_1d_good":-0.9956,"momentum_1d_bad":0.0613,"momentum_1d_divergence":-1.0569,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":16.36,"bearScore":73.64,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":42.7,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821499,"price":2454.03,"signal":"LONG","composite":0.187,"indGoodShort":0.636,"indGoodLong":0.632,"indBadShort":0.509,"indBadLong":0.511,"goodBuyers":2,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":3,"active":106,"tracked":1411,"time":"24.08.2026, 02:39","ts":1787531951,"goodPressure":-0.274,"badPressure":-1.0,"divergence":0.7259,"breadth":0.6667,"goodBullishFlips":1,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":0.7216,"momentum_1h_bad":-1.0613,"momentum_1h_divergence":1.7828,"momentum_4h_good":-1.2319,"momentum_4h_bad":-1.6351,"momentum_4h_divergence":0.403,"momentum_12h_good":-0.274,"momentum_12h_bad":-1.0,"momentum_12h_divergence":0.7259,"momentum_1d_good":-0.274,"momentum_1d_bad":-1.0,"momentum_1d_divergence":0.7259,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":53.22,"bearScore":36.78,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":83.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821749,"price":2445.81,"signal":"SHORT","composite":-0.27,"indGoodShort":0.485,"indGoodLong":0.586,"indBadShort":0.755,"indBadLong":0.586,"goodBuyers":1,"goodSellers":2,"badBuyers":2,"badSellers":0,"pool":3,"active":92,"tracked":1447,"time":"24.08.2026, 03:29","ts":1787534951,"goodPressure":0.2183,"badPressure":1.0,"divergence":-0.7817,"breadth":0.3333,"goodBullishFlips":1,"goodBearishFlips":1,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":0.4923,"momentum_1h_bad":2.0,"momentum_1h_divergence":-1.5076,"momentum_4h_good":-0.5857,"momentum_4h_bad":1.6096,"momentum_4h_divergence":-2.1953,"momentum_12h_good":0.2183,"momentum_12h_bad":1.0,"momentum_12h_divergence":-0.7817,"momentum_1d_good":0.2183,"momentum_1d_bad":1.0,"momentum_1d_divergence":-0.7817,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":35.31,"bearScore":54.69,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":80.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821999,"price":2445.43,"signal":"SHORT","composite":-0.481,"indGoodShort":0.442,"indGoodLong":0.557,"indBadShort":0.877,"indBadLong":0.65,"goodBuyers":2,"goodSellers":3,"badBuyers":4,"badSellers":0,"pool":5,"active":115,"tracked":1498,"time":"24.08.2026, 04:19","ts":1787537963,"goodPressure":-0.5159,"badPressure":1.0,"divergence":-1.5159,"breadth":0.4,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":-0.7342,"momentum_1h_bad":0.0,"momentum_1h_divergence":-0.7342,"momentum_4h_good":-1.5159,"momentum_4h_bad":1.1457,"momentum_4h_divergence":-2.6616,"momentum_12h_good":-0.5159,"momentum_12h_bad":1.0,"momentum_12h_divergence":-1.5159,"momentum_1d_good":-0.5159,"momentum_1d_bad":1.0,"momentum_1d_divergence":-1.5159,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":16.71,"bearScore":73.29,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":43.4,"regimeMomentumHorizon":"1d","specialEvent":"DISTRIBUTION","specialEventConfidence":69.7},{"block":25822249,"price":2439.05,"signal":"SHORT","composite":-0.113,"indGoodShort":0.471,"indGoodLong":0.548,"indBadShort":0.564,"indBadLong":0.588,"goodBuyers":0,"goodSellers":0,"badBuyers":1,"badSellers":3,"pool":0,"active":64,"tracked":1527,"time":"24.08.2026, 05:09","ts":1787540975,"goodPressure":0.0,"badPressure":-0.9988,"divergence":0.9988,"breadth":0.5,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.5159,"momentum_1h_bad":-1.9988,"momentum_1h_divergence":2.5147,"momentum_4h_good":0.9956,"momentum_4h_bad":-1.0601,"momentum_4h_divergence":2.0557,"momentum_12h_good":0.0,"momentum_12h_bad":-0.9988,"momentum_12h_divergence":0.9988,"momentum_1d_good":0.0,"momentum_1d_bad":-0.9988,"momentum_1d_divergence":0.9988,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":58.73,"bearScore":31.27,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":72.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822499,"price":2431.03,"signal":"SHORT","composite":-0.005,"indGoodShort":0.536,"indGoodLong":0.556,"indBadShort":0.532,"indBadLong":0.575,"goodBuyers":3,"goodSellers":2,"badBuyers":1,"badSellers":1,"pool":5,"active":98,"tracked":1569,"time":"24.08.2026, 05:59","ts":1787543987,"goodPressure":0.996,"badPressure":-0.3305,"divergence":1.3264,"breadth":0.6,"goodBullishFlips":1,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.996,"momentum_1h_bad":0.6683,"momentum_1h_divergence":0.3276,"momentum_4h_good":1.27,"momentum_4h_bad":0.6695,"momentum_4h_divergence":0.6005,"momentum_12h_good":0.996,"momentum_12h_bad":-0.3305,"momentum_12h_divergence":1.3264,"momentum_1d_good":0.996,"momentum_1d_bad":-0.3305,"momentum_1d_divergence":1.3264,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":76.69,"bearScore":13.31,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":36.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822749,"price":2438.42,"signal":"SHORT","composite":-0.294,"indGoodShort":0.268,"indGoodLong":0.471,"indBadShort":0.516,"indBadLong":0.563,"goodBuyers":0,"goodSellers":3,"badBuyers":0,"badSellers":0,"pool":3,"active":94,"tracked":1616,"time":"24.08.2026, 06:49","ts":1787546987,"goodPressure":-1.0,"badPressure":0.0,"divergence":-1.0,"breadth":0.0,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":-1.996,"momentum_1h_bad":0.3305,"momentum_1h_divergence":-2.3264,"momentum_4h_good":-1.2183,"momentum_4h_bad":-1.0,"momentum_4h_divergence":-0.2183,"momentum_12h_good":-1.0,"momentum_12h_bad":0.0,"momentum_12h_divergence":-1.0,"momentum_1d_good":-1.0,"momentum_1d_bad":0.0,"momentum_1d_divergence":-1.0,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":13.75,"bearScore":76.25,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":37.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822999,"price":2448.12,"signal":"SHORT","composite":-0.108,"indGoodShort":0.467,"indGoodLong":0.501,"indBadShort":0.544,"indBadLong":0.565,"goodBuyers":2,"goodSellers":1,"badBuyers":4,"badSellers":3,"pool":3,"active":105,"tracked":1659,"time":"24.08.2026, 07:40","ts":1787550011,"goodPressure":-0.6673,"badPressure":0.3794,"divergence":-1.0467,"breadth":0.6667,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.3327,"momentum_1h_bad":0.3794,"momentum_1h_divergence":-0.0467,"momentum_4h_good":-0.1514,"momentum_4h_bad":-0.6206,"momentum_4h_divergence":0.4692,"momentum_12h_good":-0.6673,"momentum_12h_bad":0.3794,"momentum_12h_divergence":-1.0467,"momentum_1d_good":-0.6673,"momentum_1d_bad":0.3794,"momentum_1d_divergence":-1.0467,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":23.93,"bearScore":66.07,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":57.9,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0}],"streaks":[{"signal":"SHORT","startBlock":25821749,"startPrice":2445.81,"endBlock":25822999,"endPrice":2448.12,"pct":0.09,"startTime":"24.08.2026, 03:29","endTime":"24.08.2026, 07:40"},{"signal":"LONG","startBlock":25820749,"startPrice":2461.3,"endBlock":25821499,"endPrice":2454.03,"pct":-0.3,"startTime":"24.08.2026, 00:08","endTime":"24.08.2026, 02:39"},{"signal":"SHORT","startBlock":25820249,"startPrice":2446.19,"endBlock":25820499,"endPrice":2472.78,"pct":1.09,"startTime":"23.08.2026, 22:28","endTime":"23.08.2026, 23:18"},{"signal":"LONG","startBlock":25818999,"startPrice":2445.41,"endBlock":25819999,"endPrice":2446.77,"pct":0.06,"startTime":"23.08.2026, 18:17","endTime":"23.08.2026, 21:37"},{"signal":"SHORT","startBlock":25818749,"startPrice":2434.93,"endBlock":25818749,"endPrice":2434.93,"pct":0.0,"startTime":"23.08.2026, 17:27","endTime":"23.08.2026, 17:27"},{"signal":"LONG","startBlock":25818499,"startPrice":2452.24,"endBlock":25818499,"endPrice":2452.24,"pct":0.0,"startTime":"23.08.2026, 16:37","endTime":"23.08.2026, 16:37"},{"signal":"SHORT","startBlock":25818249,"startPrice":2454.56,"endBlock":25818249,"endPrice":2454.56,"pct":0.0,"startTime":"23.08.2026, 15:46","endTime":"23.08.2026, 15:46"},{"signal":"LONG","startBlock":25814999,"startPrice":2421.62,"endBlock":25817999,"endPrice":2426.94,"pct":0.22,"startTime":"23.08.2026, 04:54","endTime":"23.08.2026, 14:56"},{"signal":"SHORT","startBlock":25814749,"startPrice":2423.67,"endBlock":25814749,"endPrice":2423.67,"pct":0.0,"startTime":"23.08.2026, 04:04","endTime":"23.08.2026, 04:04"},{"signal":"LONG","startBlock":25813749,"startPrice":2418.23,"endBlock":25814499,"endPrice":2428.1,"pct":0.41,"startTime":"23.08.2026, 00:44","endTime":"23.08.2026, 03:14"}]};
+const DATA = {"candles":[{"block":25813749,"price":2418.23,"signal":"LONG","composite":1.5,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.0,"indBadLong":0.0,"goodBuyers":2,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":2,"active":75,"tracked":75,"time":"23.08.2026, 00:44","ts":1787438663},{"block":25813999,"price":2418.23,"signal":"LONG","composite":1.5,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.0,"indBadLong":0.0,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":1,"active":57,"tracked":120,"time":"23.08.2026, 01:34","ts":1787441675},{"block":25814249,"price":2426.56,"signal":"LONG","composite":1.212,"indGoodShort":1.0,"indGoodLong":1.0,"indBadShort":0.25,"indBadLong":0.077,"goodBuyers":3,"goodSellers":0,"badBuyers":1,"badSellers":1,"pool":3,"active":81,"tracked":186,"time":"23.08.2026, 02:24","ts":1787444675},{"block":25814499,"price":2428.1,"signal":"LONG","composite":0.189,"indGoodShort":0.5,"indGoodLong":0.846,"indBadShort":0.625,"indBadLong":0.219,"goodBuyers":0,"goodSellers":2,"badBuyers":2,"badSellers":0,"pool":2,"active":71,"tracked":242,"time":"23.08.2026, 03:14","ts":1787447675},{"block":25814749,"price":2423.67,"signal":"SHORT","composite":-0.086,"indGoodShort":0.25,"indGoodLong":0.716,"indBadShort":0.562,"indBadLong":0.262,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":0,"pool":1,"active":131,"tracked":352,"time":"23.08.2026, 04:04","ts":1787450675},{"block":25814999,"price":2421.62,"signal":"LONG","composite":0.324,"indGoodShort":0.625,"indGoodLong":0.76,"indBadShort":0.531,"indBadLong":0.299,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":1,"active":45,"tracked":385,"time":"23.08.2026, 04:54","ts":1787453687},{"block":25815249,"price":2411.35,"signal":"LONG","composite":0.242,"indGoodShort":0.312,"indGoodLong":0.643,"indBadShort":0.266,"indBadLong":0.253,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":1,"pool":1,"active":60,"tracked":427,"time":"23.08.2026, 05:45","ts":1787456723},{"block":25815499,"price":2406.28,"signal":"LONG","composite":0.765,"indGoodShort":0.656,"indGoodLong":0.698,"indBadShort":0.133,"indBadLong":0.214,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":2,"pool":1,"active":28,"tracked":441,"time":"23.08.2026, 06:35","ts":1787459735},{"block":25815749,"price":2364.38,"signal":"LONG","composite":1.043,"indGoodShort":0.828,"indGoodLong":0.744,"indBadShort":0.066,"indBadLong":0.181,"goodBuyers":3,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":3,"active":55,"tracked":478,"time":"23.08.2026, 07:25","ts":1787462747},{"block":25815999,"price":2374.69,"signal":"LONG","composite":0.908,"indGoodShort":0.664,"indGoodLong":0.707,"indBadShort":0.033,"indBadLong":0.153,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":2,"pool":2,"active":44,"tracked":504,"time":"23.08.2026, 08:15","ts":1787465747},{"block":25816249,"price":2393.06,"signal":"LONG","composite":0.838,"indGoodShort":0.832,"indGoodLong":0.752,"indBadShort":0.267,"indBadLong":0.207,"goodBuyers":2,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":2,"active":10,"tracked":506,"time":"23.08.2026, 09:05","ts":1787468747},{"block":25817249,"price":2417.97,"signal":"LONG","composite":0.225,"indGoodShort":0.416,"indGoodLong":0.636,"indBadShort":0.383,"indBadLong":0.252,"goodBuyers":0,"goodSellers":1,"badBuyers":0,"badSellers":0,"pool":1,"active":21,"tracked":519,"time":"23.08.2026, 12:26","ts":1787480783},{"block":25817499,"price":2415.59,"signal":"LONG","composite":0.467,"indGoodShort":0.458,"indGoodLong":0.615,"indBadShort":0.192,"indBadLong":0.213,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":2,"pool":2,"active":55,"tracked":556,"time":"23.08.2026, 13:16","ts":1787483795},{"block":25817749,"price":2426.01,"signal":"LONG","composite":0.448,"indGoodShort":0.604,"indGoodLong":0.636,"indBadShort":0.346,"indBadLong":0.257,"goodBuyers":3,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":4,"active":58,"tracked":595,"time":"23.08.2026, 14:06","ts":1787486795},{"block":25817999,"price":2426.94,"signal":"LONG","composite":0.001,"indGoodShort":0.552,"indGoodLong":0.615,"indBadShort":0.673,"indBadLong":0.371,"goodBuyers":0,"goodSellers":0,"badBuyers":2,"badSellers":0,"pool":0,"active":55,"tracked":629,"time":"23.08.2026, 14:56","ts":1787489807},{"block":25818249,"price":2454.56,"signal":"SHORT","composite":-0.15,"indGoodShort":0.443,"indGoodLong":0.572,"indBadShort":0.67,"indBadLong":0.417,"goodBuyers":1,"goodSellers":2,"badBuyers":2,"badSellers":1,"pool":3,"active":101,"tracked":704,"time":"23.08.2026, 15:46","ts":1787492807},{"block":25818499,"price":2452.24,"signal":"LONG","composite":0.24,"indGoodShort":0.471,"indGoodLong":0.561,"indBadShort":0.335,"indBadLong":0.353,"goodBuyers":1,"goodSellers":1,"badBuyers":0,"badSellers":4,"pool":2,"active":56,"tracked":742,"time":"23.08.2026, 16:37","ts":1787495831},{"block":25818749,"price":2434.93,"signal":"SHORT","composite":-0.132,"indGoodShort":0.486,"indGoodLong":0.551,"indBadShort":0.667,"indBadLong":0.452,"goodBuyers":0,"goodSellers":0,"badBuyers":4,"badSellers":0,"pool":0,"active":79,"tracked":787,"time":"23.08.2026, 17:27","ts":1787498843},{"block":25818999,"price":2445.41,"signal":"LONG","composite":0.336,"indGoodShort":0.743,"indGoodLong":0.62,"indBadShort":0.5,"indBadLong":0.434,"goodBuyers":2,"goodSellers":0,"badBuyers":1,"badSellers":2,"pool":2,"active":36,"tracked":807,"time":"23.08.2026, 18:17","ts":1787501843},{"block":25819249,"price":2444.35,"signal":"LONG","composite":0.777,"indGoodShort":0.871,"indGoodLong":0.679,"indBadShort":0.25,"indBadLong":0.367,"goodBuyers":1,"goodSellers":0,"badBuyers":0,"badSellers":1,"pool":1,"active":16,"tracked":816,"time":"23.08.2026, 19:07","ts":1787504855},{"block":25819499,"price":2442.15,"signal":"LONG","composite":0.154,"indGoodShort":0.686,"indGoodLong":0.651,"indBadShort":0.625,"indBadLong":0.465,"goodBuyers":0,"goodSellers":0,"badBuyers":1,"badSellers":0,"pool":0,"active":19,"tracked":825,"time":"23.08.2026, 19:57","ts":1787507855},{"block":25819749,"price":2445.91,"signal":"LONG","composite":0.109,"indGoodShort":0.593,"indGoodLong":0.628,"indBadShort":0.563,"indBadLong":0.47,"goodBuyers":1,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":2,"active":42,"tracked":846,"time":"23.08.2026, 20:47","ts":1787510855},{"block":25819999,"price":2446.77,"signal":"LONG","composite":0.082,"indGoodShort":0.546,"indGoodLong":0.608,"indBadShort":0.531,"indBadLong":0.475,"goodBuyers":0,"goodSellers":0,"badBuyers":0,"badSellers":0,"pool":0,"active":5,"tracked":849,"time":"23.08.2026, 21:37","ts":1787513879},{"block":25820249,"price":2446.19,"signal":"SHORT","composite":-0.32,"indGoodShort":0.273,"indGoodLong":0.515,"indBadShort":0.599,"indBadLong":0.504,"goodBuyers":0,"goodSellers":2,"badBuyers":4,"badSellers":2,"pool":2,"active":127,"tracked":935,"time":"23.08.2026, 22:28","ts":1787516903,"goodPressure":-1.0,"badPressure":-0.1129,"divergence":-0.8871,"breadth":0.0,"momentum_1h_good":-1.0,"momentum_1h_bad":-0.1129,"momentum_1h_divergence":-0.8871,"momentum_4h_good":-1.0,"momentum_4h_bad":-0.1129,"momentum_4h_divergence":-0.8871,"momentum_12h_good":-1.0,"momentum_12h_bad":-0.1129,"momentum_12h_divergence":-0.8871,"momentum_1d_good":-1.0,"momentum_1d_bad":-0.1129,"momentum_1d_divergence":-0.8871,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null},{"block":25820499,"price":2472.78,"signal":"SHORT","composite":-0.11,"indGoodShort":0.512,"indGoodLong":0.551,"indBadShort":0.633,"indBadLong":0.529,"goodBuyers":3,"goodSellers":1,"badBuyers":4,"badSellers":2,"pool":4,"active":175,"tracked":1040,"time":"23.08.2026, 23:18","ts":1787519927,"goodPressure":0.9579,"badPressure":0.6351,"divergence":0.3229,"breadth":0.75,"momentum_1h_good":1.9579,"momentum_1h_bad":0.748,"momentum_1h_divergence":1.21,"momentum_4h_good":0.9579,"momentum_4h_bad":0.6351,"momentum_4h_divergence":0.3229,"momentum_12h_good":0.9579,"momentum_12h_bad":0.6351,"momentum_12h_divergence":0.3229,"momentum_1d_good":0.9579,"momentum_1d_bad":0.6351,"momentum_1d_divergence":0.3229,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":63.91,"bearScore":26.09,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":62.2,"regimeMomentumHorizon":"1d"},{"block":25820749,"price":2461.3,"signal":"LONG","composite":0.309,"indGoodShort":0.756,"indGoodLong":0.62,"indBadShort":0.504,"indBadLong":0.505,"goodBuyers":5,"goodSellers":0,"badBuyers":3,"badSellers":5,"pool":5,"active":255,"tracked":1191,"time":"24.08.2026, 00:08","ts":1787522927,"goodPressure":0.804,"badPressure":-0.6096,"divergence":1.4136,"breadth":1.0,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":1,"badBearishFlips":0,"momentum_1h_good":-0.1539,"momentum_1h_bad":-1.2447,"momentum_1h_divergence":1.0907,"momentum_4h_good":0.804,"momentum_4h_bad":-0.6096,"momentum_4h_divergence":1.4136,"momentum_12h_good":0.804,"momentum_12h_bad":-0.6096,"momentum_12h_divergence":1.4136,"momentum_1d_good":0.804,"momentum_1d_bad":-0.6096,"momentum_1d_divergence":1.4136,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":79.49,"bearScore":10.51,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":31.0,"regimeMomentumHorizon":"1d","specialEvent":"CAPITULATION","specialEventConfidence":51.1},{"block":25820999,"price":2451.93,"signal":"LONG","composite":0.422,"indGoodShort":0.878,"indGoodLong":0.678,"indBadShort":0.538,"indBadLong":0.516,"goodBuyers":1,"goodSellers":0,"badBuyers":4,"badSellers":3,"pool":1,"active":147,"tracked":1271,"time":"24.08.2026, 00:58","ts":1787525927,"goodPressure":1.0,"badPressure":-0.1457,"divergence":1.1457,"breadth":1.0,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":3,"badBearishFlips":1,"momentum_1h_good":0.196,"momentum_1h_bad":0.4639,"momentum_1h_divergence":-0.2679,"momentum_4h_good":1.0,"momentum_4h_bad":-0.1457,"momentum_4h_divergence":1.1457,"momentum_12h_good":1.0,"momentum_12h_bad":-0.1457,"momentum_12h_divergence":1.1457,"momentum_1d_good":1.0,"momentum_1d_bad":-0.1457,"momentum_1d_divergence":1.1457,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":78.25,"bearScore":11.75,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":33.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821249,"price":2457.66,"signal":"LONG","composite":0.143,"indGoodShort":0.606,"indGoodLong":0.625,"indBadShort":0.519,"indBadLong":0.513,"goodBuyers":2,"goodSellers":4,"badBuyers":2,"badSellers":2,"pool":6,"active":180,"tracked":1358,"time":"24.08.2026, 01:48","ts":1787528927,"goodPressure":-0.9956,"badPressure":0.0613,"divergence":-1.0569,"breadth":0.3333,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":1,"badBearishFlips":1,"momentum_1h_good":-1.9956,"momentum_1h_bad":0.207,"momentum_1h_divergence":-2.2026,"momentum_4h_good":0.0044,"momentum_4h_bad":0.1742,"momentum_4h_divergence":-0.1698,"momentum_12h_good":-0.9956,"momentum_12h_bad":0.0613,"momentum_12h_divergence":-1.0569,"momentum_1d_good":-0.9956,"momentum_1d_bad":0.0613,"momentum_1d_divergence":-1.0569,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":16.36,"bearScore":73.64,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":42.7,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821499,"price":2454.03,"signal":"LONG","composite":0.187,"indGoodShort":0.636,"indGoodLong":0.632,"indBadShort":0.509,"indBadLong":0.511,"goodBuyers":2,"goodSellers":1,"badBuyers":1,"badSellers":1,"pool":3,"active":106,"tracked":1411,"time":"24.08.2026, 02:39","ts":1787531951,"goodPressure":-0.274,"badPressure":-1.0,"divergence":0.7259,"breadth":0.6667,"goodBullishFlips":1,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":0.7216,"momentum_1h_bad":-1.0613,"momentum_1h_divergence":1.7828,"momentum_4h_good":-1.2319,"momentum_4h_bad":-1.6351,"momentum_4h_divergence":0.403,"momentum_12h_good":-0.274,"momentum_12h_bad":-1.0,"momentum_12h_divergence":0.7259,"momentum_1d_good":-0.274,"momentum_1d_bad":-1.0,"momentum_1d_divergence":0.7259,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":53.22,"bearScore":36.78,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":83.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821749,"price":2445.81,"signal":"SHORT","composite":-0.27,"indGoodShort":0.485,"indGoodLong":0.586,"indBadShort":0.755,"indBadLong":0.586,"goodBuyers":1,"goodSellers":2,"badBuyers":2,"badSellers":0,"pool":3,"active":92,"tracked":1447,"time":"24.08.2026, 03:29","ts":1787534951,"goodPressure":0.2183,"badPressure":1.0,"divergence":-0.7817,"breadth":0.3333,"goodBullishFlips":1,"goodBearishFlips":1,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":0.4923,"momentum_1h_bad":2.0,"momentum_1h_divergence":-1.5076,"momentum_4h_good":-0.5857,"momentum_4h_bad":1.6096,"momentum_4h_divergence":-2.1953,"momentum_12h_good":0.2183,"momentum_12h_bad":1.0,"momentum_12h_divergence":-0.7817,"momentum_1d_good":0.2183,"momentum_1d_bad":1.0,"momentum_1d_divergence":-0.7817,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":35.31,"bearScore":54.69,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":80.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25821999,"price":2445.43,"signal":"SHORT","composite":-0.481,"indGoodShort":0.442,"indGoodLong":0.557,"indBadShort":0.877,"indBadLong":0.65,"goodBuyers":2,"goodSellers":3,"badBuyers":4,"badSellers":0,"pool":5,"active":115,"tracked":1498,"time":"24.08.2026, 04:19","ts":1787537963,"goodPressure":-0.5159,"badPressure":1.0,"divergence":-1.5159,"breadth":0.4,"goodBullishFlips":0,"goodBearishFlips":1,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":-0.7342,"momentum_1h_bad":0.0,"momentum_1h_divergence":-0.7342,"momentum_4h_good":-1.5159,"momentum_4h_bad":1.1457,"momentum_4h_divergence":-2.6616,"momentum_12h_good":-0.5159,"momentum_12h_bad":1.0,"momentum_12h_divergence":-1.5159,"momentum_1d_good":-0.5159,"momentum_1d_bad":1.0,"momentum_1d_divergence":-1.5159,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":16.71,"bearScore":73.29,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":43.4,"regimeMomentumHorizon":"1d","specialEvent":"DISTRIBUTION","specialEventConfidence":69.7},{"block":25822249,"price":2439.05,"signal":"SHORT","composite":-0.113,"indGoodShort":0.471,"indGoodLong":0.548,"indBadShort":0.564,"indBadLong":0.588,"goodBuyers":0,"goodSellers":0,"badBuyers":1,"badSellers":3,"pool":0,"active":64,"tracked":1527,"time":"24.08.2026, 05:09","ts":1787540975,"goodPressure":0.0,"badPressure":-0.9988,"divergence":0.9988,"breadth":0.5,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.5159,"momentum_1h_bad":-1.9988,"momentum_1h_divergence":2.5147,"momentum_4h_good":0.9956,"momentum_4h_bad":-1.0601,"momentum_4h_divergence":2.0557,"momentum_12h_good":0.0,"momentum_12h_bad":-0.9988,"momentum_12h_divergence":0.9988,"momentum_1d_good":0.0,"momentum_1d_bad":-0.9988,"momentum_1d_divergence":0.9988,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":58.73,"bearScore":31.27,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":72.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822499,"price":2431.03,"signal":"SHORT","composite":-0.005,"indGoodShort":0.536,"indGoodLong":0.556,"indBadShort":0.532,"indBadLong":0.575,"goodBuyers":3,"goodSellers":2,"badBuyers":1,"badSellers":1,"pool":5,"active":98,"tracked":1569,"time":"24.08.2026, 05:59","ts":1787543987,"goodPressure":0.996,"badPressure":-0.3305,"divergence":1.3264,"breadth":0.6,"goodBullishFlips":1,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.996,"momentum_1h_bad":0.6683,"momentum_1h_divergence":0.3276,"momentum_4h_good":1.27,"momentum_4h_bad":0.6695,"momentum_4h_divergence":0.6005,"momentum_12h_good":0.996,"momentum_12h_bad":-0.3305,"momentum_12h_divergence":1.3264,"momentum_1d_good":0.996,"momentum_1d_bad":-0.3305,"momentum_1d_divergence":1.3264,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":76.69,"bearScore":13.31,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":36.6,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822749,"price":2438.42,"signal":"SHORT","composite":-0.294,"indGoodShort":0.268,"indGoodLong":0.471,"indBadShort":0.516,"indBadLong":0.563,"goodBuyers":0,"goodSellers":3,"badBuyers":0,"badSellers":0,"pool":3,"active":94,"tracked":1616,"time":"24.08.2026, 06:49","ts":1787546987,"goodPressure":-1.0,"badPressure":0.0,"divergence":-1.0,"breadth":0.0,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":-1.996,"momentum_1h_bad":0.3305,"momentum_1h_divergence":-2.3264,"momentum_4h_good":-1.2183,"momentum_4h_bad":-1.0,"momentum_4h_divergence":-0.2183,"momentum_12h_good":-1.0,"momentum_12h_bad":0.0,"momentum_12h_divergence":-1.0,"momentum_1d_good":-1.0,"momentum_1d_bad":0.0,"momentum_1d_divergence":-1.0,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":13.75,"bearScore":76.25,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":37.5,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25822999,"price":2448.12,"signal":"SHORT","composite":-0.108,"indGoodShort":0.467,"indGoodLong":0.501,"indBadShort":0.544,"indBadLong":0.565,"goodBuyers":2,"goodSellers":1,"badBuyers":4,"badSellers":3,"pool":3,"active":105,"tracked":1659,"time":"24.08.2026, 07:40","ts":1787550011,"goodPressure":-0.6673,"badPressure":0.3794,"divergence":-1.0467,"breadth":0.6667,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":1,"momentum_1h_good":0.3327,"momentum_1h_bad":0.3794,"momentum_1h_divergence":-0.0467,"momentum_4h_good":-0.1514,"momentum_4h_bad":-0.6206,"momentum_4h_divergence":0.4692,"momentum_12h_good":-0.6673,"momentum_12h_bad":0.3794,"momentum_12h_divergence":-1.0467,"momentum_1d_good":-0.6673,"momentum_1d_bad":0.3794,"momentum_1d_divergence":-1.0467,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":23.93,"bearScore":66.07,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":57.9,"regimeMomentumHorizon":"1d","specialEvent":null,"specialEventConfidence":0.0},{"block":25823249,"price":2455.42,"signal":"SHORT","composite":-0.257,"indGoodShort":0.4,"indGoodLong":0.475,"indBadShort":0.605,"indBadLong":0.58,"goodBuyers":1,"goodSellers":2,"badBuyers":4,"badSellers":2,"pool":3,"active":114,"tracked":1713,"time":"24.08.2026, 08:30","ts":1787553011,"goodPressure":-0.9983,"badPressure":0.839,"divergence":-1.8373,"breadth":0.3333,"goodBullishFlips":0,"goodBearishFlips":0,"badBullishFlips":0,"badBearishFlips":0,"momentum_1h_good":-0.331,"momentum_1h_bad":0.4596,"momentum_1h_divergence":-0.7906,"momentum_4h_good":-0.9983,"momentum_4h_bad":1.8378,"momentum_4h_divergence":-2.8361,"momentum_12h_good":0.0017,"momentum_12h_bad":0.9519,"momentum_12h_divergence":-0.9502,"momentum_1d_good":-0.9983,"momentum_1d_bad":0.839,"momentum_1d_divergence":-1.8373,"momentum_3d_good":null,"momentum_3d_bad":null,"momentum_3d_divergence":null,"momentum_7d_good":null,"momentum_7d_bad":null,"momentum_7d_divergence":null,"momentum_14d_good":null,"momentum_14d_bad":null,"momentum_14d_divergence":null,"momentum_30d_good":null,"momentum_30d_bad":null,"momentum_30d_divergence":null,"bullScore":5.59,"bearScore":84.41,"regime":"NEUTRAL","regimeEvent":null,"regimeConfidence":21.2,"regimeMomentumHorizon":"1d","specialEvent":"DISTRIBUTION","specialEventConfidence":86.4}],"streaks":[{"signal":"SHORT","startBlock":25821749,"startPrice":2445.81,"endBlock":25823249,"endPrice":2455.42,"pct":0.39,"startTime":"24.08.2026, 03:29","endTime":"24.08.2026, 08:30"},{"signal":"LONG","startBlock":25820749,"startPrice":2461.3,"endBlock":25821499,"endPrice":2454.03,"pct":-0.3,"startTime":"24.08.2026, 00:08","endTime":"24.08.2026, 02:39"},{"signal":"SHORT","startBlock":25820249,"startPrice":2446.19,"endBlock":25820499,"endPrice":2472.78,"pct":1.09,"startTime":"23.08.2026, 22:28","endTime":"23.08.2026, 23:18"},{"signal":"LONG","startBlock":25818999,"startPrice":2445.41,"endBlock":25819999,"endPrice":2446.77,"pct":0.06,"startTime":"23.08.2026, 18:17","endTime":"23.08.2026, 21:37"},{"signal":"SHORT","startBlock":25818749,"startPrice":2434.93,"endBlock":25818749,"endPrice":2434.93,"pct":0.0,"startTime":"23.08.2026, 17:27","endTime":"23.08.2026, 17:27"},{"signal":"LONG","startBlock":25818499,"startPrice":2452.24,"endBlock":25818499,"endPrice":2452.24,"pct":0.0,"startTime":"23.08.2026, 16:37","endTime":"23.08.2026, 16:37"},{"signal":"SHORT","startBlock":25818249,"startPrice":2454.56,"endBlock":25818249,"endPrice":2454.56,"pct":0.0,"startTime":"23.08.2026, 15:46","endTime":"23.08.2026, 15:46"},{"signal":"LONG","startBlock":25814999,"startPrice":2421.62,"endBlock":25817999,"endPrice":2426.94,"pct":0.22,"startTime":"23.08.2026, 04:54","endTime":"23.08.2026, 14:56"},{"signal":"SHORT","startBlock":25814749,"startPrice":2423.67,"endBlock":25814749,"endPrice":2423.67,"pct":0.0,"startTime":"23.08.2026, 04:04","endTime":"23.08.2026, 04:04"},{"signal":"LONG","startBlock":25813749,"startPrice":2418.23,"endBlock":25814499,"endPrice":2428.1,"pct":0.41,"startTime":"23.08.2026, 00:44","endTime":"23.08.2026, 03:14"}]};
 const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const fmtUsd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+
+// Faza UX/UI 1 (regime-detection na froncie) - eventy "stanu" (przejścia maszyny
+// stanów BULL/BEAR z Fazy 2, w tym END_* - własny dodatek Claude poza literą briefu)
+// vs eventy "specjalne" (CAPITULATION/DISTRIBUTION z Fazy 4, stateless, pojedynczy
+// moment) - traktowane osobno wizualnie (trójkąty vs diamenty), tak jak w regime.py.
+const REGIME_STATE_EVENTS = ['START_BULL_MARKET', 'END_BULL_MARKET', 'START_BEAR_MARKET', 'END_BEAR_MARKET'];
+const SPECIAL_EVENTS = ['CAPITULATION', 'DISTRIBUTION'];
+const isBullish = (evt) => evt === 'START_BULL_MARKET' || evt === 'CAPITULATION';
+const isBearish = (evt) => evt === 'START_BEAR_MARKET' || evt === 'DISTRIBUTION';
 
 function animateNumber(el, target, opts) {
   opts = opts || {};
@@ -563,6 +768,116 @@ function renderHero() {
   document.getElementById('statBad').textContent = latest.badBuyers + ' / ' + latest.badSellers;
 }
 
+function renderRegimeCard() {
+  const candles = DATA.candles;
+  // Nie każda świeca ma pola regime (te z przed wdrożenia Fazy 2 nie mają) - szukamy
+  // od końca najnowszej świecy, która faktycznie je ma, zamiast ufać ostatniej z listy.
+  const withRegime = candles.filter((c) => c.regime !== undefined);
+  const latest = withRegime.length ? withRegime[withRegime.length - 1] : null;
+
+  const pill = document.getElementById('regimePill');
+  const note = document.getElementById('regimeEventNote');
+
+  if (!latest) {
+    pill.textContent = 'BRAK DANYCH';
+    pill.className = 'regime-pill regime-pill--none';
+    note.textContent = 'regime-detection jeszcze nie wystartowało w tej historii świec.';
+    document.getElementById('towBull').style.width = '50%';
+    document.getElementById('towBear').style.width = '50%';
+    document.getElementById('towBullVal').textContent = '-';
+    document.getElementById('towBearVal').textContent = '-';
+    document.getElementById('regimeConfidence').textContent = '-';
+    document.getElementById('regimeHorizon').textContent = '-';
+    document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
+    document.getElementById('flipRow').innerHTML = '';
+    return;
+  }
+
+  pill.textContent = latest.regime;
+  pill.className = 'regime-pill regime-pill--' + (latest.regime === 'BULL' ? 'bull' : latest.regime === 'BEAR' ? 'bear' : 'neutral');
+
+  if (latest.regimeEvent) {
+    note.textContent = 'ostatni event na tej świecy: ' + latest.regimeEvent;
+  } else if (latest.specialEvent) {
+    note.textContent = 'ostatni event na tej świecy: ' + latest.specialEvent + ' (confidence ' + latest.specialEventConfidence.toFixed(0) + ')';
+  } else {
+    note.textContent = 'brak eventu na ostatniej świecy';
+  }
+
+  const bull = latest.bullScore || 0, bear = latest.bearScore || 0;
+  const total = bull + bear;
+  const bullPct = total > 0 ? (bull / total) * 100 : 50;
+  document.getElementById('towBull').style.width = bullPct.toFixed(1) + '%';
+  document.getElementById('towBear').style.width = (100 - bullPct).toFixed(1) + '%';
+  document.getElementById('towBullVal').textContent = bull.toFixed(1);
+  document.getElementById('towBearVal').textContent = bear.toFixed(1);
+
+  document.getElementById('regimeConfidence').textContent = latest.regimeConfidence != null ? latest.regimeConfidence.toFixed(1) : '-';
+  document.getElementById('regimeHorizon').textContent = latest.regimeMomentumHorizon || '-';
+
+  document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
+  document.getElementById('regimeMaturityHint').innerHTML = 'świec &middot; od ' + candles[0].time;
+
+  const flipRow = document.getElementById('flipRow');
+  if (latest.goodBullishFlips === undefined) {
+    flipRow.innerHTML = '<span class="flip-chip">Wallet flips: dane jeszcze się zbierają (Faza 3)</span>';
+  } else {
+    flipRow.innerHTML =
+      '<span class="flip-chip">GOOD flips: <b class="flip-up">&uarr;' + latest.goodBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.goodBearishFlips + '</b></span>' +
+      '<span class="flip-chip">BAD flips: <b class="flip-up">&uarr;' + latest.badBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.badBearishFlips + '</b></span>';
+  }
+}
+
+function buildEventLog() {
+  const candles = DATA.candles;
+  const rows = [];
+  candles.forEach((c) => {
+    if (c.regimeEvent && REGIME_STATE_EVENTS.indexOf(c.regimeEvent) !== -1) {
+      rows.push({ type: c.regimeEvent, time: c.time, price: c.price, confidence: c.regimeConfidence });
+    }
+    if (c.specialEvent && SPECIAL_EVENTS.indexOf(c.specialEvent) !== -1) {
+      rows.push({ type: c.specialEvent, time: c.time, price: c.price, confidence: c.specialEventConfidence });
+    }
+  });
+  rows.reverse(); // najnowsze na górze
+
+  const tbody = document.getElementById('eventLogBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Jeszcze żadnych zdarzeń regime — pojawią się tu automatycznie, gdy wystąpią.</td></tr>';
+    return;
+  }
+
+  rows.forEach((r) => {
+    const cls = r.type.indexOf('END_') === 0 ? 'muted' : isBullish(r.type) ? 'bull' : isBearish(r.type) ? 'bear' : 'muted';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="row-pill ' + cls + '">' + r.type.replace(/_/g, ' ') + '</span></td>' +
+      '<td>' + r.time + '</td>' +
+      '<td class="num">' + fmtUsd(r.price) + '</td>' +
+      '<td class="num">' + (r.confidence != null ? r.confidence.toFixed(1) : '-') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderFreshness() {
+  const candles = DATA.candles;
+  const chip = document.getElementById('freshnessChip');
+  const text = document.getElementById('freshnessText');
+  if (!candles.length || !candles[candles.length - 1].ts) { chip.style.display = 'none'; return; }
+
+  const latest = candles[candles.length - 1];
+  const elapsedMin = Math.max(0, Math.round((Date.now() / 1000 - latest.ts) / 60));
+
+  let label;
+  if (elapsedMin < 1) label = 'zaktualizowano przed chwilą';
+  else if (elapsedMin < 60) label = 'zaktualizowano ' + elapsedMin + ' min temu';
+  else label = 'zaktualizowano ' + Math.floor(elapsedMin / 60) + 'h ' + (elapsedMin % 60) + 'min temu';
+
+  text.textContent = label;
+  chip.classList.remove('chip--ok', 'chip--warn');
+  chip.classList.add(elapsedMin > 90 ? 'chip--warn' : 'chip--ok');
+}
+
 function niceDomain(values) {
   const min = Math.min(...values), max = Math.max(...values);
   const pad = (max - min) * 0.08 || 1;
@@ -573,8 +888,12 @@ function buildMainChart() {
   const svg = document.getElementById('mainChart');
   const candles = DATA.candles;
   const n = candles.length;
-  const W = 1000, H = 300, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
-  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  // H rozszerzone z 300 do 350 (Faza UX/UI 1), żeby zrobić miejsce na wstążkę regime
+  // (RIBBON_H) i rząd markerów eventów (MARK_H) POD wykresem ceny, bez zmiany proporcji
+  // samego wykresu bardziej niż konieczne.
+  const W = 1000, H = 350, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
+  const RIBBON_H = 16, MARK_H = 16;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B - RIBBON_H - MARK_H;
 
   const prices = candles.map(c => c.price);
   const [yMin, yMax] = niceDomain(prices);
@@ -633,6 +952,50 @@ function buildMainChart() {
     requestAnimationFrame(() => requestAnimationFrame(() => { lineEl.style.strokeDashoffset = '0'; }));
   }
 
+  // ---- regime ribbon (Faza UX/UI 1): pasmo koloru BULL/BEAR/NEUTRAL/brak-danych,
+  // grupowane w ciągłe segmenty tym samym wzorcem co pasma LONG/SHORT wyżej. ----
+  const ribbonY = PAD_T + plotH + MARK_H;
+  const regimeKey = (c) => (c.regime === 'BULL' ? 'bull' : c.regime === 'BEAR' ? 'bear' : c.regime === 'NEUTRAL' ? 'neutral' : 'none');
+  let ri = 0;
+  while (ri < n) {
+    let rj = ri;
+    while (rj + 1 < n && regimeKey(candles[rj + 1]) === regimeKey(candles[ri])) rj++;
+    const rx0 = x(ri) - (ri === 0 ? 0 : (x(ri) - x(ri - 1)) / 2);
+    const rx1 = x(rj) + (rj === n - 1 ? 0 : (x(rj + 1) - x(rj)) / 2);
+    svg.appendChild(el('rect', {
+      x: rx0.toFixed(2), y: ribbonY, width: Math.max(0, rx1 - rx0).toFixed(2), height: RIBBON_H,
+      class: 'regime-band-' + regimeKey(candles[ri])
+    }));
+    ri = rj + 1;
+  }
+
+  // ---- event markers: trójkąty dla przejść stanu (START/END BULL/BEAR z Fazy 2),
+  // diamenty dla eventów specjalnych (CAPITULATION/DISTRIBUTION z Fazy 4). Mogą
+  // wystąpić na tej samej świecy naraz - wtedy delikatnie rozsunięte w X. ----
+  const markCy = PAD_T + plotH + MARK_H / 2;
+  for (let k = 0; k < n; k++) {
+    const c = candles[k];
+    if (c.regimeEvent && REGIME_STATE_EVENTS.indexOf(c.regimeEvent) !== -1) {
+      const mx = x(k) - 3;
+      if (c.regimeEvent.indexOf('END_') === 0) {
+        svg.appendChild(el('circle', { cx: mx.toFixed(2), cy: markCy.toFixed(2), r: 3.2, class: 'marker-end' }));
+      } else {
+        const bull = isBullish(c.regimeEvent);
+        const pts = bull
+          ? `${mx - 4},${markCy + 4} ${mx + 4},${markCy + 4} ${mx},${markCy - 4}`
+          : `${mx - 4},${markCy - 4} ${mx + 4},${markCy - 4} ${mx},${markCy + 4}`;
+        svg.appendChild(el('polygon', { points: pts, class: bull ? 'marker-start-bull' : 'marker-start-bear' }));
+      }
+    }
+    if (c.specialEvent && SPECIAL_EVENTS.indexOf(c.specialEvent) !== -1) {
+      const mx = x(k) + 3;
+      const bull = isBullish(c.specialEvent);
+      const r = 3.6;
+      const pts = `${mx},${markCy - r} ${mx + r},${markCy} ${mx},${markCy + r} ${mx - r},${markCy}`;
+      svg.appendChild(el('polygon', { points: pts, class: bull ? 'marker-special-bull' : 'marker-special-bear' }));
+    }
+  }
+
   const t0 = el('text', { class: 'chart-axis-label', x: PAD_L, y: H - 6 });
   t0.textContent = candles[0].time;
   const t1 = el('text', { class: 'chart-axis-label', x: W - PAD_R, y: H - 6, 'text-anchor': 'end' });
@@ -644,7 +1007,9 @@ function buildMainChart() {
   svg.appendChild(hoverLine);
   svg.appendChild(hoverDot);
 
-  const overlay = el('rect', { class: 'chart-overlay', x: PAD_L, y: PAD_T, width: plotW, height: plotH });
+  // Overlay rozciągnięty także na wstążkę+markery (nie tylko sam plot ceny), żeby
+  // hover nad regime/eventem też pokazywał tooltip.
+  const overlay = el('rect', { class: 'chart-overlay', x: PAD_L, y: PAD_T, width: plotW, height: ribbonY + RIBBON_H - PAD_T });
   svg.appendChild(overlay);
 
   const tooltip = document.getElementById('mainTooltip');
@@ -665,9 +1030,15 @@ function buildMainChart() {
     tooltip.style.left = leftPct + '%';
     tooltip.style.top = ((y(c.price) / H) * 100) + '%';
     tooltip.style.opacity = 1;
-    tooltip.innerHTML = `<strong>${fmtUsd(c.price)}</strong><br>` +
+    let html = `<strong>${fmtUsd(c.price)}</strong><br>` +
       `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
       `${c.time} &middot; score ${(c.composite >= 0 ? '+' : '')}${c.composite.toFixed(3)}`;
+    if (c.regime) {
+      html += `<br>regime: <strong>${c.regime}</strong>` + (c.regimeConfidence != null ? ` (${c.regimeConfidence.toFixed(0)})` : '');
+    }
+    if (c.regimeEvent) html += `<br>&#9889; ${c.regimeEvent.replace(/_/g, ' ')}`;
+    if (c.specialEvent) html += `<br>&#9889; ${c.specialEvent}` + (c.specialEventConfidence != null ? ` (${c.specialEventConfidence.toFixed(0)})` : '');
+    tooltip.innerHTML = html;
   }
 
   overlay.addEventListener('mousemove', (e) => handleMove(e.clientX));
@@ -707,11 +1078,13 @@ function renderFooter() {
 }
 
 renderHero();
+renderRegimeCard();
 buildMainChart();
+buildEventLog();
 buildHistory();
 renderFooter();
+renderFreshness();
 </script>
-
 
 </body>
 </html>
