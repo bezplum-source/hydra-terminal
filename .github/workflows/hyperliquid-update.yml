@@ -49,6 +49,23 @@ jobs:
       - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
         run: python -m pytest tests/ -q
 
+      - name: Wyczysc ewentualne pozostalosci po testach
+        # Zabezpieczenie znalezione 2026-08-24: bug w izolacji jednego z
+        # istniejacych testow (tests/test_live_incremental.py, naprawiony
+        # w tej samej dostawie) potrafil zostawic w drzewie roboczym
+        # NIEZACOMMITOWANE zmiany w data/regime_state.json/
+        # data/wallet_flip_state.json (pisal do prawdziwych sciezek
+        # zamiast do tmp_path). W "update.yml" bylo to nieszkodliwe, bo
+        # ten workflow uruchamia potem prawdziwy run_incremental.py,
+        # ktory nadpisuje smieci poprawnymi danymi PRZED commitem. Tutaj
+        # NIE uruchamiamy run_incremental.py, wiec taki brud zostawalby az
+        # do "git rebase" i psul retry przy konflikcie pusha ("cannot
+        # rebase: You have unstaged changes"). Ten krok to DODATKOWA
+        # warstwa bezpieczenstwa (poza samym fixem testu) - gdyby jakis
+        # PRZYSZLY test mial ten sam blad izolacji, i tak nie zablokuje
+        # commitu bufora Hyperliquid.
+        run: git checkout -- .
+
       - name: Nasluchuj transakcje ETH-PERP na Hyperliquid (WebSocket, ~50 min)
         run: python live/hyperliquid_listener.py
 
