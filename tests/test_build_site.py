@@ -79,6 +79,32 @@ def test_build_streaks_groups_consecutive_same_signal_and_orders_newest_first():
     assert streaks[1]["signal"] == "HOLD"
 
 
+def test_build_streaks_short_pct_is_signal_result_not_raw_price_change():
+    # Cena ROŚNIE w trakcie SHORT -> to jest STRATA dla sygnału (pct musi być
+    # ujemny), mimo że surowa zmiana kursu jest dodatnia. To był bug zgłoszony
+    # przez uzytkownika: strona pokazywała +0.39% (kurs) miejsce -0.39% (wynik).
+    candles = [
+        {**_sample_candles()[0], "signal": "SHORT", "price": 2445.81, "block": 1},
+        {**_sample_candles()[0], "signal": "SHORT", "price": 2455.42, "block": 2},
+    ]
+    streaks = bs._build_streaks(candles)
+    assert len(streaks) == 1
+    assert streaks[0]["signal"] == "SHORT"
+    assert streaks[0]["pct"] == -0.39
+
+
+def test_build_streaks_long_pct_still_matches_raw_price_change():
+    # LONG zarabia, gdy cena rośnie -> znak zostaje bez zmian (kontrola, że
+    # fix dla SHORT nie zepsuł LONG).
+    candles = [
+        {**_sample_candles()[0], "signal": "LONG", "price": 2000.0, "block": 1},
+        {**_sample_candles()[0], "signal": "LONG", "price": 2100.0, "block": 2},
+    ]
+    streaks = bs._build_streaks(candles)
+    assert len(streaks) == 1
+    assert streaks[0]["pct"] == 5.0
+
+
 def test_build_site_writes_valid_html_with_embedded_data(tmp_path, monkeypatch):
     site_dir = tmp_path / "site"
     monkeypatch.setattr(bs, "SITE_DIR", site_dir)
