@@ -17,6 +17,7 @@ wznawialnosc ScoringEngine, I/O stanu) sa juz przetestowane osobno.
 
 from __future__ import annotations
 
+from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from live import build_site as bs
 from live import run_incremental as ri
@@ -154,6 +155,16 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # retry/rebase przy konflikcie pusha.
     monkeypatch.setattr(st, "REGIME_STATE_PATH", tmp_path / "data" / "regime_state.json")
     monkeypatch.setattr(st, "WALLET_FLIP_STATE_PATH", tmp_path / "data" / "wallet_flip_state.json")
+    # Faza H2 (brief Hyperliquid) - dopisane OD RAZU przy wprowadzeniu tych
+    # dwoch nowych sciezek (nie po fakcie, jak REGIME_STATE_PATH/
+    # WALLET_FLIP_STATE_PATH wyzej) - to jest dokladnie ta sama klasa bledu,
+    # ktora spowodowala incydent "cannot rebase: You have unstaged changes"
+    # opisany w hydrav2-automation.md: brak patcha tutaj oznaczalby, ze
+    # run_incremental.main() w testach ponizej czyta/pisze PRAWDZIWE pliki
+    # data/hyperliquid_trades_buffer.jsonl / data/hyperliquid_scoring_state.json
+    # w repo zamiast do tmp_path.
+    monkeypatch.setattr(st, "HYPERLIQUID_TRADES_BUFFER_PATH", tmp_path / "data" / "hyperliquid_trades_buffer.jsonl")
+    monkeypatch.setattr(st, "HYPERLIQUID_SCORING_STATE_PATH", tmp_path / "data" / "hyperliquid_scoring_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -301,3 +312,111 @@ def test_still_open_window_is_deferred_not_dated_question_mark_or_duplicated(tmp
     assert all(b <= chain.head for b in blocks_after_2)
     # historia z pierwszego uruchomienia nie zostala nadpisana/utracona
     assert candles_after_2[: len(candles_after_1)] == candles_after_1
+
+
+# =====================================================================
+# Faza H2 (brief hydrav2-hyperliquid-brief.md) - blend composite_spot/perp
+# =====================================================================
+
+
+def _make_hl_trade(buyer, seller, price, size, ts_ms):
+    return hl_ws.HyperliquidTrade(
+        coin="ETH",
+        aggressor_side=hl_ws.AggressorSide.BUY,
+        price_usd=price,
+        size_eth=size,
+        buyer=buyer,
+        seller=seller,
+        ts_ms=ts_ms,
+        tid=ts_ms,
+        tx_hash="0xabc",
+    )
+
+
+def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(tmp_path, monkeypatch):
+    """Regresja: brak `data/hyperliquid_trades_buffer.jsonl` (dokladnie stan
+    sprzed Fazy H2, albo pierwsze uruchomienie zanim listener Hyperliquid
+    zdazyl cokolwiek zebrac) -> `composite_perp` musi wyjsc `None`, a
+    `blend_composite`/`decide_signal` musza sie zachowac IDENTYCZNIE jak
+    stary, czysto spotowy sygnal (`compositeSpot`/`signalSpotOnly`) -
+    "graceful degradation" z briefu, nie zmiana zachowania."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    for c in candles:
+        assert c["compositePerp"] is None
+        assert c["composite"] == c["compositeSpot"]
+        assert c["signal"] == c["signalSpotOnly"]
+    # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
+    # nie mial "nowego okna" do policzenia (patrz HyperliquidScoringEngine.run).
+    assert st.load_hyperliquid_scoring_state() == {}
+
+
+def test_mature_hyperliquid_buffer_blends_composite_and_can_flip_signal(tmp_path, monkeypatch):
+    """Gdy bufor Hyperliquid ma wystarczajaco duzo sklasyfikowanych portfeli
+    (>= `min_classified_wallets_for_maturity`, domyslnie 20), `composite_perp`
+    przestaje byc `None` i realnie wplywa na zblendowany `composite`/`signal`
+    - to jest sedno Fazy H2 ("od razu wpiete do glownego sygnalu LONG/SHORT",
+    decyzja uzytkownika z briefu)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    # Bufor Hyperliquid: 25 portfeli "dobrych" konsekwentnie kupujacych tanio
+    # (jako buyer) i sprzedajacych drogo (jako seller w kolejnej transakcji)
+    # -> jednoznacznie GOOD, i w OSTATNIM oknie wszyscy sa net-BUY -> composite_perp
+    # mocno DODATNI (bycze).
+    hl_records = []
+    ts = 1_000
+    for i in range(25):
+        wallet = f"hlgood{i}"
+        for _ in range(3):
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 1.0, ts)))
+            ts += 1
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(f"cp{ts}", wallet, 150.0, 1.0, ts)))
+            ts += 1
+    # Ostatnie zdarzenie w buforze: kazdy z 25 portfeli jeszcze raz KUPUJE
+    # (net-BUY w tym "oknie" - patrz HyperliquidScoringEngine.run, okno to
+    # CALY bufor przy pierwszym uruchomieniu).
+    for i in range(25):
+        wallet = f"hlgood{i}"
+        hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 1.0, ts)))
+        ts += 1
+
+    st.save_hyperliquid_trades_buffer(hl_records)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+
+    hl_state = st.load_hyperliquid_scoring_state()
+    assert hl_state["last_is_mature"] is True
+    assert hl_state["last_composite_perp"] > 0  # jednoznacznie bycze
+
+    last = candles[-1]
+    assert last["compositePerp"] == hl_state["last_composite_perp"]
+    assert last["compositePerp"] > 0
+    # composite zblendowany (waga domyslna 50/50) musi lezec DOKLADNIE
+    # posrodku miedzy spotem a perpem - weryfikacja formuly blendu na
+    # prawdziwym przebiegu run_incremental.py, nie tylko na jednostce.
+    expected = round(0.5 * last["compositeSpot"] + 0.5 * last["compositePerp"], 3)
+    assert last["composite"] == expected
+    # Perp jest mocno bycze - zblendowany composite powinien byc WYZSZY (albo
+    # rowny w skrajnym przypadku) niz sam spot, nigdy odwrotnie.
+    assert last["composite"] >= last["compositeSpot"]
