@@ -554,7 +554,7 @@
       <span class="hero-price" id="heroPrice">$0.00</span>
       <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
-      <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span></span>
+      <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span> (stała do zamknięcia sygnału)</span>
     </div>
     <div class="stat-grid">
       <div class="stat">
@@ -769,6 +769,7 @@ function renderHero() {
   delta.style.color = streak.pct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
 
   document.getElementById('heroStart').textContent = streak.startTime;
+  document.getElementById('heroEntryPrice').textContent = fmtUsd(streak.startPrice);
   document.getElementById('heroDataTime').textContent = latest.time;
   document.getElementById('heroBlock').textContent = latest.block.toLocaleString('en-US');
 
