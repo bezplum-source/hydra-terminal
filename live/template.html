@@ -476,7 +476,31 @@
 
   .hover-line { stroke: var(--text-secondary); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
   .hover-dot { fill: var(--accent-glow); stroke: var(--bg-elevated); stroke-width: 2; opacity: 0; }
-  .chart-overlay { fill: transparent; cursor: crosshair; }
+  /* touch-action: none (Faza UX/UI 2) - bez tego przeciąganie palcem po
+     wykresie na mobile przewija stronę zamiast pokazywać tooltip. */
+  .chart-overlay { fill: transparent; cursor: crosshair; touch-action: none; }
+
+  /* ---------- przełącznik zakresu czasu wykresu (Faza UX/UI 2) ---------- */
+  .range-switch { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .range-btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated-2);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  }
+  .range-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+  .range-btn.active {
+    color: var(--accent-glow);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
 
   /* ---------- regime ribbon + event markers (pod wykresem ceny, ten sam <svg>) ---------- */
   .regime-band-bull { fill: var(--regime-bull); opacity: 0.55; }
@@ -550,6 +574,94 @@
   .row-pill.muted::before { background: var(--text-muted); }
 
   .empty-state { padding: 26px 10px !important; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  /* ---------- paginacja tabeli (Faza UX/UI 2) ---------- */
+  .table-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+  .page-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 13px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated-2);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .page-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text-primary); }
+  .page-btn:disabled { opacity: 0.35; cursor: default; }
+  .page-indicator { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+
+  /* ---------- mini-sparkline trendu BYCZY/NIEDŹWIEDZI (Faza UX/UI 2) ---------- */
+  .sparkline-wrap { margin-top: 16px; }
+  .sparkline-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  svg.sparkline { width: 100%; height: 48px; display: block; overflow: visible; }
+  .spark-bull { fill: none; stroke: var(--regime-bull-glow); stroke-width: 1.6; stroke-linejoin: round; }
+  .spark-bear { fill: none; stroke: var(--regime-bear-glow); stroke-width: 1.6; stroke-linejoin: round; }
+
+  /* ---------- info-tip: ikonka "ⓘ" z tooltipem wyjaśniającym żargon
+     (BYCZY/NIEDŹWIEDZI/Confidence/eventy regime) dla nowych odbiorców
+     (Faza UX/UI 2). Hover na desktopie, tap-toggle na dotyku (patrz JS) -
+     bo hover nie istnieje na mobile, więc bez tego byłby niedostępny tam,
+     gdzie akurat najbardziej przydatny (mniejszy ekran, mniej kontekstu). ---------- */
+  .info-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    font-size: 10px;
+    line-height: 1;
+    cursor: help;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    margin-left: 4px;
+    position: relative;
+    vertical-align: middle;
+  }
+  .info-tip:hover, .info-tip:focus, .info-tip.tip-open {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    outline: none;
+  }
+  .info-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 230px;
+    max-width: 62vw;
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    white-space: normal;
+    z-index: 20;
+  }
+  .info-tip:hover::after, .info-tip:focus::after, .info-tip.tip-open::after { opacity: 1; }
+  @media (max-width: 480px) {
+    .info-tip::after { left: auto; right: -8px; transform: none; }
+  }
 
   /* Specyficzność musi pobić "table.history td.num" wyżej (inaczej ta reguła
      wygrywa i kolor wyniku zawsze wychodzi neutralny, nawet z poprawną klasą -
@@ -658,19 +770,28 @@
         <div class="tow-bear" id="towBear" style="width:50%"></div>
       </div>
       <div class="tow-labels">
-        <span>BYCZY <strong id="towBullVal">-</strong></span>
-        <span>NIEDŹWIEDZI <strong id="towBearVal">-</strong></span>
+        <span>BYCZY <strong id="towBullVal">-</strong><span class="info-tip" tabindex="0" data-tip="BYCZY (bull score): presja kupna dobrych (skutecznych) traderów, liczona w wielu horyzontach czasowych naraz, 0–90 (sufit tymczasowy — komponent Capital Flow jeszcze nieaktywny, patrz uwaga niżej). Wyższa wartość = mocniejszy sygnał rynku BULL.">ⓘ</span></span>
+        <span>NIEDŹWIEDZI <strong id="towBearVal">-</strong><span class="info-tip" tabindex="0" data-tip="NIEDŹWIEDZI (bear score): to samo co BYCZY, ale liczone z presji sprzedaży/pozycji spadkowych dobrych traderów. Wyższa wartość = mocniejszy sygnał rynku BEAR.">ⓘ</span></span>
+      </div>
+      <!-- Faza UX/UI 2 - mini-sparkline trendu bullScore/bearScore, żeby nie
+           trzeba było zgadywać "czy to się nasila czy słabnie" z jednej,
+           statycznej liczby. Wypełniane w renderRegimeSparkline(), wywołane
+           z renderRegimeCard(). Domyślnie skryte - pokazywane tylko gdy
+           jest co najmniej 2 świece z danymi regime. -->
+      <div class="sparkline-wrap" id="regimeSparklineWrap" style="display:none;">
+        <div class="sparkline-label">Trend BYCZY / NIEDŹWIEDZI <span id="sparklineRange"></span></div>
+        <svg class="sparkline" id="regimeSparkline" viewBox="0 0 300 48" preserveAspectRatio="none"></svg>
       </div>
     </div>
 
     <div class="regime-meta-grid">
       <div class="stat">
-        <span class="stat-label">Confidence</span>
+        <span class="stat-label">Confidence<span class="info-tip" tabindex="0" data-tip="Confidence: heurystyczna miara czytelności aktualnego regime'u (na ile jednoznacznie dominuje BYCZY, NIEDŹWIEDZI czy NEUTRAL) — nieskalibrowana, do odczytu orientacyjnego, nie jako prawdopodobieństwo.">ⓘ</span></span>
         <span class="stat-value" id="regimeConfidence">-</span>
         <span class="stat-hint">heurystyka czytelności, nieskalibrowana</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Horyzont momentum</span>
+        <span class="stat-label">Horyzont momentum<span class="info-tip" tabindex="0" data-tip="Horyzont momentum: najdłuższe okno czasowe (np. 1h, 1d, 7d, 30d), dla którego regime-detection ma już wystarczająco historii danych, żeby policzyć trend. Rośnie z czasem, w miarę jak zbiera się historia świec.">ⓘ</span></span>
         <span class="stat-value" id="regimeHorizon">-</span>
         <span class="stat-hint">najdłuższy dostępny w historii</span>
       </div>
@@ -735,8 +856,18 @@
   <section class="card reveal reveal-3">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
+      <!-- Faza UX/UI 2 - przełącznik zakresu czasu wykresu. Domyślnie
+           "WSZYSTKO" (patrz JS, currentRange), żeby zachowanie od razu po
+           wczytaniu strony było identyczne jak przed tą fazą - użytkownik
+           musi świadomie wybrać krótszy zakres. -->
+      <div class="range-switch" id="rangeSwitch" role="group" aria-label="Zakres czasu wykresu">
+        <button type="button" class="range-btn" data-range="24h">24H</button>
+        <button type="button" class="range-btn" data-range="7d">7D</button>
+        <button type="button" class="range-btn" data-range="30d">30D</button>
+        <button type="button" class="range-btn active" data-range="all">WSZYSTKO</button>
+      </div>
     </div>
-    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź, by zobaczyć szczegóły danej świecy.</div>
+    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź lub dotknij, by zobaczyć szczegóły danej świecy.</div>
     <div class="chart-wrap" id="mainChartWrap">
       <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
         <defs>
@@ -759,7 +890,7 @@
       <table class="history">
         <thead>
           <tr>
-            <th>Zdarzenie</th>
+            <th>Zdarzenie<span class="info-tip" tabindex="0" data-tip="START/END BULL/BEAR MARKET: przejścia maszyny stanów regime'u. CAPITULATION/DISTRIBUTION: pojedyncze, silne momenty presji sprzedaży (capitulation) albo rozładowywania pozycji przez dobrych traderów (distribution) — same nie zmieniają stanu BULL/BEAR, tylko go potęgują.">ⓘ</span></th>
             <th>Kiedy</th>
             <th class="num">Cena</th>
             <th class="num">Confidence</th>
@@ -806,6 +937,15 @@
         </thead>
         <tbody id="historyBody"></tbody>
       </table>
+    </div>
+    <!-- Faza UX/UI 2 - paginacja: historia sygnałów rośnie bez końca,
+         renderowanie wszystkich wierszy naraz z czasem zrobiłoby tabelę
+         nieczytelną. Kontener domyślnie skryty (display:none w JS ustawiane
+         dynamicznie) - pojawia się tylko gdy jest więcej niż jedna strona. -->
+    <div class="table-pagination" id="historyPagination" style="display:none;">
+      <button type="button" class="page-btn" id="historyPrevBtn">‹ Poprzednie</button>
+      <span class="page-indicator" id="historyPageIndicator">Strona 1 z 1</span>
+      <button type="button" class="page-btn" id="historyNextBtn">Następne ›</button>
     </div>
   </section>
 
@@ -929,6 +1069,7 @@ function renderRegimeCard() {
     document.getElementById('regimeHorizon').textContent = '-';
     document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
     document.getElementById('flipRow').innerHTML = '';
+    document.getElementById('regimeSparklineWrap').style.display = 'none';
     return;
   }
 
@@ -965,6 +1106,47 @@ function renderRegimeCard() {
       '<span class="flip-chip">GOOD flips: <b class="flip-up">&uarr;' + latest.goodBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.goodBearishFlips + '</b></span>' +
       '<span class="flip-chip">BAD flips: <b class="flip-up">&uarr;' + latest.badBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.badBearishFlips + '</b></span>';
   }
+
+  renderRegimeSparkline(withRegime);
+}
+
+// Faza UX/UI 2 - mini-sparkline trendu bullScore/bearScore. Reużywa ten sam
+// wzorzec filtrowania co renderRegimeCard() ("nie każda świeca ma te pola") -
+// tu dodatkowo wymagane OBA bullScore i bearScore na tej samej świecy, bo
+// rysujemy dwie linie na współnej osi. Ucięte do ostatnich 40 punktów, żeby
+// trend był czytelny (nie ściśnięty), nie do pełnej historii.
+function renderRegimeSparkline(withRegime) {
+  const wrap = document.getElementById('regimeSparklineWrap');
+  const svg = document.getElementById('regimeSparkline');
+  const pts = withRegime.filter((c) => c.bullScore != null && c.bearScore != null).slice(-40);
+
+  if (pts.length < 2) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+
+  const W = 300, H = 48, PAD = 3;
+  const allVals = pts.flatMap((c) => [c.bullScore, c.bearScore]).concat([0, 90]); // 0-90: patrz "sufit 90" w caveat karty
+  const vMin = Math.min(...allVals), vMax = Math.max(...allVals);
+  const xAt = (i) => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
+  const yAt = (v) => H - PAD - ((v - vMin) / (vMax - vMin || 1)) * (H - PAD * 2);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const mkPath = (key, cls) => {
+    let d = '';
+    pts.forEach((c, i) => { d += (i === 0 ? 'M ' : 'L ') + xAt(i).toFixed(2) + ',' + yAt(c[key]).toFixed(2) + ' '; });
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d.trim());
+    p.setAttribute('class', cls);
+    return p;
+  };
+
+  svg.innerHTML = '';
+  svg.appendChild(mkPath('bullScore', 'spark-bull'));
+  svg.appendChild(mkPath('bearScore', 'spark-bear'));
+
+  document.getElementById('sparklineRange').textContent = '(ostatnie ' + pts.length + ' świec)';
 }
 
 function renderPerpCard() {
@@ -1070,9 +1252,36 @@ function niceDomain(values) {
   return [min - pad, max + pad];
 }
 
-function buildMainChart() {
-  const svg = document.getElementById('mainChart');
+// Faza UX/UI 2 - przełącznik zakresu czasu wykresu. Filtruje wg `ts`
+// (unix seconds, obecne na każdej świecy - patrz run_incremental.py), licząc
+// okno od `ts` NAJNOWSZEJ świecy, nie od zegara systemowego (ta sama zasada
+// co reszta projektu: deterministyczne wobec danych, nie wobec "teraz").
+// Gdy przefiltrowany zakres dałby mniej niż 2 punkty (za mało historii na
+// dany zakres, albo brak `ts`) - graceful fallback na całą historię, żeby
+// wykres nigdy nie zniknął z powodu wybrania zbyt krótkiego okna.
+const RANGE_SECONDS = { '24h': 24 * 3600, '7d': 7 * 24 * 3600, '30d': 30 * 24 * 3600 };
+function filterCandlesByRange(range) {
   const candles = DATA.candles;
+  if (range === 'all' || !RANGE_SECONDS[range] || !candles.length) return candles;
+  const latestTs = candles[candles.length - 1].ts;
+  if (!latestTs) return candles;
+  const cutoff = latestTs - RANGE_SECONDS[range];
+  const filtered = candles.filter((c) => c.ts != null && c.ts >= cutoff);
+  return filtered.length >= 2 ? filtered : candles;
+}
+
+// Faza UX/UI 2 - buildMainChart() teraz przyjmuje opcjonalną, już przefiltrowaną
+// listę świec (przełącznik zakresu czasu) - domyślnie (brak argumentu) zachowanie
+// identyczne jak przed tą fazą: cała historia z DATA.candles. Funkcja jest
+// wywoływana ponownie przy każdej zmianie zakresu, więc najpierw czyści SVG
+// z poprzedniego renderu (poza <defs> z gradientem ceny - ten zostaje raz na stałe).
+function buildMainChart(candlesParam) {
+  const svg = document.getElementById('mainChart');
+  const defs = svg.querySelector('defs');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  if (defs) svg.appendChild(defs);
+
+  const candles = (candlesParam && candlesParam.length >= 2) ? candlesParam : DATA.candles;
   const n = candles.length;
   // H rozszerzone z 300 do 350 (Faza UX/UI 1), żeby zrobić miejsce na wstążkę regime
   // (RIBBON_H) i rząd markerów eventów (MARK_H) POD wykresem ceny, bez zmiany proporcji
@@ -1241,23 +1450,70 @@ function buildMainChart() {
     hoverDot.style.opacity = 0;
     tooltip.style.opacity = 0;
   });
+
+  // Faza UX/UI 2 - obsługa dotyku: dokładnie ten sam handleMove() co mysz,
+  // różni się tylko źródłem współrzędnej X. preventDefault() w touchmove jest
+  // konieczne - inaczej przeciąganie palcem po wykresie przewija stronę
+  // zamiast pokazywać tooltip (patrz też touch-action:none w CSS overlay).
+  function hideHover() {
+    hoverLine.style.opacity = 0;
+    hoverDot.style.opacity = 0;
+    tooltip.style.opacity = 0;
+  }
+  function handleTouch(e) {
+    if (e.touches && e.touches.length) {
+      e.preventDefault();
+      handleMove(e.touches[0].clientX);
+    }
+  }
+  overlay.addEventListener('touchstart', handleTouch, { passive: false });
+  overlay.addEventListener('touchmove', handleTouch, { passive: false });
+  overlay.addEventListener('touchend', hideHover);
+  overlay.addEventListener('touchcancel', hideHover);
 }
 
+// Faza UX/UI 2 - paginacja tabeli "Historia sygnałów". DATA.streaks jest już
+// najnowsze-na-górze (ten sam porządek, w którym renderHero() bierze
+// streaks[0] jako aktywny sygnał), więc strona 1 to zawsze najnowsze wpisy.
+const HISTORY_PAGE_SIZE = 15;
+let historyPage = 0;
+
 function buildHistory() {
+  const streaks = DATA.streaks;
+  const totalPages = Math.max(1, Math.ceil(streaks.length / HISTORY_PAGE_SIZE));
+  historyPage = Math.max(0, Math.min(historyPage, totalPages - 1));
+  const startIdx = historyPage * HISTORY_PAGE_SIZE;
+  const pageStreaks = streaks.slice(startIdx, startIdx + HISTORY_PAGE_SIZE);
+
   const tbody = document.getElementById('historyBody');
-  DATA.streaks.forEach((s) => {
-    const tr = document.createElement('tr');
-    const isLong = s.signal === 'LONG';
-    tr.innerHTML = `
-      <td><span class="row-pill ${isLong ? 'long' : 'short'}">${s.signal}</span></td>
-      <td>${s.startTime}</td>
-      <td>${s.endTime}</td>
-      <td class="num">${fmtUsd(s.startPrice)}</td>
-      <td class="num">${fmtUsd(s.endPrice)}</td>
-      <td class="num pct ${s.pct >= 0 ? 'up' : 'down'}">${fmtPct(s.pct)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+  tbody.innerHTML = '';
+  if (!pageStreaks.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Jeszcze żadnych zamkniętych sygnałów w historii.</td></tr>';
+  } else {
+    pageStreaks.forEach((s) => {
+      const tr = document.createElement('tr');
+      const isLong = s.signal === 'LONG';
+      tr.innerHTML = `
+        <td><span class="row-pill ${isLong ? 'long' : 'short'}">${s.signal}</span></td>
+        <td>${s.startTime}</td>
+        <td>${s.endTime}</td>
+        <td class="num">${fmtUsd(s.startPrice)}</td>
+        <td class="num">${fmtUsd(s.endPrice)}</td>
+        <td class="num pct ${s.pct >= 0 ? 'up' : 'down'}">${fmtPct(s.pct)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  const pagination = document.getElementById('historyPagination');
+  if (streaks.length > HISTORY_PAGE_SIZE) {
+    pagination.style.display = 'flex';
+    document.getElementById('historyPageIndicator').textContent = 'Strona ' + (historyPage + 1) + ' z ' + totalPages;
+    document.getElementById('historyPrevBtn').disabled = historyPage === 0;
+    document.getElementById('historyNextBtn').disabled = historyPage >= totalPages - 1;
+  } else {
+    pagination.style.display = 'none';
+  }
 }
 
 function renderAggregateStats() {
@@ -1312,10 +1568,48 @@ function renderFooter() {
     first.time + ' &ndash; ' + latest.time + ' &middot; strona aktualizuje się automatycznie co ok. godzinę.';
 }
 
+// Faza UX/UI 2 - przełącznik zakresu czasu: domyślnie "all" (identyczne
+// zachowanie jak przed tą fazą), przełącza się wyłącznie na kliknięcie -
+// nigdy automatycznie, żeby nie było niejasne, czy to co widać to cała
+// historia czy wycinek.
+let currentRange = 'all';
+function setRange(range) {
+  currentRange = range;
+  document.querySelectorAll('#rangeSwitch .range-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+  buildMainChart(filterCandlesByRange(range));
+}
+document.querySelectorAll('#rangeSwitch .range-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setRange(btn.dataset.range));
+});
+
+document.getElementById('historyPrevBtn').addEventListener('click', () => {
+  if (historyPage > 0) { historyPage--; buildHistory(); }
+});
+document.getElementById('historyNextBtn').addEventListener('click', () => {
+  historyPage++; buildHistory();
+});
+
+// Faza UX/UI 2 - info-tip: hover działa tylko z myszą, więc na dotyku
+// (gdzie hover nie istnieje) klik/tap przełącza widoczność tooltipa;
+// klik gdziekolwiek indziej zamyka wszystkie otwarte.
+document.querySelectorAll('.info-tip').forEach((tip) => {
+  tip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = tip.classList.contains('tip-open');
+    document.querySelectorAll('.info-tip.tip-open').forEach((t) => t.classList.remove('tip-open'));
+    if (!wasOpen) tip.classList.add('tip-open');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.info-tip.tip-open').forEach((t) => t.classList.remove('tip-open'));
+});
+
 renderHero();
 renderRegimeCard();
 renderPerpCard();
-buildMainChart();
+buildMainChart(filterCandlesByRange(currentRange));
 buildEventLog();
 buildHistory();
 renderAggregateStats();
