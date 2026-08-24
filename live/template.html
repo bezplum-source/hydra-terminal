@@ -309,6 +309,48 @@
   }
   .regime-pill--none::before { background: var(--text-muted); }
 
+  /* Faza H3 (brief Hyperliquid) - karta "ETH-PERP" reuzywa ksztalt
+     .regime-pill (kwadratowy znacznik, bez pulsowania - jest to wskaznik
+     DIAGNOSTYCZNY, drugorzedny wobec glownego .pill w hero), ale
+     KOLORYSTYKE --good/--bad, NIE --regime-bull/--regime-bear. To celowe:
+     w przeciwienstwie do regime (osobna os, patrz komentarz przy
+     .regime-pill wyzej), composite_perp jest CZESCIA tej samej osi
+     LONG/SHORT co reszta hero - powinien wygladac pokrewnie z .pill--long/
+     .pill--short, nie z regime. */
+  .regime-pill--good {
+    color: var(--good-glow);
+    background: var(--good-soft);
+    border: 1px solid color-mix(in srgb, var(--good) 55%, transparent);
+  }
+  .regime-pill--good::before { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
+
+  .regime-pill--bad {
+    color: var(--bad-glow);
+    background: var(--bad-soft);
+    border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
+  }
+  .regime-pill--bad::before { background: var(--bad-glow); box-shadow: 0 0 8px var(--bad-glow); }
+
+  .composite-breakdown {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .composite-breakdown b { font-weight: 600; }
+  .composite-breakdown .cb-spot { color: var(--text-primary); }
+  .composite-breakdown .cb-perp.up { color: var(--good-glow); }
+  .composite-breakdown .cb-perp.down { color: var(--bad-glow); }
+
+  .hero-meta--divergence {
+    color: var(--accent-glow);
+    background: var(--accent-soft);
+    border-radius: 7px;
+    padding: 7px 10px;
+    display: none;
+  }
+
   /* Tug-of-war: bull vs bear score, znormalizowane do 100% szerokości (patrz JS - suma
      bull+bear świadomie nie sięga 100, komponent Capital Flow jeszcze nieaktywny). */
   .tow-track {
@@ -555,6 +597,11 @@
       <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
       <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span> (stała do zamknięcia sygnału)</span>
+      <!-- Faza H3 (brief Hyperliquid) - widoczna TYLKO gdy sam spot (Uniswap)
+           wskazywalby inny sygnal niz ten po zblendowaniu z Hyperliquid -
+           "pelna przejrzystosc", zeby nigdy nie bylo niejasne, co realnie
+           zadecydowalo. Patrz renderHero() w JS. -->
+      <span class="hero-meta hero-meta--divergence" id="heroDivergenceNote"></span>
     </div>
     <div class="stat-grid">
       <div class="stat">
@@ -576,6 +623,9 @@
         <span class="stat-label">Composite score</span>
         <span class="stat-value" id="statScore">-</span>
         <span class="stat-hint">EMA z historii, próg decyzji: 0.0</span>
+        <!-- Faza H3 - rozbicie spot/perp (brief: "Pelna przejrzystosc w
+             hero"). Wypelniane w renderHero(). -->
+        <span class="composite-breakdown" id="statScoreBreakdown"></span>
       </div>
       <div class="stat">
         <span class="stat-label">Good: kupuje / sprzedaje</span>
@@ -635,6 +685,50 @@
 
     <div class="caveat">
       <strong>Uczciwie o ograniczeniach:</strong> suma BYCZY+NIEDŹWIEDZI świadomie nie sięga 100 — komponent Capital Flow (E) nie jest jeszcze aktywny (sufit 90). Progi i wagi to wartości startowe, nieprzestrojone jeszcze backtestem. Długie horyzonty momentum (7&ndash;30 dni) będą puste, dopóki nie zbierze się tyle historii.
+    </div>
+  </section>
+
+  <!-- Faza H3 (brief hydrav2-hyperliquid-brief.md) - drugi, niezalezny tor
+       danych (portfele handlujace ETH-PERP na Hyperliquid, nie ETH/USDC
+       spot na Uniswap). W przeciwienstwie do karty "Regime rynkowy" wyzej
+       (ktora jest CELOWO niezalezna od LONG/SHORT), composite_perp TUTAJ
+       realnie wplywa na sygnal w hero powyzej (waga 50/50, patrz brief,
+       "Decyzja architektoniczna") - stad ta karta reuzywa kolorystyke
+       good/bad (LONG/SHORT), nie regime bull/bear. -->
+  <section class="card reveal reveal-2" id="perpCard">
+    <div class="card-head">
+      <span class="card-title">ETH-PERP &middot; Hyperliquid</span>
+      <span class="card-note" id="perpCardNote">drugi, niezależny tor danych &middot; wpływa na sygnał LONG/SHORT powyżej</span>
+    </div>
+    <div class="card-subnote">Osobna, równoległa populacja traderów niż Uniswap spot — portfele handlujące kontraktami perpetual ETH na Hyperliquid, odkrywane przez publiczny firehose transakcji WebSocket. <code>composite_perp</code> poniżej to wartość SUROWA, sprzed zblendowania ze spotem — rozbicie "spot vs perp" widać w hero powyżej, przy polu "Composite score".</div>
+
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <span class="regime-pill regime-pill--none" id="perpPill">BRAK DANYCH</span>
+      <span class="hero-meta" id="perpNote"></span>
+    </div>
+
+    <div class="regime-meta-grid">
+      <div class="stat">
+        <span class="stat-label">Śledzone portfele</span>
+        <span class="stat-value" id="perpTracked">-</span>
+        <span class="stat-hint">łącznie, narastająco (Hyperliquid)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Sklasyfikowane w oknie</span>
+        <span class="stat-value" id="perpClassified">-</span>
+        <span class="stat-hint" id="perpMaturityHint">próg dojrzałości: -</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">composite_perp</span>
+        <span class="stat-value" id="perpComposite">-</span>
+        <span class="stat-hint">surowy, przed blendem</span>
+      </div>
+    </div>
+
+    <div class="flip-row" id="perpBuySellRow"></div>
+
+    <div class="caveat">
+      <strong>Uczciwie o ograniczeniach:</strong> PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie Fazy H1, patrz brief Hyperliquid). Dopóki liczba sklasyfikowanych portfeli w oknie jest poniżej progu dojrzałości, <code>composite_perp</code> = BRAK DANYCH, a zblendowany sygnał opiera się wyłącznie na spocie — bez żadnej zmiany zachowania.
     </div>
   </section>
 
@@ -728,6 +822,10 @@ const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 
 const fmtUsd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+// Faza H3 (brief Hyperliquid) - wspolny format dla composite/composite_spot/
+// composite_perp wszedzie, gdzie sie pojawiaja (hero, karta ETH-PERP, tooltip
+// wykresu) - zamiast powtarzac ten sam trojargumentowy warunek w kazdym miejscu.
+const fmtSigned = (v, decimals = 3) => (v >= 0 ? '+' : '') + v.toFixed(decimals);
 
 // Faza UX/UI 1 (regime-detection na froncie) - eventy "stanu" (przejścia maszyny
 // stanów BULL/BEAR z Fazy 2, w tym END_* - własny dodatek Claude poza literą briefu)
@@ -776,9 +874,37 @@ function renderHero() {
   animateNumber(document.getElementById('statTracked'), latest.tracked, { format: (v) => Math.round(v).toLocaleString('en-US') });
   animateNumber(document.getElementById('statActive'), latest.active, { format: (v) => Math.round(v).toLocaleString('en-US') });
   animateNumber(document.getElementById('statPool'), latest.pool, { format: (v) => Math.round(v).toLocaleString('en-US') });
-  document.getElementById('statScore').textContent = (latest.composite >= 0 ? '+' : '') + latest.composite.toFixed(3);
+  document.getElementById('statScore').textContent = fmtSigned(latest.composite);
   document.getElementById('statGood').textContent = latest.goodBuyers + ' / ' + latest.goodSellers;
   document.getElementById('statBad').textContent = latest.badBuyers + ' / ' + latest.badSellers;
+
+  // --- Faza H3 (brief Hyperliquid, "Pelna przejrzystosc w hero") ---
+  // Rozbicie composite na spot/perp - tylko gdy dana swieca w ogole ma te
+  // pola (starsze swiece sprzed Fazy H2 ich nie mają, dokładnie tak samo
+  // jak `regime` sprzed Fazy 2 - ten sam wzorzec ochronny co w renderRegimeCard()).
+  const breakdown = document.getElementById('statScoreBreakdown');
+  if (latest.compositeSpot !== undefined) {
+    if (latest.compositePerp != null) {
+      const perpCls = latest.compositePerp >= 0 ? 'up' : 'down';
+      breakdown.innerHTML = '<span class="cb-spot">spot ' + fmtSigned(latest.compositeSpot) + '</span> &middot; <span class="cb-perp ' + perpCls + '">perp ' + fmtSigned(latest.compositePerp) + '</span>';
+    } else {
+      breakdown.innerHTML = '<span class="cb-spot">= spot</span> &middot; perp jeszcze niedojrzały (brak danych)';
+    }
+  } else {
+    breakdown.innerHTML = '';
+  }
+
+  // Uwaga o rozbieznosci: sam spot wskazywalby inny sygnal niz finalny,
+  // zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete do
+  // glownego sygnalu" (decyzja z briefu) nigdy nie bylo niewidoczna zmiana
+  // zachowania.
+  const divNote = document.getElementById('heroDivergenceNote');
+  if (latest.signalSpotOnly !== undefined && latest.signalSpotOnly !== latest.signal) {
+    divNote.style.display = 'inline-block';
+    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + latest.signalSpotOnly + ' — o finalnym sygnale zadecydował Hyperliquid (karta ETH-PERP niżej).';
+  } else {
+    divNote.style.display = 'none';
+  }
 }
 
 function renderRegimeCard() {
@@ -839,6 +965,53 @@ function renderRegimeCard() {
       '<span class="flip-chip">GOOD flips: <b class="flip-up">&uarr;' + latest.goodBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.goodBearishFlips + '</b></span>' +
       '<span class="flip-chip">BAD flips: <b class="flip-up">&uarr;' + latest.badBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.badBearishFlips + '</b></span>';
   }
+}
+
+function renderPerpCard() {
+  // Faza H3 (brief Hyperliquid) - odpowiednik renderRegimeCard() dla
+  // drugiego, niezaleznego toru danych (ETH-PERP na Hyperliquid). Ten sam
+  // wzorzec ochronny: nie kazda swieca ma pola "perp*" (te sprzed Fazy H2/H3
+  // nie maja) - szukamy od konca najnowszej swiecy, ktora faktycznie je ma.
+  const candles = DATA.candles;
+  const withPerp = candles.filter((c) => c.perpTracked !== undefined);
+  const latest = withPerp.length ? withPerp[withPerp.length - 1] : null;
+
+  const pill = document.getElementById('perpPill');
+  const note = document.getElementById('perpNote');
+
+  if (!latest) {
+    pill.textContent = 'BRAK DANYCH';
+    pill.className = 'regime-pill regime-pill--none';
+    note.textContent = 'dane z Hyperliquid jeszcze się nie pojawiły w tej historii świec.';
+    document.getElementById('perpTracked').textContent = '-';
+    document.getElementById('perpClassified').textContent = '-';
+    document.getElementById('perpComposite').textContent = '-';
+    document.getElementById('perpBuySellRow').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('perpTracked').textContent = latest.perpTracked.toLocaleString('en-US');
+  document.getElementById('perpClassified').textContent = latest.perpClassified.toLocaleString('en-US');
+  const threshold = latest.perpMaturityThreshold != null ? latest.perpMaturityThreshold : '-';
+  document.getElementById('perpMaturityHint').textContent = 'próg dojrzałości: ' + threshold;
+
+  if (!latest.perpIsMature || latest.compositePerp == null) {
+    pill.textContent = 'BRAK DANYCH (niedojrzałe)';
+    pill.className = 'regime-pill regime-pill--none';
+    note.textContent = latest.perpClassified + ' / ' + threshold + ' sklasyfikowanych portfeli w oknie — composite_perp nie wpływa jeszcze na sygnał, sam spot decyduje bez zmian.';
+    document.getElementById('perpComposite').textContent = '-';
+  } else {
+    const bullish = latest.compositePerp >= 0;
+    pill.textContent = bullish ? 'BYCZY (+)' : 'NIEDŹWIEDZI (−)';
+    pill.className = 'regime-pill ' + (bullish ? 'regime-pill--good' : 'regime-pill--bad');
+    note.textContent = 'dojrzałe — realnie wpływa na zblendowany sygnał LONG/SHORT w hero (waga 50/50).';
+    document.getElementById('perpComposite').textContent = fmtSigned(latest.compositePerp);
+  }
+
+  const buySellRow = document.getElementById('perpBuySellRow');
+  buySellRow.innerHTML =
+    '<span class="flip-chip">GOOD kupuje / sprzedaje: <b class="flip-up">' + latest.perpGoodBuyers + '</b> / <b class="flip-down">' + latest.perpGoodSellers + '</b></span>' +
+    '<span class="flip-chip">BAD kupuje / sprzedaje: <b class="flip-down">' + latest.perpBadBuyers + '</b> / <b class="flip-up">' + latest.perpBadSellers + '</b></span>';
 }
 
 function buildEventLog() {
@@ -1045,7 +1218,15 @@ function buildMainChart() {
     tooltip.style.opacity = 1;
     let html = `<strong>${fmtUsd(c.price)}</strong><br>` +
       `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
-      `${c.time} &middot; score ${(c.composite >= 0 ? '+' : '')}${c.composite.toFixed(3)}`;
+      `${c.time} &middot; score ${fmtSigned(c.composite)}`;
+    // Faza H3 (brief Hyperliquid) - rozbicie spot/perp tez w tooltipie
+    // wykresu, nie tylko w hero, zeby kazda pojedyncza swieca na historii
+    // byla tak samo przejrzysta co ta najnowsza.
+    if (c.compositeSpot !== undefined) {
+      html += c.compositePerp != null
+        ? ` (spot ${fmtSigned(c.compositeSpot)} &middot; perp ${fmtSigned(c.compositePerp)})`
+        : ` (= spot, perp niedojrzały)`;
+    }
     if (c.regime) {
       html += `<br>regime: <strong>${c.regime}</strong>` + (c.regimeConfidence != null ? ` (${c.regimeConfidence.toFixed(0)})` : '');
     }
@@ -1133,6 +1314,7 @@ function renderFooter() {
 
 renderHero();
 renderRegimeCard();
+renderPerpCard();
 buildMainChart();
 buildEventLog();
 buildHistory();
