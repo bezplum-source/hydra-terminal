@@ -10,8 +10,11 @@ Co robi, w kolejności:
    ostatniego przetworzonego bloku (albo robi jednorazowy backfill przy
    pierwszym uruchomieniu — patrz `BACKFILL_BLOCKS`).
 3. Doklasyfikowuje portfele i liczy nowe świece (`ScoringEngine`, z
-   wznowionym stanem EMA — patrz `hydra_signals/scoring.py`).
-4. Zapisuje zaktualizowany stan z powrotem na dysk.
+   wznowionym stanem EMA — patrz `hydra_signals/scoring.py`), a od Fazy H2
+   blenduje je z równoległym `composite_perp` z Hyperliquid (patrz sekcja
+   Hyperliquid niżej w kodzie i `hydrav2-hyperliquid-brief.md`).
+4. Zapisuje zaktualizowany stan z powrotem na dysk (w tym stan diagnostyczny
+   Hyperliquid — Faza H3 — do wyświetlenia w nowej karcie na stronie).
 5. Generuje `site/index.html` (przez `live/build_site.py`).
 
 Ten skrypt SAM NIE robi `git commit`/`git push` — to celowo zostawione
@@ -102,8 +105,9 @@ def main() -> int:
     regime_state = st.load_regime_state()
     wallet_flip_state = st.load_wallet_flip_state()
     hyperliquid_scoring_state = st.load_hyperliquid_scoring_state()
+    hyperliquid_wallets_seen = st.load_hyperliquid_wallets_seen()
 
-    # --- Faza H2 (brief Hyperliquid) - osobny, rownolegly silnik na danych
+    # --- Faza H2/H3 (brief Hyperliquid) - osobny, rownolegly silnik na danych
     # z Hyperliquid (zbieranych przez OSOBNY workflow/listener, patrz
     # hyperliquid_listener.py), wznawiany miedzy uruchomieniami dokladnie
     # jak ScoringEngine/RegimeEngine ponizej. "Okno" tego silnika to NIE
@@ -124,7 +128,11 @@ def main() -> int:
         new_hl_trades = [t for t in hl_trades if t.ts_ms > last_hl_ts_ms]
         history_hl_trades = [t for t in hl_trades if t.ts_ms <= last_hl_ts_ms]
 
-    hl_engine = HyperliquidScoringEngine(HyperliquidScoringConfig(), initial_ema=hyperliquid_scoring_state)
+    hl_engine = HyperliquidScoringEngine(
+        HyperliquidScoringConfig(),
+        initial_ema=hyperliquid_scoring_state,
+        initial_total_tracked=hyperliquid_wallets_seen,
+    )
     hl_score = None
     if new_hl_trades:
         hl_window_end_ts_ms = max(t.ts_ms for t in new_hl_trades)
@@ -132,28 +140,63 @@ def main() -> int:
             new_hl_trades, history_trades=history_hl_trades, window_end_ts_ms=hl_window_end_ts_ms
         )
 
+    # Faza H3 (front-end) - `perp_snapshot` niesie WSZYSTKO, co karta
+    # diagnostyczna "ETH-PERP - Hyperliquid" potrzebuje pokazac, nie tylko
+    # sama wartosc do blendu. Trzymane jako jeden slownik (nie osobne
+    # zmienne) specjalnie po to, zeby dalo sie go w calosci zapisac/odczytac
+    # ze stanu (`last_perp_snapshot`) - dokladnie tak samo traktujemy
+    # "ostatnia znana wartosc" niezaleznie od tego, ile pol ona niesie.
     if hl_score is not None:
-        composite_perp = hl_score.composite_score if hl_score.is_mature else None
-        perp_is_mature = hl_score.is_mature
+        perp_snapshot = {
+            "composite": hl_score.composite_score if hl_score.is_mature else None,
+            "is_mature": hl_score.is_mature,
+            "tracked": hl_score.total_wallets_tracked,
+            "active": hl_score.active_wallets,
+            "classified": hl_score.n_classified_wallets,
+            "good_buyers": hl_score.good_buyers,
+            "good_sellers": hl_score.good_sellers,
+            "bad_buyers": hl_score.bad_buyers,
+            "bad_sellers": hl_score.bad_sellers,
+        }
         new_hl_state = hl_engine.export_state()
         new_hl_state["last_processed_ts_ms"] = hl_score.window_end_ts_ms
-        new_hl_state["last_composite_perp"] = composite_perp
-        new_hl_state["last_is_mature"] = perp_is_mature
+        new_hl_state["last_perp_snapshot"] = perp_snapshot
         st.save_hyperliquid_scoring_state(new_hl_state)
+        st.save_hyperliquid_wallets_seen(hl_engine.total_tracked)
         log(
             f"Hyperliquid: {hl_score.n_new_trades} nowych transakcji, "
-            f"{hl_score.n_classified_wallets} sklasyfikowanych portfeli "
-            f"({'dojrzale' if perp_is_mature else 'jeszcze NIEDOJRZALE - composite_perp=None'})."
+            f"{hl_score.n_classified_wallets} sklasyfikowanych portfeli, "
+            f"{hl_score.total_wallets_tracked} sledzonych lacznie "
+            f"({'dojrzale' if hl_score.is_mature else 'jeszcze NIEDOJRZALE - composite_perp=None'})."
         )
     else:
         # Brak nowych transakcji Hyperliquid od ostatniego uruchomienia (np.
         # listener jeszcze sie nie zdazyl odpalic w tej godzinie) - NIE
         # dotykamy zapisanego stanu (EMA zamrozone), tylko odczytujemy
-        # OSTATNIA znana wartosc z poprzedniego uruchomienia.
-        composite_perp = hyperliquid_scoring_state.get("last_composite_perp")
-        perp_is_mature = hyperliquid_scoring_state.get("last_is_mature", False)
-        if not perp_is_mature:
-            composite_perp = None
+        # OSTATNI znany snapshot z poprzedniego uruchomienia.
+        #
+        # Zgodnosc wsteczna (Faza H3): stan zapisany JESZCZE PRZED ta faza
+        # ma zamiast `last_perp_snapshot` dwa starsze, plaskie klucze
+        # (`last_composite_perp`/`last_is_mature`, patrz Faza H2) - bez tej
+        # galezi pierwsze uruchomienie po wdrozeniu Fazy H3 (jesli akurat
+        # nie trafia na nowe transakcje Hyperliquid) straciloby ciaglosc
+        # composite_perp, mimo ze realne dane juz dawno sa dojrzale.
+        perp_snapshot = hyperliquid_scoring_state.get("last_perp_snapshot")
+        if perp_snapshot is None:
+            legacy_is_mature = hyperliquid_scoring_state.get("last_is_mature", False)
+            perp_snapshot = {
+                "composite": hyperliquid_scoring_state.get("last_composite_perp") if legacy_is_mature else None,
+                "is_mature": legacy_is_mature,
+                "tracked": len(hyperliquid_wallets_seen),
+                "active": 0,
+                "classified": 0,
+                "good_buyers": 0,
+                "good_sellers": 0,
+                "bad_buyers": 0,
+                "bad_sellers": 0,
+            }
+
+    composite_perp = perp_snapshot["composite"]
 
     final_prev_signal = Signal(scoring_state.get("final_prev_signal", "HOLD"))
 
@@ -285,6 +328,20 @@ def main() -> int:
                 "compositeSpot": round(s.composite_score, 3),
                 "compositePerp": round(composite_perp, 3) if composite_perp is not None else None,
                 "signalSpotOnly": s.signal.value,
+                # --- Faza H3 (front-end) - karta diagnostyczna "ETH-PERP -
+                # Hyperliquid" (patrz template.html) - te same wartosci
+                # `perp_snapshot` niezaleznie od tego, czy hl_score jest
+                # swiezy w TYM konkretnym uruchomieniu (patrz komentarz przy
+                # budowie `perp_snapshot` wyzej).
+                "perpTracked": perp_snapshot["tracked"],
+                "perpActive": perp_snapshot["active"],
+                "perpClassified": perp_snapshot["classified"],
+                "perpIsMature": perp_snapshot["is_mature"],
+                "perpGoodBuyers": perp_snapshot["good_buyers"],
+                "perpGoodSellers": perp_snapshot["good_sellers"],
+                "perpBadBuyers": perp_snapshot["bad_buyers"],
+                "perpBadSellers": perp_snapshot["bad_sellers"],
+                "perpMaturityThreshold": hl_engine.cfg.min_classified_wallets_for_maturity,
                 "indGoodShort": round(s.ind_good_short, 3),
                 "indGoodLong": round(s.ind_good_long, 3),
                 "indBadShort": round(s.ind_bad_short, 3),
