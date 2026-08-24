@@ -34,6 +34,16 @@ Sześć plików, każdy z osobnym powodem istnienia:
   przeciwieństwie do `wallets_seen.txt` MUSI wznawiać się między
   uruchomieniami, żeby nie "zapominać" w połowie ciągu transakcji portfela
   przy każdym restarcie procesu (patrz `ScoringEngine.__init__`).
+
+Siódmy plik, dodany w Fazie H0 briefu Hyperliquid (`hydrav2-hyperliquid-brief.md`),
+zapisywany przez OSOBNY workflow (`.github/workflows/hyperliquid-update.yml`),
+nie przez `update.yml`:
+
+- `hyperliquid_trades_buffer.jsonl` — surowe transakcje ETH-PERP z Hyperliquid
+  (jedna transakcja = jedna linia JSON), ROLNIA jak `trade_buffer.csv`:
+  przycinana do `hydra_signals.data_sources.hyperliquid_ws.DEFAULT_BUFFER_LOOKBACK_HOURS`
+  przy każdym uruchomieniu listenera. Faza H0 tylko zbiera — klasyfikacja
+  portfeli z tego bufora to Faza H1 (jeszcze niezaimplementowana).
 """
 
 from __future__ import annotations
@@ -52,6 +62,7 @@ WALLETS_SEEN_PATH = DATA_DIR / "wallets_seen.txt"
 CANDLES_HISTORY_PATH = DATA_DIR / "candles_history.json"
 REGIME_STATE_PATH = DATA_DIR / "regime_state.json"
 WALLET_FLIP_STATE_PATH = DATA_DIR / "wallet_flip_state.json"
+HYPERLIQUID_TRADES_BUFFER_PATH = DATA_DIR / "hyperliquid_trades_buffer.jsonl"
 
 
 def load_scoring_state() -> dict:
@@ -142,6 +153,38 @@ def save_wallet_flip_state(state: dict) -> None:
     WALLET_FLIP_STATE_PATH.write_text(
         json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
+
+
+def load_hyperliquid_trades_buffer() -> list[dict]:
+    """Zwraca surowe rekordy (dict, patrz `hyperliquid_ws.HyperliquidTrade`)
+    - jeden na linię JSONL. Linie, których nie da się sparsować jako JSON,
+    są pomijane (nie przerywają wczytywania reszty pliku) - defensywnie,
+    tak jak reszta parsowania danych zewnętrznych w tym projekcie."""
+    if not HYPERLIQUID_TRADES_BUFFER_PATH.exists():
+        return []
+    records: list[dict] = []
+    with HYPERLIQUID_TRADES_BUFFER_PATH.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records
+
+
+def save_hyperliquid_trades_buffer(records: list[dict]) -> None:
+    """Nadpisuje CAŁY plik (nie append) — wywołujący jest odpowiedzialny za
+    wcześniejsze przycięcie starych rekordów (patrz
+    `hyperliquid_ws.prune_trade_records`) i doklejenie nowych do listy
+    przed wywołaniem tej funkcji."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with HYPERLIQUID_TRADES_BUFFER_PATH.open("w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")))
+            f.write("\n")
 
 
 def price_at_block_factory(trades: list[Trade]):
