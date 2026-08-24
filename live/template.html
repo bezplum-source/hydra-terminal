@@ -26,6 +26,19 @@
     --bad-glow: #FF3B5C;
     --bad-soft: rgba(184, 37, 63, 0.16);
 
+    /* Regime (BULL/BEAR/NEUTRAL) - paleta CELOWO odrębna od LONG/SHORT (--good/--bad),
+       żeby dwie różne osie (sygnał vs regime) nigdy się wizualnie nie zlewały, nawet
+       gdy akurat wskazują ten sam kierunek. BULL reużywa --accent (już używany do ceny
+       i marki, semantycznie neutralny), BEAR dostaje nowy fiolet. */
+    --regime-bull: var(--accent);
+    --regime-bull-glow: var(--accent-glow);
+    --regime-bull-soft: var(--accent-soft);
+    --regime-bear: #7C5CFF;
+    --regime-bear-glow: #B7A3FF;
+    --regime-bear-soft: rgba(124, 92, 255, 0.16);
+    --regime-neutral: #8A8894;
+    --regime-neutral-soft: rgba(168, 166, 176, 0.12);
+
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.85);
 
     --font-display: 'Bebas Neue', 'Oswald', system-ui, sans-serif;
@@ -168,6 +181,13 @@
   }
   .chip--warn .chip-dot { background: var(--accent-glow); box-shadow: 0 0 8px var(--accent-glow); }
 
+  .chip--ok {
+    color: var(--good-glow);
+    border-color: color-mix(in srgb, var(--good) 45%, var(--border));
+    background: var(--good-soft);
+  }
+  .chip--ok .chip-dot { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
+
   /* ---------- hero ---------- */
   .hero {
     background: linear-gradient(165deg, var(--bg-elevated), var(--bg-elevated-2));
@@ -245,6 +265,92 @@
     0%, 100% { box-shadow: 0 0 14px -4px rgba(255, 59, 92, 0.35); }
     50% { box-shadow: 0 0 26px 0px rgba(255, 59, 92, 0.55); }
   }
+
+  /* Regime pill: KWADRATOWY znacznik (nie kółko) i BEZ pulsowania - celowo inny język
+     wizualny niż .pill (LONG/SHORT), żeby dwie różne osie nie wyglądały jak to samo. */
+  .regime-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+    padding: 7px 15px;
+    border-radius: 9px;
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: 0.05em;
+  }
+  .regime-pill::before { content: ''; width: 9px; height: 9px; border-radius: 3px; flex: none; }
+
+  .regime-pill--bull {
+    color: var(--regime-bull-glow);
+    background: var(--regime-bull-soft);
+    border: 1px solid color-mix(in srgb, var(--regime-bull) 55%, transparent);
+  }
+  .regime-pill--bull::before { background: var(--regime-bull-glow); box-shadow: 0 0 8px var(--regime-bull-glow); }
+
+  .regime-pill--bear {
+    color: var(--regime-bear-glow);
+    background: var(--regime-bear-soft);
+    border: 1px solid color-mix(in srgb, var(--regime-bear) 55%, transparent);
+  }
+  .regime-pill--bear::before { background: var(--regime-bear-glow); box-shadow: 0 0 8px var(--regime-bear-glow); }
+
+  .regime-pill--neutral {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+  }
+  .regime-pill--neutral::before { background: var(--text-muted); }
+
+  .regime-pill--none {
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed var(--border);
+  }
+  .regime-pill--none::before { background: var(--text-muted); }
+
+  /* Tug-of-war: bull vs bear score, znormalizowane do 100% szerokości (patrz JS - suma
+     bull+bear świadomie nie sięga 100, komponent Capital Flow jeszcze nieaktywny). */
+  .tow-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--bg-elevated-2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+  }
+  .tow-bull { height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--regime-bull) 65%, transparent), var(--regime-bull-glow)); }
+  .tow-bear { height: 100%; background: linear-gradient(90deg, var(--regime-bear-glow), color-mix(in srgb, var(--regime-bear) 65%, transparent)); }
+  .tow-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); margin-top: 7px; }
+  .tow-labels strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+  .regime-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  @media (max-width: 640px) { .regime-meta-grid { grid-template-columns: 1fr 1fr; } }
+
+  .flip-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .flip-chip {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 11px;
+  }
+  .flip-chip b { color: var(--text-primary); font-weight: 600; }
+  .flip-up { color: var(--regime-bull-glow); }
+  .flip-down { color: var(--regime-bear-glow); }
+
+  .caveat {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+  }
+  .caveat strong { color: var(--text-secondary); }
 
   .hero-price {
     font-family: var(--font-mono);
@@ -330,6 +436,18 @@
   .hover-dot { fill: var(--accent-glow); stroke: var(--bg-elevated); stroke-width: 2; opacity: 0; }
   .chart-overlay { fill: transparent; cursor: crosshair; }
 
+  /* ---------- regime ribbon + event markers (pod wykresem ceny, ten sam <svg>) ---------- */
+  .regime-band-bull { fill: var(--regime-bull); opacity: 0.55; }
+  .regime-band-bear { fill: var(--regime-bear); opacity: 0.55; }
+  .regime-band-neutral { fill: var(--regime-neutral); opacity: 0.32; }
+  .regime-band-none { fill: rgba(255, 255, 255, 0.035); }
+
+  .marker-start-bull { fill: var(--regime-bull-glow); }
+  .marker-start-bear { fill: var(--regime-bear-glow); }
+  .marker-end { fill: none; stroke: var(--text-muted); stroke-width: 1.4; }
+  .marker-special-bull { fill: var(--regime-bull-glow); stroke: var(--bg-elevated); stroke-width: 1; }
+  .marker-special-bear { fill: var(--regime-bear-glow); stroke: var(--bg-elevated); stroke-width: 1; }
+
   .tooltip {
     position: absolute;
     pointer-events: none;
@@ -382,6 +500,14 @@
   .row-pill.long::before { background: var(--good-glow); box-shadow: 0 0 6px var(--good-glow); }
   .row-pill.short { color: var(--bad-glow); background: var(--bad-soft); }
   .row-pill.short::before { background: var(--bad-glow); box-shadow: 0 0 6px var(--bad-glow); }
+  .row-pill.bull { color: var(--regime-bull-glow); background: var(--regime-bull-soft); }
+  .row-pill.bull::before { background: var(--regime-bull-glow); box-shadow: 0 0 6px var(--regime-bull-glow); }
+  .row-pill.bear { color: var(--regime-bear-glow); background: var(--regime-bear-soft); }
+  .row-pill.bear::before { background: var(--regime-bear-glow); box-shadow: 0 0 6px var(--regime-bear-glow); }
+  .row-pill.muted { color: var(--text-muted); background: rgba(255, 255, 255, 0.03); }
+  .row-pill.muted::before { background: var(--text-muted); }
+
+  .empty-state { padding: 26px 10px !important; text-align: center; color: var(--text-muted); font-size: 13px; }
 
   .pct.up { color: var(--good-glow); }
   .pct.down { color: var(--bad-glow); }
@@ -414,6 +540,7 @@
     </div>
     <div class="topbar-right">
       <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 USDC/WETH</span>
+      <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
 
@@ -460,12 +587,61 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-2">
+  <section class="card reveal reveal-2" id="regimeCard">
+    <div class="card-head">
+      <span class="card-title">Regime rynkowy</span>
+      <span class="card-note">BULL / BEAR / NEUTRAL &middot; niezależne od sygnału LONG/SHORT powyżej</span>
+    </div>
+    <div class="card-subnote">Osobny, wolniejszy tor detekcji reżimu rynku (presja dobrych/złych traderów, momentum wieloczasowe, capitulation/distribution) — może wskazywać inny kierunek niż aktywny sygnał LONG/SHORT. Eksperymentalne, w trakcie kalibracji.</div>
+
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <span class="regime-pill regime-pill--none" id="regimePill">BRAK DANYCH</span>
+      <span class="hero-meta" id="regimeEventNote"></span>
+    </div>
+
+    <div style="margin-top:18px;">
+      <div class="tow-track">
+        <div class="tow-bull" id="towBull" style="width:50%"></div>
+        <div class="tow-bear" id="towBear" style="width:50%"></div>
+      </div>
+      <div class="tow-labels">
+        <span>BYCZY <strong id="towBullVal">-</strong></span>
+        <span>NIEDŹWIEDZI <strong id="towBearVal">-</strong></span>
+      </div>
+    </div>
+
+    <div class="regime-meta-grid">
+      <div class="stat">
+        <span class="stat-label">Confidence</span>
+        <span class="stat-value" id="regimeConfidence">-</span>
+        <span class="stat-hint">heurystyka czytelności, nieskalibrowana</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Horyzont momentum</span>
+        <span class="stat-value" id="regimeHorizon">-</span>
+        <span class="stat-hint">najdłuższy dostępny w historii</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Historia danych</span>
+        <span class="stat-value" id="regimeMaturity">-</span>
+        <span class="stat-hint" id="regimeMaturityHint">świec zebranych do teraz</span>
+      </div>
+    </div>
+
+    <div class="flip-row" id="flipRow"></div>
+
+    <div class="caveat">
+      <strong>Uczciwie o ograniczeniach:</strong> suma BYCZY+NIEDŹWIEDZI świadomie nie sięga 100 — komponent Capital Flow (E) nie jest jeszcze aktywny (sufit 90). Progi i wagi to wartości startowe, nieprzestrojone jeszcze backtestem. Długie horyzonty momentum (7&ndash;30 dni) będą puste, dopóki nie zbierze się tyle historii.
+    </div>
+  </section>
+
+  <section class="card reveal reveal-3">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
     </div>
+    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź, by zobaczyć szczegóły danej świecy.</div>
     <div class="chart-wrap" id="mainChartWrap">
-      <svg class="chart" id="mainChart" viewBox="0 0 1000 300" preserveAspectRatio="none">
+      <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
         <defs>
           <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="#FFC94A" stop-opacity="0.32"></stop>
@@ -477,7 +653,27 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-3">
+  <section class="card reveal reveal-3" id="eventLogCard">
+    <div class="card-head">
+      <span class="card-title">Zdarzenia regime</span>
+      <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
+    </div>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>Zdarzenie</th>
+            <th>Kiedy</th>
+            <th class="num">Cena</th>
+            <th class="num">Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="eventLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
       <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału</span>
@@ -512,6 +708,15 @@ const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 
 const fmtUsd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+
+// Faza UX/UI 1 (regime-detection na froncie) - eventy "stanu" (przejścia maszyny
+// stanów BULL/BEAR z Fazy 2, w tym END_* - własny dodatek Claude poza literą briefu)
+// vs eventy "specjalne" (CAPITULATION/DISTRIBUTION z Fazy 4, stateless, pojedynczy
+// moment) - traktowane osobno wizualnie (trójkąty vs diamenty), tak jak w regime.py.
+const REGIME_STATE_EVENTS = ['START_BULL_MARKET', 'END_BULL_MARKET', 'START_BEAR_MARKET', 'END_BEAR_MARKET'];
+const SPECIAL_EVENTS = ['CAPITULATION', 'DISTRIBUTION'];
+const isBullish = (evt) => evt === 'START_BULL_MARKET' || evt === 'CAPITULATION';
+const isBearish = (evt) => evt === 'START_BEAR_MARKET' || evt === 'DISTRIBUTION';
 
 function animateNumber(el, target, opts) {
   opts = opts || {};
@@ -555,6 +760,116 @@ function renderHero() {
   document.getElementById('statBad').textContent = latest.badBuyers + ' / ' + latest.badSellers;
 }
 
+function renderRegimeCard() {
+  const candles = DATA.candles;
+  // Nie każda świeca ma pola regime (te z przed wdrożenia Fazy 2 nie mają) - szukamy
+  // od końca najnowszej świecy, która faktycznie je ma, zamiast ufać ostatniej z listy.
+  const withRegime = candles.filter((c) => c.regime !== undefined);
+  const latest = withRegime.length ? withRegime[withRegime.length - 1] : null;
+
+  const pill = document.getElementById('regimePill');
+  const note = document.getElementById('regimeEventNote');
+
+  if (!latest) {
+    pill.textContent = 'BRAK DANYCH';
+    pill.className = 'regime-pill regime-pill--none';
+    note.textContent = 'regime-detection jeszcze nie wystartowało w tej historii świec.';
+    document.getElementById('towBull').style.width = '50%';
+    document.getElementById('towBear').style.width = '50%';
+    document.getElementById('towBullVal').textContent = '-';
+    document.getElementById('towBearVal').textContent = '-';
+    document.getElementById('regimeConfidence').textContent = '-';
+    document.getElementById('regimeHorizon').textContent = '-';
+    document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
+    document.getElementById('flipRow').innerHTML = '';
+    return;
+  }
+
+  pill.textContent = latest.regime;
+  pill.className = 'regime-pill regime-pill--' + (latest.regime === 'BULL' ? 'bull' : latest.regime === 'BEAR' ? 'bear' : 'neutral');
+
+  if (latest.regimeEvent) {
+    note.textContent = 'ostatni event na tej świecy: ' + latest.regimeEvent;
+  } else if (latest.specialEvent) {
+    note.textContent = 'ostatni event na tej świecy: ' + latest.specialEvent + ' (confidence ' + latest.specialEventConfidence.toFixed(0) + ')';
+  } else {
+    note.textContent = 'brak eventu na ostatniej świecy';
+  }
+
+  const bull = latest.bullScore || 0, bear = latest.bearScore || 0;
+  const total = bull + bear;
+  const bullPct = total > 0 ? (bull / total) * 100 : 50;
+  document.getElementById('towBull').style.width = bullPct.toFixed(1) + '%';
+  document.getElementById('towBear').style.width = (100 - bullPct).toFixed(1) + '%';
+  document.getElementById('towBullVal').textContent = bull.toFixed(1);
+  document.getElementById('towBearVal').textContent = bear.toFixed(1);
+
+  document.getElementById('regimeConfidence').textContent = latest.regimeConfidence != null ? latest.regimeConfidence.toFixed(1) : '-';
+  document.getElementById('regimeHorizon').textContent = latest.regimeMomentumHorizon || '-';
+
+  document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
+  document.getElementById('regimeMaturityHint').innerHTML = 'świec &middot; od ' + candles[0].time;
+
+  const flipRow = document.getElementById('flipRow');
+  if (latest.goodBullishFlips === undefined) {
+    flipRow.innerHTML = '<span class="flip-chip">Wallet flips: dane jeszcze się zbierają (Faza 3)</span>';
+  } else {
+    flipRow.innerHTML =
+      '<span class="flip-chip">GOOD flips: <b class="flip-up">&uarr;' + latest.goodBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.goodBearishFlips + '</b></span>' +
+      '<span class="flip-chip">BAD flips: <b class="flip-up">&uarr;' + latest.badBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.badBearishFlips + '</b></span>';
+  }
+}
+
+function buildEventLog() {
+  const candles = DATA.candles;
+  const rows = [];
+  candles.forEach((c) => {
+    if (c.regimeEvent && REGIME_STATE_EVENTS.indexOf(c.regimeEvent) !== -1) {
+      rows.push({ type: c.regimeEvent, time: c.time, price: c.price, confidence: c.regimeConfidence });
+    }
+    if (c.specialEvent && SPECIAL_EVENTS.indexOf(c.specialEvent) !== -1) {
+      rows.push({ type: c.specialEvent, time: c.time, price: c.price, confidence: c.specialEventConfidence });
+    }
+  });
+  rows.reverse(); // najnowsze na górze
+
+  const tbody = document.getElementById('eventLogBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Jeszcze żadnych zdarzeń regime — pojawią się tu automatycznie, gdy wystąpią.</td></tr>';
+    return;
+  }
+
+  rows.forEach((r) => {
+    const cls = r.type.indexOf('END_') === 0 ? 'muted' : isBullish(r.type) ? 'bull' : isBearish(r.type) ? 'bear' : 'muted';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="row-pill ' + cls + '">' + r.type.replace(/_/g, ' ') + '</span></td>' +
+      '<td>' + r.time + '</td>' +
+      '<td class="num">' + fmtUsd(r.price) + '</td>' +
+      '<td class="num">' + (r.confidence != null ? r.confidence.toFixed(1) : '-') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderFreshness() {
+  const candles = DATA.candles;
+  const chip = document.getElementById('freshnessChip');
+  const text = document.getElementById('freshnessText');
+  if (!candles.length || !candles[candles.length - 1].ts) { chip.style.display = 'none'; return; }
+
+  const latest = candles[candles.length - 1];
+  const elapsedMin = Math.max(0, Math.round((Date.now() / 1000 - latest.ts) / 60));
+
+  let label;
+  if (elapsedMin < 1) label = 'zaktualizowano przed chwilą';
+  else if (elapsedMin < 60) label = 'zaktualizowano ' + elapsedMin + ' min temu';
+  else label = 'zaktualizowano ' + Math.floor(elapsedMin / 60) + 'h ' + (elapsedMin % 60) + 'min temu';
+
+  text.textContent = label;
+  chip.classList.remove('chip--ok', 'chip--warn');
+  chip.classList.add(elapsedMin > 90 ? 'chip--warn' : 'chip--ok');
+}
+
 function niceDomain(values) {
   const min = Math.min(...values), max = Math.max(...values);
   const pad = (max - min) * 0.08 || 1;
@@ -565,8 +880,12 @@ function buildMainChart() {
   const svg = document.getElementById('mainChart');
   const candles = DATA.candles;
   const n = candles.length;
-  const W = 1000, H = 300, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
-  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  // H rozszerzone z 300 do 350 (Faza UX/UI 1), żeby zrobić miejsce na wstążkę regime
+  // (RIBBON_H) i rząd markerów eventów (MARK_H) POD wykresem ceny, bez zmiany proporcji
+  // samego wykresu bardziej niż konieczne.
+  const W = 1000, H = 350, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
+  const RIBBON_H = 16, MARK_H = 16;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B - RIBBON_H - MARK_H;
 
   const prices = candles.map(c => c.price);
   const [yMin, yMax] = niceDomain(prices);
@@ -625,6 +944,50 @@ function buildMainChart() {
     requestAnimationFrame(() => requestAnimationFrame(() => { lineEl.style.strokeDashoffset = '0'; }));
   }
 
+  // ---- regime ribbon (Faza UX/UI 1): pasmo koloru BULL/BEAR/NEUTRAL/brak-danych,
+  // grupowane w ciągłe segmenty tym samym wzorcem co pasma LONG/SHORT wyżej. ----
+  const ribbonY = PAD_T + plotH + MARK_H;
+  const regimeKey = (c) => (c.regime === 'BULL' ? 'bull' : c.regime === 'BEAR' ? 'bear' : c.regime === 'NEUTRAL' ? 'neutral' : 'none');
+  let ri = 0;
+  while (ri < n) {
+    let rj = ri;
+    while (rj + 1 < n && regimeKey(candles[rj + 1]) === regimeKey(candles[ri])) rj++;
+    const rx0 = x(ri) - (ri === 0 ? 0 : (x(ri) - x(ri - 1)) / 2);
+    const rx1 = x(rj) + (rj === n - 1 ? 0 : (x(rj + 1) - x(rj)) / 2);
+    svg.appendChild(el('rect', {
+      x: rx0.toFixed(2), y: ribbonY, width: Math.max(0, rx1 - rx0).toFixed(2), height: RIBBON_H,
+      class: 'regime-band-' + regimeKey(candles[ri])
+    }));
+    ri = rj + 1;
+  }
+
+  // ---- event markers: trójkąty dla przejść stanu (START/END BULL/BEAR z Fazy 2),
+  // diamenty dla eventów specjalnych (CAPITULATION/DISTRIBUTION z Fazy 4). Mogą
+  // wystąpić na tej samej świecy naraz - wtedy delikatnie rozsunięte w X. ----
+  const markCy = PAD_T + plotH + MARK_H / 2;
+  for (let k = 0; k < n; k++) {
+    const c = candles[k];
+    if (c.regimeEvent && REGIME_STATE_EVENTS.indexOf(c.regimeEvent) !== -1) {
+      const mx = x(k) - 3;
+      if (c.regimeEvent.indexOf('END_') === 0) {
+        svg.appendChild(el('circle', { cx: mx.toFixed(2), cy: markCy.toFixed(2), r: 3.2, class: 'marker-end' }));
+      } else {
+        const bull = isBullish(c.regimeEvent);
+        const pts = bull
+          ? `${mx - 4},${markCy + 4} ${mx + 4},${markCy + 4} ${mx},${markCy - 4}`
+          : `${mx - 4},${markCy - 4} ${mx + 4},${markCy - 4} ${mx},${markCy + 4}`;
+        svg.appendChild(el('polygon', { points: pts, class: bull ? 'marker-start-bull' : 'marker-start-bear' }));
+      }
+    }
+    if (c.specialEvent && SPECIAL_EVENTS.indexOf(c.specialEvent) !== -1) {
+      const mx = x(k) + 3;
+      const bull = isBullish(c.specialEvent);
+      const r = 3.6;
+      const pts = `${mx},${markCy - r} ${mx + r},${markCy} ${mx},${markCy + r} ${mx - r},${markCy}`;
+      svg.appendChild(el('polygon', { points: pts, class: bull ? 'marker-special-bull' : 'marker-special-bear' }));
+    }
+  }
+
   const t0 = el('text', { class: 'chart-axis-label', x: PAD_L, y: H - 6 });
   t0.textContent = candles[0].time;
   const t1 = el('text', { class: 'chart-axis-label', x: W - PAD_R, y: H - 6, 'text-anchor': 'end' });
@@ -636,7 +999,9 @@ function buildMainChart() {
   svg.appendChild(hoverLine);
   svg.appendChild(hoverDot);
 
-  const overlay = el('rect', { class: 'chart-overlay', x: PAD_L, y: PAD_T, width: plotW, height: plotH });
+  // Overlay rozciągnięty także na wstążkę+markery (nie tylko sam plot ceny), żeby
+  // hover nad regime/eventem też pokazywał tooltip.
+  const overlay = el('rect', { class: 'chart-overlay', x: PAD_L, y: PAD_T, width: plotW, height: ribbonY + RIBBON_H - PAD_T });
   svg.appendChild(overlay);
 
   const tooltip = document.getElementById('mainTooltip');
@@ -657,9 +1022,15 @@ function buildMainChart() {
     tooltip.style.left = leftPct + '%';
     tooltip.style.top = ((y(c.price) / H) * 100) + '%';
     tooltip.style.opacity = 1;
-    tooltip.innerHTML = `<strong>${fmtUsd(c.price)}</strong><br>` +
+    let html = `<strong>${fmtUsd(c.price)}</strong><br>` +
       `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
       `${c.time} &middot; score ${(c.composite >= 0 ? '+' : '')}${c.composite.toFixed(3)}`;
+    if (c.regime) {
+      html += `<br>regime: <strong>${c.regime}</strong>` + (c.regimeConfidence != null ? ` (${c.regimeConfidence.toFixed(0)})` : '');
+    }
+    if (c.regimeEvent) html += `<br>&#9889; ${c.regimeEvent.replace(/_/g, ' ')}`;
+    if (c.specialEvent) html += `<br>&#9889; ${c.specialEvent}` + (c.specialEventConfidence != null ? ` (${c.specialEventConfidence.toFixed(0)})` : '');
+    tooltip.innerHTML = html;
   }
 
   overlay.addEventListener('mousemove', (e) => handleMove(e.clientX));
@@ -699,8 +1070,10 @@ function renderFooter() {
 }
 
 renderHero();
+renderRegimeCard();
 buildMainChart();
+buildEventLog();
 buildHistory();
 renderFooter();
+renderFreshness();
 </script>
-
