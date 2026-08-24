@@ -1,4 +1,4 @@
-"""Testy Fazy H2 (composite_perp) - jednostkowe dla
+"""Testy Faz H2/H3 (composite_perp + pola diagnostyczne) - jednostkowe dla
 `hydra_signals.hyperliquid_wallets.HyperliquidScoringEngine`, mirror stylu
 `tests/test_scoring.py` (odpowiednik dla Uniswap), ale z HyperliquidTrade
 (dwie strony na jedno zdarzenie) zamiast pojedynczego Trade."""
@@ -175,3 +175,56 @@ def test_history_trades_outside_lookback_window_are_ignored_for_classification()
     # "stale" ma tylko 1 transakcje W OKNIE LOOKBACK (ta z new_trades) - stara
     # historia zostala odrzucona, wiec ponizej min_trades=2 -> niesklasyfikowany.
     assert result.n_classified_wallets == 0
+
+
+# =====================================================================
+# Faza H3 (front-end) - active_wallets / total_wallets_tracked
+# =====================================================================
+
+
+def test_active_wallets_counts_distinct_wallets_with_nonzero_net_direction():
+    # 3 portfele NETTO kupuja/sprzedaja w oknie (buyer+seller par -> 6 wpisow
+    # per-portfelowych, ale tylko 3+3=6 ROZNYCH adresow licza sie do
+    # active_wallets - kazdy portfel liczony raz, niezaleznie od liczby
+    # transakcji w tym oknie).
+    trades = [make_hl_trade(f"w{i}", f"cp{i}", 100.0, 1.0, ts_ms=i) for i in range(3)]
+    engine = HyperliquidScoringEngine(HyperliquidScoringConfig())
+    result = engine.run(trades, history_trades=[], window_end_ts_ms=1000)
+    assert result is not None
+    assert result.active_wallets == 6  # 3 buyerow + 3 sellerow, wszyscy rozni
+
+
+def test_total_wallets_tracked_accumulates_across_calls_on_same_engine():
+    engine = HyperliquidScoringEngine(HyperliquidScoringConfig())
+    r1 = engine.run(
+        [make_hl_trade("a", "b", 100.0, 1.0, ts_ms=1)], history_trades=[], window_end_ts_ms=1000
+    )
+    assert r1 is not None
+    assert r1.total_wallets_tracked == 2  # a, b
+
+    # Drugie wywolanie: "a" sie powtarza (juz sledzony), "c" jest nowy ->
+    # suma rosnie o JEDEN nowy adres, nie o dwa.
+    r2 = engine.run(
+        [make_hl_trade("a", "c", 100.0, 1.0, ts_ms=2000)], history_trades=[], window_end_ts_ms=2000
+    )
+    assert r2 is not None
+    assert r2.total_wallets_tracked == 3  # a, b, c
+    assert engine.total_tracked == {"a", "b", "c"}
+
+
+def test_total_wallets_tracked_resumes_from_initial_total_tracked():
+    # Wznawialnosc: drugi silnik (nowe obiekty, symulacja kolejnego
+    # uruchomienia run_incremental.py) skonstruowany z
+    # `initial_total_tracked=poprzedni.total_tracked` MUSI kontynuowac
+    # liczenie od zapisanego zbioru, a nie zaczynac liczyc "śledzone
+    # portfele" od zera przy kazdym restarcie procesu.
+    engine1 = HyperliquidScoringEngine(HyperliquidScoringConfig())
+    engine1.run([make_hl_trade("a", "b", 100.0, 1.0, ts_ms=1)], history_trades=[], window_end_ts_ms=1000)
+    assert engine1.total_tracked == {"a", "b"}
+
+    engine2 = HyperliquidScoringEngine(HyperliquidScoringConfig(), initial_total_tracked=engine1.total_tracked)
+    result = engine2.run(
+        [make_hl_trade("c", "d", 100.0, 1.0, ts_ms=2000)], history_trades=[], window_end_ts_ms=2000
+    )
+    assert result is not None
+    assert result.total_wallets_tracked == 4  # a, b (wznowione) + c, d (nowe)
