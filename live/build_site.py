@@ -32,8 +32,14 @@ def _build_streaks(candles: list[dict]) -> list[dict]:
         while j + 1 < len(candles) and candles[j + 1]["signal"] == sig:
             j += 1
         start, end = candles[i], candles[j]
+        # Wynik WYGRANEJ/PRZEGRANEJ sygnału, nie surowa zmiana kursu: dla LONG
+        # wzrost ceny = zysk (znak bez zmian), dla SHORT wzrost ceny = strata
+        # (znak odwrócony) — bo SHORT zarabia, gdy cena SPADA. Bez tego SHORT
+        # trafiony w dół wyglądał na stronie jak sukces (zielony +), a to była
+        # w rzeczywistości pomyłka sygnału.
+        direction = -1 if sig == "SHORT" else 1
         pct = (
-            (end["price"] - start["price"]) / start["price"] * 100
+            direction * (end["price"] - start["price"]) / start["price"] * 100
             if start["price"]
             else 0.0
         )
