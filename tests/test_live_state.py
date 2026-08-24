@@ -17,6 +17,7 @@ def _patch_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "TRADE_BUFFER_PATH", tmp_path / "trade_buffer.csv")
     monkeypatch.setattr(st, "WALLETS_SEEN_PATH", tmp_path / "wallets_seen.txt")
     monkeypatch.setattr(st, "CANDLES_HISTORY_PATH", tmp_path / "candles_history.json")
+    monkeypatch.setattr(st, "HYPERLIQUID_TRADES_BUFFER_PATH", tmp_path / "hyperliquid_trades_buffer.jsonl")
 
 
 def test_scoring_state_roundtrip(tmp_path, monkeypatch):
@@ -64,6 +65,34 @@ def test_candles_history_roundtrip(tmp_path, monkeypatch):
     candles = [{"block": 100, "price": 2000.0, "signal": "LONG"}]
     st.save_candles_history(candles)
     assert st.load_candles_history() == candles
+
+
+def test_hyperliquid_trades_buffer_roundtrip(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    assert st.load_hyperliquid_trades_buffer() == []
+
+    records = [
+        {"coin": "ETH", "price_usd": 2455.42, "ts_ms": 1735689600000},
+        {"coin": "ETH", "price_usd": 2456.10, "ts_ms": 1735689660000},
+    ]
+    st.save_hyperliquid_trades_buffer(records)
+    assert st.load_hyperliquid_trades_buffer() == records
+
+
+def test_hyperliquid_trades_buffer_save_overwrites_not_appends(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    st.save_hyperliquid_trades_buffer([{"ts_ms": 1}, {"ts_ms": 2}])
+    st.save_hyperliquid_trades_buffer([{"ts_ms": 3}])
+    assert st.load_hyperliquid_trades_buffer() == [{"ts_ms": 3}]
+
+
+def test_hyperliquid_trades_buffer_skips_malformed_lines(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    st.HYPERLIQUID_TRADES_BUFFER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    st.HYPERLIQUID_TRADES_BUFFER_PATH.write_text(
+        '{"ts_ms": 1}\nnot json at all\n{"ts_ms": 2}\n\n', encoding="utf-8"
+    )
+    assert st.load_hyperliquid_trades_buffer() == [{"ts_ms": 1}, {"ts_ms": 2}]
 
 
 def test_price_at_block_factory_uses_nearest_known_block_leq_target():
