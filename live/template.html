@@ -509,8 +509,11 @@
 
   .empty-state { padding: 26px 10px !important; text-align: center; color: var(--text-muted); font-size: 13px; }
 
-  .pct.up { color: var(--good-glow); }
-  .pct.down { color: var(--bad-glow); }
+  /* Specyficzność musi pobić "table.history td.num" wyżej (inaczej ta reguła
+     wygrywa i kolor wyniku zawsze wychodzi neutralny, nawet z poprawną klasą -
+     to był realny bug, wynik nigdy nie był kolorowany mimo klasy up/down). */
+  table.history td.pct.up { color: var(--good-glow); }
+  table.history td.pct.down { color: var(--bad-glow); }
 
   /* ---------- footer ---------- */
   .foot { display: flex; flex-direction: column; gap: 6px; color: var(--text-muted); font-size: 12px; line-height: 1.6; padding-top: 8px; }
@@ -676,7 +679,24 @@
   <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
-      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału</span>
+      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału &middot; wynik = wygrana/przegrana sygnału, nie surowa zmiana kursu</span>
+    </div>
+    <div class="stat-grid" style="margin-bottom:18px;">
+      <div class="stat">
+        <span class="stat-label">Łączny wynik</span>
+        <span class="stat-value" id="aggTotalPct">-</span>
+        <span class="stat-hint">iloczyn (1 + wynik) po wszystkich sygnałach LONG/SHORT, narastająco</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Trafione / nietrafione</span>
+        <span class="stat-value" id="aggWinLoss">-</span>
+        <span class="stat-hint">zamknięte sygnały LONG/SHORT (bez HOLD)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Win rate</span>
+        <span class="stat-value" id="aggWinRate">-</span>
+        <span class="stat-hint" id="aggWinRateHint">% sygnałów na plusie</span>
+      </div>
     </div>
     <div class="table-scroll">
       <table class="history">
@@ -1058,6 +1078,47 @@ function buildHistory() {
   });
 }
 
+function renderAggregateStats() {
+  // Tylko LONG/SHORT liczą się jako "postawiony sygnał" - HOLD nie jest
+  // zakładem w żadną stronę, więc nie wchodzi do łącznego wyniku/win rate.
+  const streaks = DATA.streaks.filter((s) => s.signal === 'LONG' || s.signal === 'SHORT');
+
+  const elTotal = document.getElementById('aggTotalPct');
+  const elWinLoss = document.getElementById('aggWinLoss');
+  const elWinRate = document.getElementById('aggWinRate');
+  const elWinRateHint = document.getElementById('aggWinRateHint');
+  if (!elTotal) return;
+
+  if (!streaks.length) {
+    elTotal.textContent = '-';
+    elWinLoss.textContent = '-';
+    elWinRate.textContent = '-';
+    return;
+  }
+
+  // Compounded, nie zwykła suma: iloczyn (1 + wynik_i) po wszystkich zamknietych
+  // sygnałach - odpowiada na "ile % jesteśmy do przodu/tyłu łącznie", tak jak
+  // rosłby/spadał kapitał, gdyby ktoś trzymał pełną pozycję przez każdy sygnał
+  // po kolei. (Mnożenie jest łączne, więc kolejność streaków nie ma tu znaczenia.)
+  let multiplier = 1, wins = 0, losses = 0, flat = 0;
+  streaks.forEach((s) => {
+    multiplier *= (1 + s.pct / 100);
+    if (s.pct > 0) wins++;
+    else if (s.pct < 0) losses++;
+    else flat++;
+  });
+  const totalPct = (multiplier - 1) * 100;
+
+  elTotal.textContent = fmtPct(totalPct);
+  elTotal.style.color = totalPct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
+
+  elWinLoss.textContent = wins + ' / ' + losses + (flat ? ' (' + flat + ' bez zmiany)' : '');
+
+  const winRate = (wins / streaks.length) * 100;
+  elWinRate.textContent = winRate.toFixed(0) + '%';
+  elWinRateHint.textContent = wins + ' z ' + streaks.length + ' sygnałów LONG/SHORT na plusie';
+}
+
 function renderFooter() {
   const candles = DATA.candles;
   const el = document.getElementById('footerStats');
@@ -1074,6 +1135,7 @@ renderRegimeCard();
 buildMainChart();
 buildEventLog();
 buildHistory();
+renderAggregateStats();
 renderFooter();
 renderFreshness();
 </script>
