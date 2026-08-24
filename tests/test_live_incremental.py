@@ -137,6 +137,23 @@ def _patch_all_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "TRADE_BUFFER_PATH", tmp_path / "data" / "trade_buffer.csv")
     monkeypatch.setattr(st, "WALLETS_SEEN_PATH", tmp_path / "data" / "wallets_seen.txt")
     monkeypatch.setattr(st, "CANDLES_HISTORY_PATH", tmp_path / "data" / "candles_history.json")
+    # BUGFIX (znaleziony 2026-08-24 przy okazji Fazy H0 Hyperliquid): brakowalo
+    # tu patchowania REGIME_STATE_PATH/WALLET_FLIP_STATE_PATH (dodanych do
+    # live/state.py w Fazach 2/3, PO tym jak ten helper zostal napisany w
+    # Fazie 0/1) - testy nizej wywoluja run_incremental.main(), ktore
+    # WYWOLUJE regime_engine/wallet_flip i realnie zapisywalo/nadpisywalo
+    # PRAWDZIWE pliki data/regime_state.json i data/wallet_flip_state.json
+    # w repo (wzgledem biezacego katalogu roboczego), zamiast pisac do
+    # tmp_path jak reszta stanu. Bylo to NIESZKODLIWE w workflow'ie
+    # `update.yml` (uruchamia potem prawdziwy run_incremental.py, ktory
+    # nadpisuje smieci testowe poprawnymi danymi PRZED commitem, patrz
+    # hydrav2-automation.md), ale ujawnilo sie w nowym `hyperliquid-
+    # update.yml` (waskie `git add` tylko bufora Hyperliquid) jako
+    # "cannot rebase: You have unstaged changes" - pozostawiony przez testy
+    # brudny, niezacommitowany `data/wallet_flip_state.json` blokowal
+    # retry/rebase przy konflikcie pusha.
+    monkeypatch.setattr(st, "REGIME_STATE_PATH", tmp_path / "data" / "regime_state.json")
+    monkeypatch.setattr(st, "WALLET_FLIP_STATE_PATH", tmp_path / "data" / "wallet_flip_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
