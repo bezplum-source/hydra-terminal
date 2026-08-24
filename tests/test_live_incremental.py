@@ -17,6 +17,8 @@ wznawialnosc ScoringEngine, I/O stanu) sa juz przetestowane osobno.
 
 from __future__ import annotations
 
+import json
+
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from live import build_site as bs
@@ -165,6 +167,9 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # w repo zamiast do tmp_path.
     monkeypatch.setattr(st, "HYPERLIQUID_TRADES_BUFFER_PATH", tmp_path / "data" / "hyperliquid_trades_buffer.jsonl")
     monkeypatch.setattr(st, "HYPERLIQUID_SCORING_STATE_PATH", tmp_path / "data" / "hyperliquid_scoring_state.json")
+    # Faza H3 - dopisane OD RAZU (patrz komentarz wyzej) razem z wprowadzeniem
+    # tej trzeciej sciezki Hyperliquid.
+    monkeypatch.setattr(st, "HYPERLIQUID_WALLETS_SEEN_PATH", tmp_path / "data" / "hyperliquid_wallets_seen.txt")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -357,6 +362,10 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
         assert c["compositePerp"] is None
         assert c["composite"] == c["compositeSpot"]
         assert c["signal"] == c["signalSpotOnly"]
+        # Faza H3 - pola diagnostyczne rowniez w bezpiecznym, "brak danych"
+        # stanie, nie tylko composite/signal.
+        assert c["perpIsMature"] is False
+        assert c["perpTracked"] == 0
     # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
     # nie mial "nowego okna" do policzenia (patrz HyperliquidScoringEngine.run).
     assert st.load_hyperliquid_scoring_state() == {}
@@ -406,12 +415,25 @@ def test_mature_hyperliquid_buffer_blends_composite_and_can_flip_signal(tmp_path
     assert len(candles) > 0
 
     hl_state = st.load_hyperliquid_scoring_state()
-    assert hl_state["last_is_mature"] is True
-    assert hl_state["last_composite_perp"] > 0  # jednoznacznie bycze
+    perp_snapshot = hl_state["last_perp_snapshot"]
+    assert perp_snapshot["is_mature"] is True
+    assert perp_snapshot["composite"] > 0  # jednoznacznie bycze
+    # "sledzone portfele" liczy WSZYSTKIE adresy aktywne w buforze (jak
+    # `tracked` dla spotu) - 25 hlgoodN + 175 roznych, jednorazowych
+    # kontrahentow "cpNNNN" (2 na kazdy round-trip x3 + 1 na koncowy zakup,
+    # x25 portfeli = 175), NIE tylko te faktycznie sklasyfikowane GOOD/BAD.
+    assert perp_snapshot["tracked"] == 200
 
     last = candles[-1]
-    assert last["compositePerp"] == hl_state["last_composite_perp"]
+    assert last["compositePerp"] == perp_snapshot["composite"]
     assert last["compositePerp"] > 0
+    # Faza H3 - pola diagnostyczne karty "ETH-PERP - Hyperliquid" wystawione
+    # na tej samej swiecy, zgodne z tym co faktycznie policzyl silnik.
+    assert last["perpTracked"] == 200
+    assert last["perpIsMature"] is True
+    assert last["perpGoodBuyers"] == 25
+    assert last["perpGoodSellers"] == 0
+    assert last["perpBadBuyers"] == 0 and last["perpBadSellers"] == 0
     # composite zblendowany (waga domyslna 50/50) musi lezec DOKLADNIE
     # posrodku miedzy spotem a perpem - weryfikacja formuly blendu na
     # prawdziwym przebiegu run_incremental.py, nie tylko na jednostce.
@@ -420,3 +442,54 @@ def test_mature_hyperliquid_buffer_blends_composite_and_can_flip_signal(tmp_path
     # Perp jest mocno bycze - zblendowany composite powinien byc WYZSZY (albo
     # rowny w skrajnym przypadku) niz sam spot, nigdy odwrotnie.
     assert last["composite"] >= last["compositeSpot"]
+
+
+def test_legacy_hyperliquid_scoring_state_schema_still_works(tmp_path, monkeypatch):
+    """Zgodnosc wsteczna (Faza H3): `data/hyperliquid_scoring_state.json`
+    zapisany JESZCZE PRZED ta faza ma zamiast `last_perp_snapshot` dwa
+    starsze, plaskie klucze `last_composite_perp`/`last_is_mature` (dokladnie
+    tak, jak realnie wyglada plik juz skomitowany do repo po Fazie H2, patrz
+    hydrav2-automation.md). Ten test symuluje TAKI stan na dysku i sprawdza,
+    ze pierwsze uruchomienie run_incremental.py PO wdrozeniu Fazy H3 (bez
+    zadnych nowych transakcji Hyperliquid w buforze - listener jeszcze nie
+    zdazyl odpalic sie ponownie) NIE traci ciaglosci composite_perp, mimo ze
+    nie ma jeszcze nowego, pelnego `last_perp_snapshot`."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    legacy_state = {
+        "good_short": 0.9,
+        "good_long": 0.9,
+        "bad_short": 0.5,
+        "bad_long": 0.5,
+        "last_processed_ts_ms": 999_999,
+        "last_composite_perp": 0.42,
+        "last_is_mature": True,
+    }
+    (tmp_path / "data" / "hyperliquid_scoring_state.json").write_text(
+        json.dumps(legacy_state), encoding="utf-8"
+    )
+    # Bufor Hyperliquid pusty (albo wszystko juz "przetworzone" wzgledem
+    # last_processed_ts_ms=999999) - hl_score bedzie None w tym uruchomieniu,
+    # wiec kod MUSI sięgnąć po stary schemat, nie po `last_perp_snapshot`
+    # (ktorego tu celowo nie ma).
+    st.save_hyperliquid_trades_buffer([])
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    last = candles[-1]
+    assert last["compositePerp"] == 0.42
+    assert last["perpIsMature"] is True
+    # Liczniki diagnostyczne, ktorych stary schemat NIE niosl - bezpieczne
+    # zera zamiast bledu/braku klucza.
+    assert last["perpGoodBuyers"] == 0
+    assert last["perpTracked"] == 0
