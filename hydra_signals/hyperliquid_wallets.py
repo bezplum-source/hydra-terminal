@@ -53,6 +53,18 @@ z `composite_spot` w `hydra_signals.scoring.blend_composite`, wołanym z
 `live/run_incremental.py` — TA klasa i ten moduł same nie wiedzą nic o
 blendzie ani o głównym sygnale LONG/SHORT, zgodnie z decyzją architektoniczną
 "dwa niezależne rurociągi danych, złączone dopiero na końcu".
+
+Faza H3 (brief, front-end) dopisuje do `HyperliquidScoringEngine` i
+`HyperliquidWindowScore` dwa dodatkowe, czysto DIAGNOSTYCZNE pola —
+`active_wallets`/`total_wallets_tracked` — analogiczne do `active_wallets`/
+`total_wallets_tracked` w `hydra_signals.models.WindowScore`, potrzebne
+WYŁĄCZNIE do wyświetlenia w nowej karcie "ETH-PERP · Hyperliquid" na
+stronie (`live/template.html`) - NIE wchodzą do formuły `composite_score`
+ani do żadnej logiki blendu, czysto liczby do pokazania użytkownikowi.
+`total_wallets_tracked` wymaga wznawialnego stanu MIĘDZY uruchomieniami
+(jak `wallets_seen.txt` dla Uniswap) - stąd nowy `initial_total_tracked`/
+`self.total_tracked` niżej, i nowy plik `data/hyperliquid_wallets_seen.txt`
+w `live/state.py`.
 """
 
 from __future__ import annotations
@@ -201,6 +213,10 @@ class HyperliquidWindowScore:
     composite_score: float
     is_mature: bool
 
+    # --- Faza H3 (front-end) - czysto diagnostyczne, patrz docstring modulu.
+    active_wallets: int = 0
+    total_wallets_tracked: int = 0
+
 
 class HyperliquidScoringEngine:
     """Stateful silnik EMA dla Hyperliquid — architektonicznie odpowiednik
@@ -215,6 +231,7 @@ class HyperliquidScoringEngine:
         config: HyperliquidScoringConfig | None = None,
         *,
         initial_ema: dict[str, float | None] | None = None,
+        initial_total_tracked: Iterable[str] | None = None,
     ) -> None:
         self.cfg = config or HyperliquidScoringConfig()
         ema = initial_ema or {}
@@ -222,13 +239,26 @@ class HyperliquidScoringEngine:
         self._ema_good_long: float | None = ema.get("good_long")
         self._ema_bad_short: float | None = ema.get("bad_short")
         self._ema_bad_long: float | None = ema.get("bad_long")
+        # Faza H3 - zbior WSZYSTKICH portfeli Hyperliquid kiedykolwiek
+        # widzianych (buyer LUB seller w jakimkolwiek `new_trades`), narastajacy
+        # miedzy wywolaniami `run()` i (przez `initial_total_tracked`) miedzy
+        # osobnymi uruchomieniami procesu - identyczny wzorzec co
+        # `ScoringEngine.total_tracked`. Publiczny atrybut (nie ma osobnego
+        # exportera) - `live/run_incremental.py` odczytuje go bezposrednio po
+        # `run()`, dokladnie tak jak juz robi to z `engine.total_tracked` dla
+        # silnika spot.
+        self.total_tracked: set[str] = set(initial_total_tracked or ())
 
     def export_state(self) -> dict:
         """Serializowalny (do JSON) zrzut stanu EMA - do zapisania na dysk i
         podania jako `initial_ema` przy kolejnym uruchomieniu procesu.
         `live/run_incremental.py` dokłada do tego słownika dodatkowe klucze
-        (`last_processed_ts_ms`, `last_composite_perp`, `last_is_mature`)
-        przed zapisem - ta metoda zwraca WYŁĄCZNIE cztery liczby EMA."""
+        (`last_processed_ts_ms`, `last_perp_snapshot` - patrz Faza H3) przed
+        zapisem - ta metoda zwraca WYŁĄCZNIE cztery liczby EMA.
+        `total_tracked` eksportuje się OSOBNO (publiczny atrybut, nie
+        wchodzi w skład tego słownika) - patrz `data/hyperliquid_wallets_seen.txt`
+        w `live/state.py`, dokładnie jak `ScoringEngine.total_tracked`/
+        `wallets_seen.txt` dla Uniswap."""
         return {
             "good_short": self._ema_good_short,
             "good_long": self._ema_good_long,
@@ -288,6 +318,12 @@ class HyperliquidScoringEngine:
         bad_wallets = {w for w, s in stats.items() if s.cohort is Cohort.BAD}
 
         window_wallet_trades = hyperliquid_trades_to_wallet_trades(new_trades)
+        # Faza H3 - aktualizacja PRZED liczeniem net_direction ponizej, zeby
+        # kolejnosc byla identyczna z ScoringEngine.run (tam tez
+        # `self.total_tracked.update(...)` idzie od razu po zbudowaniu
+        # window_trades, przed reszta logiki tego okna).
+        self.total_tracked.update(t.wallet for t in window_wallet_trades)
+
         net_direction: dict[str, float] = defaultdict(float)
         for t in window_wallet_trades:
             net_direction[t.wallet] += t.size_eth if t.side is Side.BUY else -t.size_eth
@@ -346,4 +382,6 @@ class HyperliquidScoringEngine:
             ind_bad_long=self._ema_bad_long,
             composite_score=composite,
             is_mature=n_classified >= cfg.min_classified_wallets_for_maturity,
+            active_wallets=len(net_direction),
+            total_wallets_tracked=len(self.total_tracked),
         )
