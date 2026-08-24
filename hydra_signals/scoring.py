@@ -54,6 +54,72 @@ class ScoringConfig:
     min_flip_streak_trades: int = 3
 
 
+# =====================================================================
+# Faza H2 (brief `hydrav2-hyperliquid-brief.md`) — blend composite_spot/perp
+# =====================================================================
+
+# Waga `composite_perp` w zblendowanej wartości - WARTOŚĆ STARTOWA (jak
+# `signal_threshold`/`min_flip_streak_trades` powyżej), zaakceptowana wprost
+# przez użytkownika 2026-08-24 jako punkt startowy do ewentualnego
+# przestrojenia później (backtest albo obserwacja), nie wynik optymalizacji.
+DEFAULT_PERP_WEIGHT = 0.5
+
+
+def blend_composite(
+    composite_spot: float,
+    composite_perp: float | None,
+    *,
+    perp_weight: float = DEFAULT_PERP_WEIGHT,
+) -> float:
+    """Łączy istniejący `composite_spot` (ten moduł, dane Uniswap) z
+    `composite_perp` (Faza H2 briefu Hyperliquid,
+    `hydra_signals.hyperliquid_wallets.HyperliquidScoringEngine`) w jedną
+    wartość - to ONA, wywołana z `live/run_incremental.py`, odtąd decyduje
+    o `signal` (LONG/SHORT) pokazywanym w hero (patrz `decide_signal`
+    niżej), zgodnie z decyzją użytkownika "od razu wpięte do głównego
+    sygnału" (patrz brief, sekcja "Decyzja architektoniczna").
+
+    `composite_perp=None` — dane z Hyperliquid jeszcze NIEDOJRZAŁE (za mało
+    sklasyfikowanych portfeli, patrz
+    `HyperliquidScoringConfig.min_classified_wallets_for_maturity`) albo
+    Hyperliquid jeszcze w ogóle nic nie zebrał/nie sklasyfikował — zwraca
+    WYŁĄCZNIE `composite_spot`, bez żadnej zmiany zachowania względem stanu
+    sprzed Fazy H2. To jest zamierzone "graceful degradation" z briefu, NIE
+    błąd: silnik nigdy nie staje się losowy/niezdefiniowany z powodu
+    brakujących danych z nowego, dopiero rozgrzewającego się źródła —
+    dokładnie ten sam wzorzec "BRAK DANYCH zamiast błędu", co przy regime
+    (`hydra_signals.regime`).
+    """
+    if composite_perp is None:
+        return composite_spot
+    return (1.0 - perp_weight) * composite_spot + perp_weight * composite_perp
+
+
+def decide_signal(composite: float, *, threshold: float, prev_signal: Signal) -> Signal:
+    """Ta sama histereza co wewnątrz `ScoringEngine.run` niżej
+    (`composite > threshold -> LONG`, `< -threshold -> SHORT`, inaczej
+    trzyma poprzedni sygnał) — wydzielona tutaj jako osobna, czysta funkcja,
+    bo od Fazy H2 to ONA (wywołana na `composite` już ZBLENDOWANYM przez
+    `blend_composite`) decyduje o polu `signal` w `candles_history.json`/
+    hero, a NIE wewnętrzny sygnał liczony przez `ScoringEngine` (ten dalej
+    istnieje i jest liczony wyłącznie z `composite_spot` — `live/
+    run_incremental.py` zapisuje go teraz osobno pod kluczem
+    `signalSpotOnly`, czysto diagnostycznie, patrz brief pkt.
+    "Pełna przejrzystość w hero").
+
+    Świadomie osobny stan `prev_signal` od tego trzymanego wewnątrz
+    `ScoringEngine` (`live/run_incremental.py` persystuje go pod
+    `final_prev_signal` w `scoring_state.json`) — dwa niezależne ciągi
+    histerezy, jeden na `composite_spot`, jeden na `composite` zblendowany,
+    dokładnie zgodnie z zasadą "dwa niezależne tory aż do punktu złączenia".
+    """
+    if composite > threshold:
+        return Signal.LONG
+    if composite < -threshold:
+        return Signal.SHORT
+    return prev_signal
+
+
 class ScoringEngine:
     """Stateful silnik: EMA i poprzedni sygnał są trzymane między oknami.
 
