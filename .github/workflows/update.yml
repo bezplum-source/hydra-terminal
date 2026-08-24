@@ -50,6 +50,18 @@ jobs:
       - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
         run: python -m pytest tests/ -q
 
+      - name: Wyczysc ewentualne pozostalosci po testach
+        # Zabezpieczenie dodane 2026-08-24 przy okazji naprawy analogicznego
+        # problemu w "hyperliquid-update.yml": bug w izolacji jednego z
+        # testow (naprawiony w tej samej dostawie) potrafil zostawic w
+        # drzewie roboczym niezacommitowane zmiany w plikach data/*.json
+        # (pisal do prawdziwych sciezek zamiast do tmp_path). Tutaj ponizszy
+        # krok "run_incremental.py" i tak nadpisuje te pliki poprawnymi
+        # danymi PRZED commitem, wiec to byla nieszkodliwa usterka - ale
+        # ten krok to tania, dodatkowa warstwa bezpieczenstwa na wypadek
+        # podobnego bledu izolacji w przyszlym tescie.
+        run: git checkout -- .
+
       - name: Pobierz nowe dane on-chain i przelicz sygnal
         env:
           ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}
