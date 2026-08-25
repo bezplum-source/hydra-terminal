@@ -76,15 +76,19 @@ class FakeChain:
         return None
 
     def transport(self, url: str, payload):
-        if isinstance(payload, dict):
-            # eth_blockNumber - jedyne niebatchowane wywolanie w tym pipelinie
-            assert payload["method"] == "eth_blockNumber"
-            return {"id": payload["id"], "result": hex(self.head)}
-
+        # Faza "eth_blockNumber przez retry" (naprawiony realny bug: byl to
+        # jedyny NIEBATCHOWANY, nieponawiany apel w calym pipelinie - patrz
+        # komentarz w run_incremental.py przy `head_result`) - teraz idzie
+        # przez `batch_call_with_retry`, wiec zawsze przychodzi jako LISTA
+        # (nawet gdy niesie tylko jedno wywolanie), tak jak reszta metod
+        # ponizej - juz nie potrzeba osobnej galezi dla pojedynczego dict.
+        assert isinstance(payload, list), "eth_blockNumber idzie teraz przez batch_call_with_retry (lista)"
         out = []
         for item in payload:
             method = item["method"]
-            if method == "eth_getLogs":
+            if method == "eth_blockNumber":
+                out.append({"id": item["id"], "result": hex(self.head)})
+            elif method == "eth_getLogs":
                 p = item["params"][0]
                 logs = self.logs_in_range(int(p["fromBlock"], 16), int(p["toBlock"], 16))
                 out.append({"id": item["id"], "result": logs})
@@ -493,6 +497,116 @@ def test_legacy_hyperliquid_scoring_state_schema_still_works(tmp_path, monkeypat
     # zera zamiast bledu/braku klucza.
     assert last["perpGoodBuyers"] == 0
     assert last["perpTracked"] == 0
+
+
+def test_eth_block_number_failure_after_retries_aborts_run_without_partial_writes(tmp_path, monkeypatch):
+    """Faza "eth_blockNumber przez retry" (zgloszenie uzytkownika: automatyzacja
+    "realnie nie trwa to do godziny... czesto odswieza po 2h") - znaleziony
+    realny bug: `eth_blockNumber` byl jedynym NIEPONAWIANYM, pojedynczym
+    `rpc.call()` w calym live-pipelinie (grep potwierdzil - wszystkie inne
+    wywolania RPC ida przez `batch_call_with_retry`). Gdy Alchemy throttlowal
+    akurat TEN apel (potwierdzone mailem uzytkownika: >10% zapytan
+    rate-limited), caly krok GitHub Actions wywalal sie NIEZLAPANYM wyjatkiem
+    PRZED jakimkolwiek zapisem/commitem - ten cykl byl calkowicie i cicho
+    pomijany. Naprawa: ten sam apel teraz idzie przez `batch_call_with_retry`
+    (jak reszta RPC), a gdy WYCZERPIE wszystkie proby (symulowane tutaj),
+    main() musi jawnie zwrocic 1 (niepowodzenie joba - GitHub Actions NIE
+    zacommituje niczego) i NIE zapisac zadnego czesciowego/niespojnego
+    stanu - zamiast poprzedniego, nieprzewidywalnego zachowania (surowy
+    wyjatek gdziekolwiek w trakcie)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    real_batch_call_with_retry = ri.batch_call_with_retry
+
+    def flaky_batch_call_with_retry(rpc, calls, **kwargs):
+        if len(calls) == 1 and calls[0][0] == "eth_blockNumber":
+            return [None]  # symuluje wyczerpanie wszystkich ponowien (Alchemy throttluje uporczywie)
+        return real_batch_call_with_retry(rpc, calls, **kwargs)
+
+    monkeypatch.setattr(ri, "batch_call_with_retry", flaky_batch_call_with_retry)
+
+    assert ri.main() == 1
+    # Awaria nastapila PRZED jakimkolwiek zapisem - zaden plik stanu/historii
+    # nie powinien powstac (pusty stan = "plik nie istnieje", patrz live/state.py).
+    assert st.load_scoring_state() == {}
+    assert st.load_candles_history() == []
+
+
+def test_eth_block_number_recovers_after_one_transient_failure(tmp_path, monkeypatch):
+    """Symetryczny do testu wyzej - JEDNORAZOWY, przejsciowy blad na poziomie
+    transportu HTTP (dokladnie jak realny, pojedynczy 429 od Alchemy, nie
+    trwala awaria) MUSI zostac wchloniety przez juz istniejacy, jednostkowo
+    przetestowany retry w `batch_call_with_retry` (patrz test_onchain_rpc.py)
+    i NIE powinien przerywac calego uruchomienia. Uzywa PRAWDZIWEJ funkcji
+    retry (nie mocka) - to test na to, ze naprawa faktycznie dziala w
+    typowym, najczestszym przypadku (pojedynczy przejsciowy blad), nie tylko
+    ze main() poprawnie obsluguje calkowita, trwala porazke (test wyzej)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    attempts = {"n": 0}
+    real_transport = chain.transport
+
+    def flaky_transport(url, payload):
+        if isinstance(payload, list) and len(payload) == 1 and payload[0]["method"] == "eth_blockNumber":
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                # Pierwsza proba: symulacja pojedynczego 429/bledu JSON-RPC -
+                # dokladnie ten scenariusz, ktory `batch_call_with_retry`
+                # jest zaprojektowany wchlonac (patrz jego docstring).
+                return [{"id": payload[0]["id"], "error": {"code": -32005, "message": "rate limited"}}]
+        return real_transport(url, payload)
+
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=flaky_transport)
+    )
+
+    assert ri.main() == 0
+    assert attempts["n"] >= 2  # potwierdzenie, ze retry FAKTYCZNIE sie wydarzyl
+    assert st.load_scoring_state()["last_processed_block"] == chain.head
+
+
+def test_freshness_meta_last_run_utc_is_embedded_in_generated_site(tmp_path, monkeypatch):
+    """Faza "wiarygodna świeżość" (zgłoszenie użytkownika: chip pokazywał
+    zwodniczo świeży czas zaraz po realnej wielogodzinnej przerwie) -
+    `site/index.html` wygenerowany przez pełny bieg `ri.main()` musi
+    zawierać `DATA.meta.lastRunUtc` DOKŁADNIE równy `updated_at_utc`
+    zapisanemu w `scoring_state.json` w TYM samym uruchomieniu - front-end
+    liczy świeżość z tego zegara ściany, nie z timestampu bloku."""
+    import json as json_module
+
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    state = st.load_scoring_state()
+    assert "updated_at_utc" in state
+
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start_idx = html.index(marker) + len(marker)
+    end_idx = html.index(";", start_idx)
+    data = json_module.loads(html[start_idx:end_idx])
+    assert data["meta"]["lastRunUtc"] == state["updated_at_utc"]
 
 
 def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
