@@ -26,17 +26,17 @@ def _build_trades():
     price = 100.0
     for cycle in range(30):
         for wallet_id in range(6):
-            trades.append(make_trade(f"good{wallet_id}", block, Side.BUY, price, 1.0))
+            trades.append(make_trade(f"good{wallet_id}", block, Side.BUY, price, 20.0))
         for wallet_id in range(3):
-            trades.append(make_trade(f"bad{wallet_id}", block, Side.SELL, price, 1.0))
+            trades.append(make_trade(f"bad{wallet_id}", block, Side.SELL, price, 20.0))
         price_map[block] = price
         block += 1
         price *= 1.02
         price_map[block] = price
         for wallet_id in range(6):
-            trades.append(make_trade(f"good{wallet_id}", block, Side.SELL, price, 1.0))
+            trades.append(make_trade(f"good{wallet_id}", block, Side.SELL, price, 20.0))
         for wallet_id in range(3):
-            trades.append(make_trade(f"bad{wallet_id}", block, Side.BUY, price, 1.0))
+            trades.append(make_trade(f"bad{wallet_id}", block, Side.BUY, price, 20.0))
         block += 25
     return trades, price_map
 
