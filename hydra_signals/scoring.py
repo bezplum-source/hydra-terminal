@@ -38,11 +38,24 @@ class ScoringConfig:
     w_bad_short: float = 1.0
     w_bad_long: float = 0.5
 
-    # Pasmo histerezy wokół zera - poniżej tego progu sygnał się NIE zmienia
-    # (zapobiega "migotaniu" przy score bliskim 0). Ustaw 0.0 dla natychmiastowego
-    # przełączania po znaku, co bliżej odzwierciedla częstotliwość zmian
-    # widoczną w historii sygnałów hydra.trading.
-    signal_threshold: float = 0.0
+    # Pasmo NEUTRALNE wokół zera - |composite| <= ten próg -> sygnał to
+    # Signal.HOLD (wyświetlane na froncie jako "NEUTRALNY"), nie LONG/SHORT
+    # na siłę. ZMIANA (Faza "NEUTRAL dead-zone", zgłoszona przez użytkownika
+    # po zobaczeniu żywych danych): pierwotnie 0.0 ("natychmiastowe
+    # przełączanie po znaku, bliżej odzwierciedlające częstotliwość zmian z
+    # hydra.trading"), ale w praktyce na żywych danych composite bardzo
+    # często oscyluje tuż wokół zera (np. +0.015, -0.014, +0.001) - z
+    # threshold=0.0 KAŻDE takie przejście przez zero wymusza LONG albo SHORT,
+    # co w "Historii sygnałów" produkowało mnóstwo bezsensownych,
+    # jednoświecowych wpisów 0.00% (sygnał "otwarty i zamknięty" na tej samej
+    # świecy, bo już następna znowu przeskakiwała na drugą stronę zera).
+    # 0.2 to WARTOŚĆ STARTOWA (jak każdy inny próg w tym projekcie,
+    # nieprzestrojona backtestem) - wybrana empirycznie na żywej historii 45
+    # świec: redukuje liczbę zdegenerowanych jednoświecowych streaków LONG/
+    # SHORT z 8/16 do 5/11, zamieniając resztę na uczciwe streaki NEUTRALNE,
+    # bez eliminowania realnych, silniejszych wychyleń (0.3-1.5 w
+    # zaobserwowanej historii).
+    signal_threshold: float = 0.2
 
     # Ile KOLEJNYCH transakcji w JEDNĄ stronę portfel musi wykonać, zanim
     # następna transakcja w przeciwną stronę liczy się jako potwierdzony
@@ -95,11 +108,12 @@ def blend_composite(
     return (1.0 - perp_weight) * composite_spot + perp_weight * composite_perp
 
 
-def decide_signal(composite: float, *, threshold: float, prev_signal: Signal) -> Signal:
-    """Ta sama histereza co wewnątrz `ScoringEngine.run` niżej
+def decide_signal(composite: float, *, threshold: float) -> Signal:
+    """Ta sama reguła co wewnątrz `ScoringEngine.run` niżej
     (`composite > threshold -> LONG`, `< -threshold -> SHORT`, inaczej
-    trzyma poprzedni sygnał) — wydzielona tutaj jako osobna, czysta funkcja,
-    bo od Fazy H2 to ONA (wywołana na `composite` już ZBLENDOWANYM przez
+    `Signal.HOLD` - patrz "Faza NEUTRAL dead-zone" przy `ScoringConfig.
+    signal_threshold`) — wydzielona tutaj jako osobna, czysta funkcja, bo od
+    Fazy H2 to ONA (wywołana na `composite` już ZBLENDOWANYM przez
     `blend_composite`) decyduje o polu `signal` w `candles_history.json`/
     hero, a NIE wewnętrzny sygnał liczony przez `ScoringEngine` (ten dalej
     istnieje i jest liczony wyłącznie z `composite_spot` — `live/
@@ -107,17 +121,18 @@ def decide_signal(composite: float, *, threshold: float, prev_signal: Signal) ->
     `signalSpotOnly`, czysto diagnostycznie, patrz brief pkt.
     "Pełna przejrzystość w hero").
 
-    Świadomie osobny stan `prev_signal` od tego trzymanego wewnątrz
-    `ScoringEngine` (`live/run_incremental.py` persystuje go pod
-    `final_prev_signal` w `scoring_state.json`) — dwa niezależne ciągi
-    histerezy, jeden na `composite_spot`, jeden na `composite` zblendowany,
-    dokładnie zgodnie z zasadą "dwa niezależne tory aż do punktu złączenia".
+    ZMIANA (Faza "NEUTRAL dead-zone"): funkcja NIE trzyma już poprzedniego
+    sygnału w paśmie wokół zera (dawny parametr `prev_signal`, usunięty) —
+    zamiast "migotania" LONG<->SHORT albo sztucznego trzymania starej
+    decyzji, wewnątrz pasma wprost zwraca `Signal.HOLD` ("NEUTRALNY" na
+    froncie). Czysta funkcja bez stanu, w pełni zdeterminowana przez
+    `composite`/`threshold`.
     """
     if composite > threshold:
         return Signal.LONG
     if composite < -threshold:
         return Signal.SHORT
-    return prev_signal
+    return Signal.HOLD
 
 
 class ScoringEngine:
@@ -400,12 +415,19 @@ class ScoringEngine:
                 - cfg.w_bad_long * (self._ema_bad_long - 0.5)
             )
 
+            # Faza "NEUTRAL dead-zone" - w paśmie wokół zera sygnał to teraz
+            # Signal.HOLD ("NEUTRALNY"), NIE poprzedni sygnał (`self.
+            # _prev_signal` nadal aktualizowany i eksportowany niżej - stan
+            # potrzebny do wznowienia procesu między uruchomieniami, patrz
+            # `export_state()` - ale nie jest już CZYTANY przy tej decyzji;
+            # ten sam trzy-wartościowy próg jak w wydzielonej funkcji
+            # `decide_signal()` powyżej, użytej dla composite ZBLENDOWANEGO).
             if composite > cfg.signal_threshold:
                 signal = Signal.LONG
             elif composite < -cfg.signal_threshold:
                 signal = Signal.SHORT
             else:
-                signal = self._prev_signal
+                signal = Signal.HOLD
             self._prev_signal = signal
 
             results.append(
