@@ -66,11 +66,22 @@ def _build_streaks(candles: list[dict]) -> list[dict]:
     return streaks
 
 
-def build_site(candles_history: list[dict]) -> None:
+def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     streaks = _build_streaks(display_candles) if display_candles else []
 
-    data = {"candles": display_candles, "streaks": streaks}
+    # Faza "wiarygodna swiezosc" (zgloszenie uzytkownika: chip swiezosci na
+    # stronie pokazywal np. "30 min temu" zaraz po przerwie ~2h w
+    # aktualizacjach) - `meta` to miejsce na fakty o SAMYM PRZEBIEGU
+    # automatyzacji (np. `lastRunUtc`, prawdziwy zegar sciany zapisany PRZEZ
+    # SKRYPT w momencie zakonczenia), odrebne od danych o swiecach/streakach.
+    # Front-end (template.html::renderFreshness) korzysta z tego zamiast z
+    # `latest.ts` (znacznik czasu BLOKU, ktory - z powodu mechaniki domykania
+    # okien - zawsze wyglada "swiezo" niezaleznie od tego, jak dawno
+    # faktycznie uruchomil sie workflow). Domyslnie pusty slownik - stary
+    # front-end/stare dane bez tego pola nadal dzialaja (graceful fallback
+    # w JS na `latest.ts`).
+    data = {"candles": display_candles, "streaks": streaks, "meta": meta or {}}
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -103,5 +114,9 @@ if __name__ == "__main__":
     sys.path.insert(0, str(ROOT))
     from live import state as st
 
-    build_site(st.load_candles_history())
+    last_run_utc = st.load_scoring_state().get("updated_at_utc")
+    build_site(
+        st.load_candles_history(),
+        meta={"lastRunUtc": last_run_utc} if last_run_utc else None,
+    )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")
