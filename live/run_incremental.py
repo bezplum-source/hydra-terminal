@@ -198,8 +198,6 @@ def main() -> int:
 
     composite_perp = perp_snapshot["composite"]
 
-    final_prev_signal = Signal(scoring_state.get("final_prev_signal", "HOLD"))
-
     head = int(rpc.call("eth_blockNumber", []), 16)
     log(f"Aktualne czolo lancucha: blok {head}")
 
@@ -312,16 +310,27 @@ def main() -> int:
             composite_final = blend_composite(
                 s.composite_score, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
             )
-            final_signal = decide_signal(
-                composite_final, threshold=cfg.signal_threshold, prev_signal=final_prev_signal
-            )
-            final_prev_signal = final_signal
+            # Faza "NEUTRAL dead-zone" - decide_signal() nie potrzebuje juz
+            # `prev_signal` (usuniete - patrz docstring w scoring.py): w
+            # pasmie [-threshold, threshold] wprost zwraca Signal.HOLD
+            # ("NEUTRALNY" na froncie) zamiast migotac albo trzymac stara
+            # decyzje. `final_prev_signal`/`scoring_state["final_prev_signal"]`
+            # z Fazy H2 - wycofane, nic juz z nich nie czyta.
+            final_signal = decide_signal(composite_final, threshold=cfg.signal_threshold)
 
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
                 "signal": final_signal.value,
                 "composite": round(composite_final, 3),
+                # Faza "NEUTRAL dead-zone" - jedno miejsce prawdy dla progu
+                # uzywanego przy decyzji signal LONG/NEUTRAL/SHORT powyzej;
+                # front-end (template.html) czyta to samo pole, zeby stosowac
+                # IDENTYCZNY prog przy kolorowaniu rozbicia spot/perp w hero
+                # i przy pill BYCZY/NEUTRALNY/NIEDZWIEDZI w karcie ETH-PERP,
+                # zamiast duplikowac wartosc na twardo w JS (ten sam wzorzec
+                # co `perpMaturityThreshold` nizej).
+                "signalThreshold": cfg.signal_threshold,
                 # --- Faza H2 (brief Hyperliquid) - rozbicie widoczne juz w
                 # danych, zeby przyszla Faza H3 (frontend) mogla to po
                 # prostu wyswietlic bez przeliczania niczego dodatkowo.
@@ -399,10 +408,10 @@ def main() -> int:
     new_state = engine.export_state()
     new_state["last_processed_block"] = to_block
     new_state["last_scored_window_end"] = new_last_scored_end
-    # Faza H2 (brief Hyperliquid) - histereza NIEZALEZNA od `prev_signal`
-    # powyzej (ten ostatni to nadal wylacznie spot, wewnetrzny stan
-    # ScoringEngine) - patrz docstring `hydra_signals.scoring.decide_signal`.
-    new_state["final_prev_signal"] = final_prev_signal.value
+    # Faza H2 zapisywala tu `final_prev_signal` - wycofane w Fazie "NEUTRAL
+    # dead-zone" (decide_signal() juz go nie potrzebuje, patrz wyzej). Stary
+    # klucz mogl zostac w juz-zapisanym scoring_state.json na dysku - to
+    # nieszkodliwe, nic go juz nie czyta.
     new_state["updated_at_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     st.save_scoring_state(new_state)
     st.save_trade_buffer(trimmed_buffer)
