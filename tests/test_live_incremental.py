@@ -394,16 +394,16 @@ def test_mature_hyperliquid_buffer_blends_composite_and_can_flip_signal(tmp_path
     for i in range(25):
         wallet = f"hlgood{i}"
         for _ in range(3):
-            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 1.0, ts)))
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 20.0, ts)))
             ts += 1
-            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(f"cp{ts}", wallet, 150.0, 1.0, ts)))
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(f"cp{ts}", wallet, 150.0, 20.0, ts)))
             ts += 1
     # Ostatnie zdarzenie w buforze: kazdy z 25 portfeli jeszcze raz KUPUJE
     # (net-BUY w tym "oknie" - patrz HyperliquidScoringEngine.run, okno to
     # CALY bufor przy pierwszym uruchomieniu).
     for i in range(25):
         wallet = f"hlgood{i}"
-        hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 1.0, ts)))
+        hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 20.0, ts)))
         ts += 1
 
     st.save_hyperliquid_trades_buffer(hl_records)
