@@ -257,6 +257,19 @@
   }
   .pill--short::before { background: var(--bad-glow); box-shadow: 0 0 10px var(--bad-glow); }
 
+  /* Faza "NEUTRAL dead-zone" - composite w pasmie [-signalThreshold,
+     signalThreshold] to Signal.HOLD, nie LONG/SHORT na sile (patrz
+     hydra_signals/scoring.py). Celowo bez pulsowania/glow, jak
+     .regime-pill--neutral - to jest brak jednoznacznej decyzji, nie
+     "trzeci kierunek", wiec nie powinien wygladac tak samo mocno jak
+     LONG/SHORT. */
+  .pill--neutral {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+  }
+  .pill--neutral::before { background: var(--text-muted); }
+
   @keyframes pulseGood {
     0%, 100% { box-shadow: 0 0 14px -4px rgba(61, 255, 155, 0.35); }
     50% { box-shadow: 0 0 26px 0px rgba(61, 255, 155, 0.55); }
@@ -342,6 +355,10 @@
   .composite-breakdown .cb-spot { color: var(--text-primary); }
   .composite-breakdown .cb-perp.up { color: var(--good-glow); }
   .composite-breakdown .cb-perp.down { color: var(--bad-glow); }
+  /* Faza "NEUTRAL dead-zone" - |wartość| <= signalThreshold: wyciszone,
+     zamiast kolorowane na zielono/czerwono (tak jak przy .up/.down powyżej) -
+     to jest słaby, niejednoznaczny odczyt, nie realne wychylenie w stronę. */
+  .composite-breakdown .cb-neutral { color: var(--text-muted); }
 
   .hero-meta--divergence {
     color: var(--accent-glow);
@@ -463,6 +480,10 @@
 
   .band-long { fill: var(--good-soft); }
   .band-short { fill: var(--bad-soft); }
+  /* Faza "NEUTRAL dead-zone" - pasmo Signal.HOLD na wykresie, bardzo
+     wyciszone (jak .regime-band-none), żeby wizualnie NIE konkurowało z
+     LONG/SHORT - to jest "brak jednoznacznej decyzji", nie trzeci kierunek. */
+  .band-neutral { fill: rgba(255, 255, 255, 0.035); }
 
   .price-area { fill: url(#priceGradient); }
   .price-line {
@@ -536,6 +557,7 @@
   .tooltip .t-signal { font-weight: 600; }
   .tooltip .t-signal.long { color: var(--good-glow); }
   .tooltip .t-signal.short { color: var(--bad-glow); }
+  .tooltip .t-signal.hold { color: var(--text-muted); }
 
   /* ---------- table ---------- */
   .table-scroll { overflow-x: auto; }
@@ -966,6 +988,12 @@ const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
 // composite_perp wszedzie, gdzie sie pojawiaja (hero, karta ETH-PERP, tooltip
 // wykresu) - zamiast powtarzac ten sam trojargumentowy warunek w kazdym miejscu.
 const fmtSigned = (v, decimals = 3) => (v >= 0 ? '+' : '') + v.toFixed(decimals);
+// Faza "NEUTRAL dead-zone" - HOLD (wewnetrzna wartosc Signal.HOLD, patrz
+// hydra_signals/models.py) wyswietla sie wszedzie jako "NEUTRALNY", zeby
+// bylo jasne, ze to brak jednoznacznej decyzji, nie literalnie "trzymaj
+// pozycje" - jedna funkcja, uzyta w hero/tabeli/tooltipie wykresu, zamiast
+// powtarzac ten sam warunek w kazdym miejscu.
+const signalLabel = (sig) => (sig === 'HOLD' ? 'NEUTRALNY' : sig);
 
 // Faza UX/UI 1 (regime-detection na froncie) - eventy "stanu" (przejścia maszyny
 // stanów BULL/BEAR z Fazy 2, w tym END_* - własny dodatek Claude poza literą briefu)
@@ -996,15 +1024,25 @@ function renderHero() {
   const latest = candles[candles.length - 1];
   const streak = DATA.streaks[0];
 
+  // Faza "NEUTRAL dead-zone" - trzeci, jawny stan zamiast wymuszania LONG/
+  // SHORT, gdy composite jest za slaby, zeby cokolwiek jednoznacznie
+  // wskazywac (patrz hydra_signals/scoring.py, ScoringConfig.signal_threshold).
   const pill = document.getElementById('heroPill');
-  pill.textContent = latest.signal;
-  pill.className = 'pill ' + (latest.signal === 'LONG' ? 'pill--long' : 'pill--short');
+  pill.textContent = signalLabel(latest.signal);
+  pill.className = 'pill ' + (latest.signal === 'LONG' ? 'pill--long' : latest.signal === 'SHORT' ? 'pill--short' : 'pill--neutral');
 
   animateNumber(document.getElementById('heroPrice'), latest.price, { duration: 1100, format: fmtUsd });
 
+  // streak.pct jest `null` dla streakow NEUTRALNYCH (brak aktywnej pozycji -
+  // liczenie "wyniku" nie ma sensu, patrz live/build_site.py _build_streaks).
   const delta = document.getElementById('heroDelta');
-  delta.textContent = fmtPct(streak.pct) + ' od początku sygnału';
-  delta.style.color = streak.pct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
+  if (streak.pct != null) {
+    delta.textContent = fmtPct(streak.pct) + ' od początku sygnału';
+    delta.style.color = streak.pct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
+  } else {
+    delta.textContent = 'brak aktywnej pozycji (sygnał neutralny)';
+    delta.style.color = 'var(--text-muted)';
+  }
 
   document.getElementById('heroStart').textContent = streak.startTime;
   document.getElementById('heroEntryPrice').textContent = fmtUsd(streak.startPrice);
@@ -1022,13 +1060,25 @@ function renderHero() {
   // Rozbicie composite na spot/perp - tylko gdy dana swieca w ogole ma te
   // pola (starsze swiece sprzed Fazy H2 ich nie mają, dokładnie tak samo
   // jak `regime` sprzed Fazy 2 - ten sam wzorzec ochronny co w renderRegimeCard()).
+  // Faza "NEUTRAL dead-zone" - to samo pasmo neutralne stosowane TU do
+  // wizualnego wyciszenia spot/perp z osobna (nie tylko do finalnego,
+  // zblendowanego `signal` powyzej) - `signalThreshold` czytany wprost ze
+  // swiecy (jedno miejsce prawdy, patrz live/run_incremental.py), zeby JS
+  // nie duplikowal wartosci progu na twardo.
+  const threshold = latest.signalThreshold != null ? latest.signalThreshold : 0;
   const breakdown = document.getElementById('statScoreBreakdown');
   if (latest.compositeSpot !== undefined) {
+    const spotNeutral = Math.abs(latest.compositeSpot) <= threshold;
+    const spotHtml = spotNeutral
+      ? '<span class="cb-spot cb-neutral">spot neutralny (' + fmtSigned(latest.compositeSpot) + ')</span>'
+      : '<span class="cb-spot">spot ' + fmtSigned(latest.compositeSpot) + '</span>';
     if (latest.compositePerp != null) {
-      const perpCls = latest.compositePerp >= 0 ? 'up' : 'down';
-      breakdown.innerHTML = '<span class="cb-spot">spot ' + fmtSigned(latest.compositeSpot) + '</span> &middot; <span class="cb-perp ' + perpCls + '">perp ' + fmtSigned(latest.compositePerp) + '</span>';
+      const perpNeutral = Math.abs(latest.compositePerp) <= threshold;
+      const perpCls = perpNeutral ? 'cb-neutral' : (latest.compositePerp >= 0 ? 'up' : 'down');
+      const perpLabel = perpNeutral ? 'perp neutralny (' + fmtSigned(latest.compositePerp) + ')' : 'perp ' + fmtSigned(latest.compositePerp);
+      breakdown.innerHTML = spotHtml + ' &middot; <span class="cb-perp ' + perpCls + '">' + perpLabel + '</span>';
     } else {
-      breakdown.innerHTML = '<span class="cb-spot">= spot</span> &middot; perp jeszcze niedojrzały (brak danych)';
+      breakdown.innerHTML = spotHtml + ' &middot; perp jeszcze niedojrzały (brak danych)';
     }
   } else {
     breakdown.innerHTML = '';
@@ -1041,7 +1091,7 @@ function renderHero() {
   const divNote = document.getElementById('heroDivergenceNote');
   if (latest.signalSpotOnly !== undefined && latest.signalSpotOnly !== latest.signal) {
     divNote.style.display = 'inline-block';
-    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + latest.signalSpotOnly + ' — o finalnym sygnale zadecydował Hyperliquid (karta ETH-PERP niżej).';
+    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował Hyperliquid (karta ETH-PERP niżej).';
   } else {
     divNote.style.display = 'none';
   }
@@ -1183,11 +1233,22 @@ function renderPerpCard() {
     note.textContent = latest.perpClassified + ' / ' + threshold + ' sklasyfikowanych portfeli w oknie — composite_perp nie wpływa jeszcze na sygnał, sam spot decyduje bez zmian.';
     document.getElementById('perpComposite').textContent = '-';
   } else {
-    const bullish = latest.compositePerp >= 0;
-    pill.textContent = bullish ? 'BYCZY (+)' : 'NIEDŹWIEDZI (−)';
-    pill.className = 'regime-pill ' + (bullish ? 'regime-pill--good' : 'regime-pill--bad');
-    note.textContent = 'dojrzałe — realnie wpływa na zblendowany sygnał LONG/SHORT w hero (waga 50/50).';
     document.getElementById('perpComposite').textContent = fmtSigned(latest.compositePerp);
+    // Faza "NEUTRAL dead-zone" - ten sam prog co przy decyzji LONG/SHORT w
+    // hero (`signalThreshold`, jedno miejsce prawdy w danych), zastosowany
+    // tu do samego compositePerp - slaby, niejednoznaczny odczyt z
+    // Hyperliquid pokazuje sie jako NEUTRALNY, nie na sile BYCZY/NIEDZWIEDZI.
+    const neutralBand = latest.signalThreshold != null ? latest.signalThreshold : 0;
+    if (Math.abs(latest.compositePerp) <= neutralBand) {
+      pill.textContent = 'NEUTRALNY';
+      pill.className = 'regime-pill regime-pill--neutral';
+      note.textContent = 'dojrzałe, ale composite_perp w paśmie neutralnym (|wartość| ≤ ' + neutralBand.toFixed(2) + ') — zbyt słaby, żeby jednoznacznie wskazać kierunek.';
+    } else {
+      const bullish = latest.compositePerp > 0;
+      pill.textContent = bullish ? 'BYCZY (+)' : 'NIEDŹWIEDZI (−)';
+      pill.className = 'regime-pill ' + (bullish ? 'regime-pill--good' : 'regime-pill--bad');
+      note.textContent = 'dojrzałe — realnie wpływa na zblendowany sygnał LONG/SHORT w hero (waga 50/50).';
+    }
   }
 
   const buySellRow = document.getElementById('perpBuySellRow');
@@ -1311,7 +1372,10 @@ function buildMainChart(candlesParam) {
     const x1 = x(j) + (j === n - 1 ? 0 : (x(j + 1) - x(j)) / 2);
     svg.appendChild(el('rect', {
       x: x0.toFixed(2), y: PAD_T, width: Math.max(0, x1 - x0).toFixed(2), height: plotH,
-      class: candles[i].signal === 'LONG' ? 'band-long' : 'band-short'
+      // Faza "NEUTRAL dead-zone" - trzecia, wyciszona klasa dla Signal.HOLD
+      // (patrz .band-neutral w CSS), zamiast wymuszania LONG/SHORT na
+      // swiecach, gdzie sygnal faktycznie byl neutralny.
+      class: candles[i].signal === 'LONG' ? 'band-long' : candles[i].signal === 'SHORT' ? 'band-short' : 'band-neutral'
     }));
     i = j + 1;
   }
@@ -1426,7 +1490,7 @@ function buildMainChart(candlesParam) {
     tooltip.style.top = ((y(c.price) / H) * 100) + '%';
     tooltip.style.opacity = 1;
     let html = `<strong>${fmtUsd(c.price)}</strong><br>` +
-      `<span class="t-signal ${c.signal.toLowerCase()}">${c.signal}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
+      `<span class="t-signal ${c.signal.toLowerCase()}">${signalLabel(c.signal)}</span> &middot; blok ${c.block.toLocaleString('en-US')}<br>` +
       `${c.time} &middot; score ${fmtSigned(c.composite)}`;
     // Faza H3 (brief Hyperliquid) - rozbicie spot/perp tez w tooltipie
     // wykresu, nie tylko w hero, zeby kazda pojedyncza swieca na historii
@@ -1492,14 +1556,22 @@ function buildHistory() {
   } else {
     pageStreaks.forEach((s) => {
       const tr = document.createElement('tr');
-      const isLong = s.signal === 'LONG';
+      // Faza "NEUTRAL dead-zone": trzy warianty, nie dwa - HOLD ("NEUTRALNY")
+      // dostaje wlasna klase (muted, jak w event-logu) zamiast bycia mylnie
+      // wrzucanym do 'short'. Analogicznie pct=null (brak aktywnej pozycji,
+      // patrz build_site.py._build_streaks) renderuje sie jako "-", a nie
+      // NaN%/0.00% (to byl dokladnie ten bug, ktory zglosil uzytkownik).
+      const pillClass = s.signal === 'LONG' ? 'long' : s.signal === 'SHORT' ? 'short' : 'muted';
+      const pctCell = s.pct == null
+        ? '<td class="num pct">–</td>'
+        : `<td class="num pct ${s.pct >= 0 ? 'up' : 'down'}">${fmtPct(s.pct)}</td>`;
       tr.innerHTML = `
-        <td><span class="row-pill ${isLong ? 'long' : 'short'}">${s.signal}</span></td>
+        <td><span class="row-pill ${pillClass}">${signalLabel(s.signal)}</span></td>
         <td>${s.startTime}</td>
         <td>${s.endTime}</td>
         <td class="num">${fmtUsd(s.startPrice)}</td>
         <td class="num">${fmtUsd(s.endPrice)}</td>
-        <td class="num pct ${s.pct >= 0 ? 'up' : 'down'}">${fmtPct(s.pct)}</td>
+        ${pctCell}
       `;
       tbody.appendChild(tr);
     });
