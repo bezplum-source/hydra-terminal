@@ -85,6 +85,14 @@ class HyperliquidTrade:
     tid: int
     tx_hash: str
 
+    @property
+    def notional_usd(self) -> float:
+        """Ten sam ksztalt co `hydra_signals.models.Trade.notional_usd` -
+        uzywane przez filtr "dust" w
+        `hydra_signals.hyperliquid_wallets.HyperliquidScoringConfig.
+        min_trade_notional_usd` (patrz komentarz tam po pelne uzasadnienie)."""
+        return self.price_usd * self.size_eth
+
 
 def build_subscribe_message(coin: str = ETH_COIN) -> dict:
     """Wiadomosc subskrypcji wysylana zaraz po otwarciu polaczenia WS."""
