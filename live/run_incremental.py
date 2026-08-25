@@ -198,7 +198,37 @@ def main() -> int:
 
     composite_perp = perp_snapshot["composite"]
 
-    head = int(rpc.call("eth_blockNumber", []), 16)
+    # ZNALEZIONY I NAPRAWIONY realny blad (zgloszenie uzytkownika: "realnie
+    # nie trwa to do godziny... czesto odswieza po 2h"): to byl JEDYNY
+    # nieponawiany, pojedynczy zwykly `rpc.call()` w calym live-pipelinie
+    # (potwierdzone grepem `\.call\(` w hydra_signals/ i live/ - kazde inne
+    # wywolanie RPC idzie przez `batch_call_with_retry`). Alchemy throttluje
+    # (potwierdzone mailem uzytkownika: >10% zapytan rate-limited w ciagu
+    # ostatniej godziny) - kiedy TEN konkretny apel dostal 429/blad
+    # sieciowy, `rpc.call()` podnosil wyjatek NIEZLAPANY nigdzie w main(),
+    # co wywalalo caly krok GitHub Actions PRZED jakimkolwiek zapisem/commitem
+    # - ten cykl byl calkowicie pomijany, bez zadnego logu ani retry. Przy
+    # rosnacej liczbie sledzonych portfeli (wiecej zapytan/uruchomienie)
+    # ryzyko trafienia w ten pojedynczy punkt awarii rosnie z czasem - to
+    # tlumaczy, dlaczego przerwy miedzy aktualizacjami realnie rosly (git log
+    # potwierdza: z ~10-30 min na poczatku do 100-200+ min ostatnio).
+    # Naprawa: ten sam, juz istniejacy i przetestowany mechanizm ponowien co
+    # dla `eth_getLogs`/`eth_getBlockByNumber` nizej - `batch_call_with_retry`
+    # z lista jednego wywolania. Przy ~10% szansie throttlingu per-zapytanie,
+    # szansa ze WSZYSTKIE proby (1 + max_retries=6 domyslnie) zawioda jest
+    # astronomicznie mala (~0.1^7), wiec to powinno w praktyce calkowicie
+    # wyeliminowac ten konkretny scenariusz calkowicie pomijanego cyklu.
+    head_result = batch_call_with_retry(rpc, [("eth_blockNumber", [])], batch_size=CALLS_PER_BATCH)[0]
+    if head_result is None:
+        log(
+            "BLAD: nie udalo sie pobrac aktualnego czola lancucha "
+            "(eth_blockNumber) mimo ponowien - Alchemy najprawdopodobniej "
+            "throttluje (rate limit) mocniej niz zwykle. Przerywam TO "
+            "uruchomienie (bez zadnego zapisu/commitu) - kolejne zaplanowane "
+            "uruchomienie sprobuje ponownie od tego samego miejsca."
+        )
+        return 1
+    head = int(head_result, 16)
     log(f"Aktualne czolo lancucha: blok {head}")
 
     last_processed = scoring_state.get("last_processed_block")
@@ -420,7 +450,12 @@ def main() -> int:
     st.save_regime_state(regime_engine.export_state())
     st.save_wallet_flip_state(engine.export_wallet_flip_state())
 
-    build_site(candles_history)
+    # Faza "wiarygodna swiezosc" - `lastRunUtc` to zegar SCIANY (kiedy TEN
+    # skrypt faktycznie zakonczyl dzialanie), nie znacznik czasu bloku.
+    # Front-end (chip swiezosci) uzywa TEGO, zeby uczciwie pokazywac realny
+    # odstep miedzy uruchomieniami automatyzacji - patrz komentarz w
+    # build_site.py::build_site.
+    build_site(candles_history, meta={"lastRunUtc": new_state["updated_at_utc"]})
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
     return 0
 
