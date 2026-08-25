@@ -84,6 +84,14 @@ from .wallets import classify_wallets, compute_wallet_stats
 DEFAULT_MIN_TRADES = 5
 DEFAULT_GOOD_PCT = 0.15
 DEFAULT_BAD_PCT = 0.15
+# Ten sam prog i ta sama wartosc co `hydra_signals.scoring.ScoringConfig.
+# min_trade_notional_usd` (Faza "dust filter" - patrz komentarz tam po
+# pelne uzasadnienie decyzji uzytkownika: prog per-transakcja, oba tory).
+# Osobna stala (nie import z scoring.py) z tego samego powodu co
+# DEFAULT_MIN_TRADES/DEFAULT_GOOD_PCT/DEFAULT_BAD_PCT wyzej - ten modul
+# swiadomie nie zalezy od scoring.py (patrz docstring modulu: "dwa
+# niezalezne rurociagi danych").
+DEFAULT_MIN_TRADE_NOTIONAL_USD = 1000.0
 
 
 def hyperliquid_trade_to_wallet_trades(trade: HyperliquidTrade) -> list[Trade]:
@@ -122,6 +130,7 @@ def classify_hyperliquid_wallets(
     min_trades: int = DEFAULT_MIN_TRADES,
     good_pct: float = DEFAULT_GOOD_PCT,
     bad_pct: float = DEFAULT_BAD_PCT,
+    min_trade_notional_usd: float = DEFAULT_MIN_TRADE_NOTIONAL_USD,
 ) -> dict[str, WalletStats]:
     """Funkcja całościowa Fazy H1: surowe transakcje Hyperliquid -> statystyki
     + kohorty GOOD/BAD/NEUTRAL per portfel.
@@ -133,8 +142,15 @@ def classify_hyperliquid_wallets(
     odpowiedzialny za wczytanie bufora (`live.state.load_hyperliquid_trades_buffer`)
     i zdekodowanie rekordów JSON z powrotem na `HyperliquidTrade`
     (`hydra_signals.data_sources.hyperliquid_ws.json_record_to_trade`).
+
+    Filtr "dust" (`min_trade_notional_usd`, patrz `DEFAULT_MIN_TRADE_NOTIONAL_USD`
+    i odpowiednik `ScoringConfig.min_trade_notional_usd` dla Uniswap) - kazda
+    POJEDYNCZA transakcja ponizej progu jest odsiewana PRZED konwersja na
+    wpisy per-portfelowe, wiec nie wplywa ani na PnL, ani na liczbe transakcji
+    uzywana przy `min_trades`.
     """
-    wallet_trades = hyperliquid_trades_to_wallet_trades(trades)
+    filtered = [t for t in trades if t.notional_usd >= min_trade_notional_usd]
+    wallet_trades = hyperliquid_trades_to_wallet_trades(filtered)
     stats = compute_wallet_stats(wallet_trades, min_trades=min_trades)
     return classify_wallets(stats, good_pct=good_pct, bad_pct=bad_pct)
 
@@ -183,6 +199,16 @@ class HyperliquidScoringConfig:
     # STARTOWA, nieprzestrojona żadnym backtestem, jak każdy inny próg w
     # tym projekcie.
     min_classified_wallets_for_maturity: int = 20
+
+    # Filtr "dust" (Faza "dust filter") - identyczna nazwa i wartosc co
+    # `hydra_signals.scoring.ScoringConfig.min_trade_notional_usd` (patrz
+    # tamten komentarz po pelne uzasadnienie decyzji uzytkownika). Uzytkownik
+    # wybral przez AskUserQuestion "oba tory", wiec Hyperliquid filtruje
+    # dokladnie tak samo jak Uniswap: kazda POJEDYNCZA transakcja
+    # (`HyperliquidTrade.notional_usd`) ponizej progu jest calkowicie
+    # pomijana, zarowno w klasyfikacji portfeli, jak i w liczeniu biezacego
+    # okna - patrz `HyperliquidScoringEngine.run()` nizej.
+    min_trade_notional_usd: float = DEFAULT_MIN_TRADE_NOTIONAL_USD
 
 
 @dataclass
@@ -305,6 +331,23 @@ class HyperliquidScoringEngine:
             return None
 
         cfg = self.cfg
+
+        # Filtr dust (patrz HyperliquidScoringConfig.min_trade_notional_usd,
+        # a takze analogiczny komentarz w ScoringEngine.run dla Uniswap) -
+        # stosowany TU, natychmiast na wejsciu, zanim `new_trades`/
+        # `history_trades` traf ia gdziekolwiek dalej (klasyfikacja ORAZ
+        # liczenie biezacego okna). Jesli PO odsianiu dust nic nie zostalo w
+        # `new_trades` - traktujemy to identycznie jak pusty `new_trades` na
+        # wejsciu (patrz docstring wyzej: "CELOWO nie aktualizujemy wtedy
+        # EMA") - inaczej okno zlozone wylacznie z dustu falszywie ciagnaloby
+        # EMA w strone neutralnego 0.5.
+        new_trades = [t for t in new_trades if t.notional_usd >= cfg.min_trade_notional_usd]
+        if not new_trades:
+            return None
+        history_trades = [
+            t for t in history_trades if t.notional_usd >= cfg.min_trade_notional_usd
+        ]
+
         lookback_start_ms = window_end_ts_ms - int(cfg.classification_lookback_hours * 3600 * 1000)
 
         lookback_source = [t for t in history_trades if t.ts_ms > lookback_start_ms]
