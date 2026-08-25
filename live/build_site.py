@@ -37,11 +37,17 @@ def _build_streaks(candles: list[dict]) -> list[dict]:
         # (znak odwrócony) — bo SHORT zarabia, gdy cena SPADA. Bez tego SHORT
         # trafiony w dół wyglądał na stronie jak sukces (zielony +), a to była
         # w rzeczywistości pomyłka sygnału.
-        direction = -1 if sig == "SHORT" else 1
+        # HOLD ("NEUTRALNY", Faza "NEUTRAL dead-zone") NIE jest ani LONG, ani
+        # SHORT — nie ma aktywnej pozycji, więc liczenie "wyniku" w ogóle nie
+        # ma sensu (poprzednio HOLD dostawał direction=+1, czyli był
+        # traktowany jak LONG — myląca resztka z czasów, gdy HOLD był tylko
+        # teoretycznym stanem startowym i nigdy realnie nie występował w
+        # historii). `pct=None` — front-end renderuje to jako "–", nie 0.00%.
+        direction = -1 if sig == "SHORT" else 1 if sig == "LONG" else None
         pct = (
-            direction * (end["price"] - start["price"]) / start["price"] * 100
-            if start["price"]
-            else 0.0
+            round(direction * (end["price"] - start["price"]) / start["price"] * 100, 2)
+            if direction is not None and start["price"]
+            else None
         )
         streaks.append(
             {
@@ -50,7 +56,7 @@ def _build_streaks(candles: list[dict]) -> list[dict]:
                 "startPrice": start["price"],
                 "endBlock": end["block"],
                 "endPrice": end["price"],
-                "pct": round(pct, 2),
+                "pct": pct,
                 "startTime": start["time"],
                 "endTime": end["time"],
             }
