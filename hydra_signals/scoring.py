@@ -28,6 +28,23 @@ class ScoringConfig:
     good_pct: float = 0.15
     bad_pct: float = 0.15
 
+    # Filtr "dust" (zgloszenie uzytkownika 2026-08-25: "Proponuje, zeby brac
+    # pod uwage portfele z min. 1000 dolarow. Czyli zeby odsiac dust.") -
+    # doprecyzowane przez dwa pytania AskUserQuestion: (1) prog dotyczy
+    # POJEDYNCZEJ TRANSAKCJI, nie lacznego wolumenu portfela - kazdy
+    # pojedynczy swap z `Trade.notional_usd` (`price_usd * size_eth`)
+    # ponizej tej wartosci jest CALKOWICIE pomijany; (2) filtr obowiazuje
+    # symetrycznie na OBU torach - Uniswap (tu) i Hyperliquid ETH-PERP
+    # (`hydra_signals.hyperliquid_wallets.HyperliquidScoringConfig.
+    # min_trade_notional_usd`, ta sama nazwa i wartosc, zeby jedna zmiana
+    # nie rozjechala sie cicho z druga). Stosowany w JEDNYM miejscu -
+    # na wejsciu do `ScoringEngine.run()` nizej - zeby dust byl odsiany
+    # identycznie zarowno przy klasyfikacji portfeli (GOOD/BAD), jak i przy
+    # liczeniu aktywnosci biezacego okna (good_buyers/bad_sellers itd.).
+    # WARTOSC STARTOWA (jak kazdy inny prog w tym projekcie) - podana wprost
+    # przez uzytkownika, nie wynik optymalizacji/backtestu.
+    min_trade_notional_usd: float = 1000.0
+
     # EMA - liczone w jednostkach "świec" (okien), nie bloków.
     ema_short_span: int = 3
     ema_long_span: int = 12
@@ -243,18 +260,29 @@ class ScoringEngine:
         wywołaniu - inaczej granice świec przesuwałyby się przy każdym
         wznowieniu procesu z innym pierwszym blokiem w porcji danych.
         """
-        trades_sorted = sorted(trades, key=lambda t: t.block)
+        cfg = self.cfg
+
+        # Filtr dust (patrz ScoringConfig.min_trade_notional_usd) - stosowany
+        # TU, na samym wejsciu do run(), zanim cokolwiek inne zobaczy
+        # `trades`/`history_trades` - jedno miejsce filtrowania dla OBU
+        # zastosowan (biezace okno I lookback klasyfikacji ponizej), zeby
+        # nie dalo sie przypadkiem przepuscic dust przez jedna sciezke, a
+        # przez druga juz nie.
+        trades_sorted = sorted(
+            (t for t in trades if t.notional_usd >= cfg.min_trade_notional_usd),
+            key=lambda t: t.block,
+        )
         if not trades_sorted:
             return []
-
-        cfg = self.cfg
 
         buckets: dict[int, list[Trade]] = defaultdict(list)
         for t in trades_sorted:
             idx = t.block // cfg.window_blocks
             buckets[idx].append(t)
 
-        all_trades_so_far: list[Trade] = list(history_trades)
+        all_trades_so_far: list[Trade] = [
+            t for t in history_trades if t.notional_usd >= cfg.min_trade_notional_usd
+        ]
         results: list[WindowScore] = []
 
         for idx in sorted(buckets):
