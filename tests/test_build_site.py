@@ -79,6 +79,20 @@ def test_build_streaks_groups_consecutive_same_signal_and_orders_newest_first():
     assert streaks[1]["signal"] == "HOLD"
 
 
+def test_build_streaks_hold_pct_is_none_not_treated_as_long():
+    # Faza "NEUTRAL dead-zone": HOLD ("NEUTRALNY") nie ma aktywnej pozycji,
+    # wiec liczenie wyniku nie ma sensu - pct=None, NIE direction=+1 jak LONG
+    # (dawne zachowanie mylaco liczylo HOLD tak, jakby to byl LONG).
+    candles = [
+        {**_sample_candles()[0], "signal": "HOLD", "price": 2000.0, "block": 1},
+        {**_sample_candles()[0], "signal": "HOLD", "price": 2100.0, "block": 2},
+    ]
+    streaks = bs._build_streaks(candles)
+    assert len(streaks) == 1
+    assert streaks[0]["signal"] == "HOLD"
+    assert streaks[0]["pct"] is None
+
+
 def test_build_streaks_short_pct_is_signal_result_not_raw_price_change():
     # Cena ROŚNIE w trakcie SHORT -> to jest STRATA dla sygnału (pct musi być
     # ujemny), mimo że surowa zmiana kursu jest dodatnia. To był bug zgłoszony
