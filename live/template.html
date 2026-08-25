@@ -1292,10 +1292,30 @@ function renderFreshness() {
   const candles = DATA.candles;
   const chip = document.getElementById('freshnessChip');
   const text = document.getElementById('freshnessText');
-  if (!candles.length || !candles[candles.length - 1].ts) { chip.style.display = 'none'; return; }
 
-  const latest = candles[candles.length - 1];
-  const elapsedMin = Math.max(0, Math.round((Date.now() / 1000 - latest.ts) / 60));
+  // Faza "wiarygodna świeżość" (zgłoszenie użytkownika: chip pokazywał np.
+  // "30 min temu" zaraz po realnej przerwie ~2h w aktualizacjach) — wcześniej
+  // ten chip liczył świeżość z `latest.ts` (znacznik czasu BLOKU, w którym
+  // domknęło się ostatnie okno). To NIE jest to samo co "kiedy automatyzacja
+  // ostatnio faktycznie zadziałała": mechanika domykania okien sprawia, że
+  // `latest.ts` zawsze wygląda dość świeżo (typowo 0-60 min od bieżącego
+  // czoła łańcucha w momencie udanego uruchomienia), NIEZALEŻNIE od tego, czy
+  // sam workflow uruchomił się godzinę, czy dwie godziny wcześniej — stąd
+  // myląca "świeża" (zielona) odpowiedź zaraz po długiej przerwie.
+  // `DATA.meta.lastRunUtc` to prawdziwy zegar ściany, zapisywany PRZEZ SAM
+  // SKRYPT w momencie zakończenia biegu — uczciwie pokazuje realny odstęp,
+  // łącznie z przerwami spowodowanymi throttlingiem/awariami. Fallback na
+  // `latest.ts` zostaje TYLKO dla danych sprzed tej fazy (brak jeszcze
+  // `DATA.meta`) — stare, mniej wiarygodne źródło, ale lepsze niż nic.
+  let referenceSeconds = null;
+  if (DATA.meta && DATA.meta.lastRunUtc) {
+    referenceSeconds = new Date(DATA.meta.lastRunUtc).getTime() / 1000;
+  } else if (candles.length && candles[candles.length - 1].ts) {
+    referenceSeconds = candles[candles.length - 1].ts;
+  }
+  if (referenceSeconds == null) { chip.style.display = 'none'; return; }
+
+  const elapsedMin = Math.max(0, Math.round((Date.now() / 1000 - referenceSeconds) / 60));
 
   let label;
   if (elapsedMin < 1) label = 'zaktualizowano przed chwilą';
