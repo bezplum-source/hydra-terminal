@@ -493,3 +493,30 @@ def test_legacy_hyperliquid_scoring_state_schema_still_works(tmp_path, monkeypat
     # zera zamiast bledu/braku klucza.
     assert last["perpGoodBuyers"] == 0
     assert last["perpTracked"] == 0
+
+
+def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
+    """Faza "NEUTRAL dead-zone": front-end (template.html) musi stosowac
+    DOKLADNIE ten sam prog co decide_signal() przy kolorowaniu rozbicia
+    spot/perp w hero i przy pill BYCZY/NEUTRALNY/NIEDZWIEDZI w karcie
+    ETH-PERP - zamiast duplikowac wartosc na twardo w JS, kazda swieca
+    dostaje pole `signalThreshold` wprost z `cfg.signal_threshold` (ten sam
+    wzorzec co juz istniejace `perpMaturityThreshold`)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    for c in candles:
+        # Domyslny ScoringConfig().signal_threshold (patrz scoring.py) - 0.2,
+        # wartosc startowa wybrana empirycznie na zywej historii, nie wynik
+        # backtestu (patrz komentarz przy polu w ScoringConfig).
+        assert c["signalThreshold"] == 0.2
