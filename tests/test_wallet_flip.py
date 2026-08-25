@@ -15,7 +15,11 @@ from hydra_signals.models import Side, Trade
 from hydra_signals.scoring import ScoringConfig, ScoringEngine
 
 
-def make_trade(wallet, block, side, price, size=1.0):
+def make_trade(wallet, block, side, price, size=20.0):
+    # size domyslny podniesiony z 1.0 do 20.0 (Faza "dust filter",
+    # ScoringConfig.min_trade_notional_usd=1000.0) - przy najnizszej cenie
+    # uzywanej w tym pliku (70.0) daje notional 1400.0, bezpiecznie powyzej
+    # progu, zeby transakcje historii/testowe nie zostaly odsiane jako dust.
     return Trade(wallet=wallet, block=block, side=side, price_usd=price, size_eth=size)
 
 
