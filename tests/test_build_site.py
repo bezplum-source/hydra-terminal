@@ -174,3 +174,42 @@ def test_build_site_empty_history_does_not_crash(tmp_path, monkeypatch):
     data = json.loads(html[start:end])
     assert data["candles"] == []
     assert data["streaks"] == []
+
+
+# =====================================================================
+# Faza "wiarygodna świeżość" - DATA.meta.lastRunUtc (zgłoszenie użytkownika:
+# chip świeżości na stronie pokazywał np. "30 min temu" zaraz po realnej
+# przerwie ~2h w aktualizacjach, bo liczył się z `latest.ts` - znacznika
+# czasu BLOKU, nie z tego, kiedy automatyzacja faktycznie ostatnio zadziałała)
+# =====================================================================
+
+
+def test_build_site_embeds_meta_last_run_utc_when_provided(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site(_sample_candles(), meta={"lastRunUtc": "2026-08-25T07:16:52+00:00"})
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert data["meta"]["lastRunUtc"] == "2026-08-25T07:16:52+00:00"
+
+
+def test_build_site_meta_defaults_to_empty_dict_when_not_provided(tmp_path, monkeypatch):
+    # Wywolania bez `meta` (np. stare wywolania, albo scoring_state jeszcze
+    # bez `updated_at_utc`) NIE moga sie wywalic - front-end (renderFreshness)
+    # ma wlasny fallback na `latest.ts`, wiec pusty słownik jest bezpieczny.
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site(_sample_candles())
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert data["meta"] == {}
