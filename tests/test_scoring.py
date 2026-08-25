@@ -14,7 +14,10 @@ def test_no_trades_returns_empty():
 def test_all_neutral_wallets_no_crash_and_hold_signal():
     # Za malo transakcji per portfel, zeby cokolwiek sklasyfikowac ->
     # wszyscy zostaja UNRATED, pool powinien byc pusty, silnik nie powinien
-    # sie wywalic, sygnal domyslnie HOLD (brak wczesniejszego sygnalu).
+    # sie wywalic. composite wychodzi dokladnie 0.0 (brak jakiejkolwiek
+    # aktywnosci w obu kohortach -> oba ratio domyslnie 0.5, patrz komentarz
+    # w ScoringEngine.run) - Faza "NEUTRAL dead-zone": to trafia w pasmo
+    # neutralne, sygnal to Signal.HOLD ("NEUTRALNY" na froncie).
     trades = [
         make_trade(f"w{i}", block, Side.BUY, 2000.0, 1.0)
         for i in range(3)
@@ -27,6 +30,49 @@ def test_all_neutral_wallets_no_crash_and_hold_signal():
     for s in scores:
         assert s.pool_size == 0
         assert s.signal == Signal.HOLD
+
+
+def test_weak_composite_within_dead_zone_gives_hold_not_long():
+    # Faza "NEUTRAL dead-zone": w przeciwienstwie do testu wyzej (composite
+    # dokladnie 0.0 z powodu BRAKU jakiejkolwiek aktywnosci), tutaj JEST
+    # realna, sklasyfikowana kohorta GOOD/BAD (pool_size > 0) i realna
+    # aktywnosc w oknie - composite wychodzi niezerowy (+0.1875), ale nadal
+    # wewnatrz domyslnego pasma neutralnego (+-0.2). Ze starym progiem 0.0
+    # (sprzed tej fazy) ten sam scenariusz dalby Signal.LONG - to jest
+    # dokladnie ten przypadek, ktory produkowal bezsensowne, jednoswiecowe
+    # wpisy 0.00% w "Historii sygnalow" (zglosil to uzytkownik).
+    trades = []
+    # Faza 1 (blok 0): ustala profitowosc przez round-tripy kupno/sprzedaz w
+    # TYM SAMYM oknie - zerowy wplyw na net_direction (kupno+sprzedaz tej
+    # samej wielkosci sie znosi), ale wystarcza do klasyfikacji GOOD/BAD
+    # (patrz lookback w ScoringEngine.run).
+    for _ in range(3):
+        for i in range(8):
+            trades.append(make_trade(f"good{i}", 0, Side.BUY, 100.0, 1.0))
+            trades.append(make_trade(f"good{i}", 0, Side.SELL, 110.0, 1.0))
+        for i in range(8):
+            trades.append(make_trade(f"bad{i}", 0, Side.BUY, 100.0, 1.0))
+            trades.append(make_trade(f"bad{i}", 0, Side.SELL, 90.0, 1.0))
+    # Faza 2 (nadal blok 0, wiec to samo okno): jednostronna aktywnosc,
+    # ktora faktycznie liczy sie do net_direction. good: 5 net-buy / 3
+    # net-sell -> good_ratio_raw=5/8=0.625. bad: 4/4 -> bad_ratio_raw=0.5
+    # (brak wkladu). composite (EMA "na zimno") = 1.5*(0.625-0.5) = 0.1875.
+    for i in range(5):
+        trades.append(make_trade(f"good{i}", 0, Side.BUY, 105.0, 1.0))
+    for i in range(5, 8):
+        trades.append(make_trade(f"good{i}", 0, Side.SELL, 105.0, 1.0))
+    for i in range(4):
+        trades.append(make_trade(f"bad{i}", 0, Side.BUY, 95.0, 1.0))
+    for i in range(4, 8):
+        trades.append(make_trade(f"bad{i}", 0, Side.SELL, 95.0, 1.0))
+
+    engine = ScoringEngine(ScoringConfig())  # signal_threshold domyslny = 0.2
+    scores = engine.run(trades, lambda b: 2000.0)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.pool_size == 8  # realna, sklasyfikowana kohorta - nie "brak danych"
+    assert 0.0 < s.composite_score < 0.2
+    assert s.signal == Signal.HOLD
 
 
 def test_only_buys_pushes_toward_long_when_good_cohort_exists():
@@ -148,12 +194,18 @@ def test_blend_composite_respects_custom_weight():
 
 
 def test_decide_signal_matches_sign_of_composite():
-    assert decide_signal(0.1, threshold=0.0, prev_signal=Signal.HOLD) == Signal.LONG
-    assert decide_signal(-0.1, threshold=0.0, prev_signal=Signal.HOLD) == Signal.SHORT
+    assert decide_signal(0.1, threshold=0.0) == Signal.LONG
+    assert decide_signal(-0.1, threshold=0.0) == Signal.SHORT
 
 
-def test_decide_signal_holds_previous_within_threshold_band():
-    # Wewnatrz pasma histerezy (-threshold, +threshold) sygnal NIE zmienia
-    # sie - dokladnie ta sama logika co wewnatrz ScoringEngine.run.
-    assert decide_signal(0.05, threshold=0.1, prev_signal=Signal.SHORT) == Signal.SHORT
-    assert decide_signal(-0.05, threshold=0.1, prev_signal=Signal.LONG) == Signal.LONG
+def test_decide_signal_neutral_within_threshold_band():
+    # Faza "NEUTRAL dead-zone": wewnatrz pasma (-threshold, +threshold)
+    # sygnal to Signal.HOLD ("NEUTRALNY") - NIE trzyma juz poprzedniego
+    # sygnalu (prev_signal usuniety z sygnatury, patrz docstring w
+    # scoring.py) - niezaleznie od tego, co bylo "wczesniej".
+    assert decide_signal(0.05, threshold=0.1) == Signal.HOLD
+    assert decide_signal(-0.05, threshold=0.1) == Signal.HOLD
+    assert decide_signal(0.0, threshold=0.1) == Signal.HOLD
+    # Tuz POZA pasmem - normalna decyzja po znaku.
+    assert decide_signal(0.11, threshold=0.1) == Signal.LONG
+    assert decide_signal(-0.11, threshold=0.1) == Signal.SHORT
