@@ -19,7 +19,7 @@ def test_all_neutral_wallets_no_crash_and_hold_signal():
     # w ScoringEngine.run) - Faza "NEUTRAL dead-zone": to trafia w pasmo
     # neutralne, sygnal to Signal.HOLD ("NEUTRALNY" na froncie).
     trades = [
-        make_trade(f"w{i}", block, Side.BUY, 2000.0, 1.0)
+        make_trade(f"w{i}", block, Side.BUY, 2000.0, 20.0)
         for i in range(3)
         for block in [0, 250, 500]
     ]
@@ -48,23 +48,23 @@ def test_weak_composite_within_dead_zone_gives_hold_not_long():
     # (patrz lookback w ScoringEngine.run).
     for _ in range(3):
         for i in range(8):
-            trades.append(make_trade(f"good{i}", 0, Side.BUY, 100.0, 1.0))
-            trades.append(make_trade(f"good{i}", 0, Side.SELL, 110.0, 1.0))
+            trades.append(make_trade(f"good{i}", 0, Side.BUY, 100.0, 20.0))
+            trades.append(make_trade(f"good{i}", 0, Side.SELL, 110.0, 20.0))
         for i in range(8):
-            trades.append(make_trade(f"bad{i}", 0, Side.BUY, 100.0, 1.0))
-            trades.append(make_trade(f"bad{i}", 0, Side.SELL, 90.0, 1.0))
+            trades.append(make_trade(f"bad{i}", 0, Side.BUY, 100.0, 20.0))
+            trades.append(make_trade(f"bad{i}", 0, Side.SELL, 90.0, 20.0))
     # Faza 2 (nadal blok 0, wiec to samo okno): jednostronna aktywnosc,
     # ktora faktycznie liczy sie do net_direction. good: 5 net-buy / 3
     # net-sell -> good_ratio_raw=5/8=0.625. bad: 4/4 -> bad_ratio_raw=0.5
     # (brak wkladu). composite (EMA "na zimno") = 1.5*(0.625-0.5) = 0.1875.
     for i in range(5):
-        trades.append(make_trade(f"good{i}", 0, Side.BUY, 105.0, 1.0))
+        trades.append(make_trade(f"good{i}", 0, Side.BUY, 105.0, 20.0))
     for i in range(5, 8):
-        trades.append(make_trade(f"good{i}", 0, Side.SELL, 105.0, 1.0))
+        trades.append(make_trade(f"good{i}", 0, Side.SELL, 105.0, 20.0))
     for i in range(4):
-        trades.append(make_trade(f"bad{i}", 0, Side.BUY, 95.0, 1.0))
+        trades.append(make_trade(f"bad{i}", 0, Side.BUY, 95.0, 20.0))
     for i in range(4, 8):
-        trades.append(make_trade(f"bad{i}", 0, Side.SELL, 95.0, 1.0))
+        trades.append(make_trade(f"bad{i}", 0, Side.SELL, 95.0, 20.0))
 
     engine = ScoringEngine(ScoringConfig())  # signal_threshold domyslny = 0.2
     scores = engine.run(trades, lambda b: 2000.0)
@@ -85,13 +85,13 @@ def test_only_buys_pushes_toward_long_when_good_cohort_exists():
     price = 100.0
     for cycle in range(20):
         for wallet_id in range(5):
-            trades.append(make_trade(f"good{wallet_id}", block, Side.BUY, price, 1.0))
+            trades.append(make_trade(f"good{wallet_id}", block, Side.BUY, price, 20.0))
         price_map[block] = price
         block += 1
         price *= 1.05  # cena rosnie po kazdym zakupie -> "dobrzy" maja racje
         price_map[block] = price
         for wallet_id in range(5):
-            trades.append(make_trade(f"good{wallet_id}", block, Side.SELL, price, 1.0))
+            trades.append(make_trade(f"good{wallet_id}", block, Side.SELL, price, 20.0))
         block += 5
 
     def price_at_block(b):
@@ -125,20 +125,20 @@ def test_good_bad_pressure_divergence_breadth_are_volume_based_and_independent_o
     # recznie i sprawdzic, ze pressure/divergence/breadth licza sie z
     # WOLUMENU, a nie z liczby portfeli (ktora jest tu po 2 na kohorte).
     history = [
-        make_trade("g1", 1, Side.BUY, 100.0, 1.0),
-        make_trade("g1", 2, Side.SELL, 200.0, 1.0),  # zysk -> GOOD
-        make_trade("g2", 1, Side.BUY, 100.0, 1.0),
-        make_trade("g2", 2, Side.SELL, 190.0, 1.0),  # zysk -> GOOD
-        make_trade("b1", 1, Side.BUY, 100.0, 1.0),
-        make_trade("b1", 2, Side.SELL, 75.0, 1.0),  # strata -> BAD
-        make_trade("b2", 1, Side.BUY, 100.0, 1.0),
-        make_trade("b2", 2, Side.SELL, 70.0, 1.0),  # strata -> BAD
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),  # zysk -> GOOD
+        make_trade("g2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 20.0),  # zysk -> GOOD
+        make_trade("b1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b1", 2, Side.SELL, 75.0, 20.0),  # strata -> BAD
+        make_trade("b2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b2", 2, Side.SELL, 70.0, 20.0),  # strata -> BAD
     ]
     window_trades = [
-        make_trade("g1", 150, Side.BUY, 150.0, 3.0),
-        make_trade("g2", 150, Side.BUY, 150.0, 1.0),
-        make_trade("b1", 150, Side.SELL, 150.0, 2.0),
-        make_trade("b2", 150, Side.SELL, 150.0, 1.0),
+        make_trade("g1", 150, Side.BUY, 150.0, 60.0),
+        make_trade("g2", 150, Side.BUY, 150.0, 20.0),
+        make_trade("b1", 150, Side.SELL, 150.0, 40.0),
+        make_trade("b2", 150, Side.SELL, 150.0, 20.0),
     ]
 
     cfg = ScoringConfig(
