@@ -152,6 +152,114 @@ def decide_signal(composite: float, *, threshold: float) -> Signal:
     return Signal.HOLD
 
 
+@dataclass
+class SignalConfig:
+    """Progi histerezy + potwierdzenia dla GŁÓWNEGO sygnału LONG/SHORT
+    pokazywanego w hero (ten liczony na `composite` już ZBLENDOWANYM
+    spot+perp - patrz `blend_composite` powyżej).
+
+    Zgłoszenie użytkownika (2026-08-31): "Czemu on zmienia sygnał co każdy
+    blok? [...] Tak jak robi to hydra.trading? Od 2 tygodni prawie jest tam
+    sygnał LONG, a u nas zmienia się co chwilę." Zmierzone empirycznie na
+    żywej historii (225 świec, `data/candles_history.json`): stary
+    `decide_signal()` z pojedynczym symetrycznym progiem (`signal_threshold
+    =0.2`, bez pamięci) dawał 90 przełączeń sygnału na 225 świec (15 w
+    samych ostatnich 40) - `composite` bardzo często oscyluje tuż nad/pod
+    progiem w obie strony w krótkich odstępach, dokładnie jak w przykładzie
+    z pytania użytkownika.
+
+    Rozwiązanie: DOKŁADNIE ten sam wzorzec, co już wdrożony i zaakceptowany
+    `regime.RegimeEngine` (BULL/BEAR/NEUTRAL) - asymetryczna histereza
+    wejście/wyjście + wymóg kilku kolejnych świec potwierdzających PRZED
+    wejściem w LONG/SHORT z HOLD. WYJŚCIE z LONG/SHORT z powrotem do HOLD
+    jest CELOWO natychmiastowe (bez potwierdzenia) - ta sama asymetria co w
+    `RegimeConfig`: trzymanie pozycji, która już wyraźnie się skończyła, nie
+    powinno być sztucznie przeciągane, tylko WEJŚCIE ma być ostrożne.
+    Przejście LONG<->SHORT bezpośrednio (bez przejścia przez HOLD) jest
+    architektonicznie niemożliwe - dokładnie jak BULL<->BEAR w RegimeEngine
+    - co dodatkowo tłumi "migotanie" przy szybkiej zmianie znaku.
+
+    WARTOŚCI STARTOWE (jak `signal_threshold`/`min_flip_streak_trades`
+    powyżej i cała `RegimeConfig`) - wybrane EMPIRYCZNIE na tej samej
+    żywej historii 225 świec (nie wynik optymalizacji/backtestu):
+    `enter=0.35, exit=0.1, confirm=3` redukuje 90 przełączeń do 10 na całej
+    historii (15 -> 4 w ostatnich 40 świecach) - podobny rząd wielkości
+    redukcji, jak `signal_threshold=0.2` osiągnął w swoim czasie dla
+    "dead-zone". Do przestrojenia dopiero po backteście (Faza 5), tak jak
+    każdy inny próg w projekcie.
+    """
+
+    enter_threshold: float = 0.35
+    exit_threshold: float = 0.1
+    min_confirmation_periods: int = 3
+
+
+class SignalEngine:
+    """Stateful maszyna stanów HOLD/LONG/SHORT z histerezą i potwierdzeniem
+    - architektura 1:1 skopiowana z `regime.RegimeEngine` (patrz
+    `SignalConfig` wyżej po uzasadnienie). Wznawialna między osobnymi
+    uruchomieniami procesu dokładnie tak samo jak `RegimeEngine`/
+    `ScoringEngine` - patrz `export_state()`/`initial_state` niżej i
+    `live/state.py` (`load_signal_state`/`save_signal_state`).
+
+    Zastępuje dawne, BEZSTANOWE wywołanie `decide_signal()` jako źródło
+    głównego pola `signal` w hero/`candles_history.json`
+    (`live/run_incremental.py`). `decide_signal()` zostaje w kodzie
+    niezmieniona - dalej używana m.in. przez `signalSpotOnly` liczone
+    WEWNĄTRZ `ScoringEngine.run()` (czysto diagnostyczne, patrz tam), które
+    świadomie NIE dostaje histerezy - to osobny, uboczny tor, nie ten,
+    który steruje właściwym sygnałem."""
+
+    def __init__(self, config: SignalConfig | None = None, *, initial_state: dict | None = None) -> None:
+        self.cfg = config or SignalConfig()
+        state = initial_state or {}
+        self.signal: Signal = Signal(state.get("signal", "HOLD"))
+        self.long_streak: int = state.get("long_streak", 0)
+        self.short_streak: int = state.get("short_streak", 0)
+
+    def export_state(self) -> dict:
+        return {
+            "signal": self.signal.value,
+            "long_streak": self.long_streak,
+            "short_streak": self.short_streak,
+        }
+
+    def process(self, composite: float) -> Signal:
+        """Przetwarza JEDNĄ nową świecę (w kolejności czasu!), aktualizuje
+        wewnętrzny stan, zwraca nowy `signal`. Kolejność ma znaczenie -
+        przy wielu nowych świecach w jednym uruchomieniu (np. po dłuższej
+        przerwie) trzeba wywołać to raz na każdą, po kolei - dokładnie jak
+        `RegimeEngine.process_candle`."""
+        cfg = self.cfg
+
+        if self.signal is Signal.LONG:
+            if composite < cfg.exit_threshold:
+                self.signal = Signal.HOLD
+            self.long_streak = 0
+            self.short_streak = 0
+        elif self.signal is Signal.SHORT:
+            if composite > -cfg.exit_threshold:
+                self.signal = Signal.HOLD
+            self.long_streak = 0
+            self.short_streak = 0
+        else:  # HOLD
+            long_condition = composite > cfg.enter_threshold
+            short_condition = composite < -cfg.enter_threshold
+            self.long_streak = self.long_streak + 1 if long_condition else 0
+            self.short_streak = self.short_streak + 1 if short_condition else 0
+
+            if self.long_streak >= cfg.min_confirmation_periods:
+                self.signal = Signal.LONG
+                self.long_streak = 0
+                self.short_streak = 0
+            elif self.short_streak >= cfg.min_confirmation_periods:
+                self.signal = Signal.SHORT
+                self.long_streak = 0
+                self.short_streak = 0
+
+        return self.signal
+
+
 class ScoringEngine:
     """Stateful silnik: EMA i poprzedni sygnał są trzymane między oknami.
 
