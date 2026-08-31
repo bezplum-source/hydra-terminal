@@ -346,9 +346,23 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
     """Regresja: brak `data/hyperliquid_trades_buffer.jsonl` (dokladnie stan
     sprzed Fazy H2, albo pierwsze uruchomienie zanim listener Hyperliquid
     zdazyl cokolwiek zebrac) -> `composite_perp` musi wyjsc `None`, a
-    `blend_composite`/`decide_signal` musza sie zachowac IDENTYCZNIE jak
-    stary, czysto spotowy sygnal (`compositeSpot`/`signalSpotOnly`) -
-    "graceful degradation" z briefu, nie zmiana zachowania."""
+    `blend_composite` musi sie zachowac IDENTYCZNIE jak stary, czysto
+    spotowy sygnal (`composite == compositeSpot`) - "graceful degradation"
+    z briefu, nie zmiana zachowania.
+
+    ZMIANA (Faza "sygnal z histereza"): `signal` (glowne pole, sterowane
+    teraz przez `SignalEngine` z histereza+potwierdzeniem) i `signalSpotOnly`
+    (diagnostyczne pole liczone WEWNATRZ `ScoringEngine.run()`, celowo BEZ
+    histerezy - patrz scoring.py) juz NIE MUSZA byc rowne nawet gdy
+    `composite == compositeSpot` - to dwa niezalezne tory z rozna logika
+    decyzyjna, nie duplikaty tej samej wartosci. W tym konkretnym tescie
+    (jedna swieca, backfill od zera) `signalSpotOnly` moze od razu pokazac
+    LONG/SHORT (stary, natychmiastowy prog), a `signal` zostaje HOLD, bo
+    `SignalEngine` startuje ze stanu HOLD i wymaga
+    `min_confirmation_periods` (domyslnie 3) kolejnych swiec z rzedu, zanim
+    w ogole wejdzie w LONG/SHORT - dokladnie tak samo, jak
+    `RegimeEngine`/`regime` przy pierwszej swiecy nie wchodzi od razu w
+    BULL/BEAR."""
     _patch_all_paths(monkeypatch, tmp_path)
     monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
     monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
@@ -365,11 +379,14 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
     for c in candles:
         assert c["compositePerp"] is None
         assert c["composite"] == c["compositeSpot"]
-        assert c["signal"] == c["signalSpotOnly"]
         # Faza H3 - pola diagnostyczne rowniez w bezpiecznym, "brak danych"
         # stanie, nie tylko composite/signal.
         assert c["perpIsMature"] is False
         assert c["perpTracked"] == 0
+    # Pierwsza (jedyna w tym tescie) swieca - SignalEngine startuje z HOLD i
+    # potrzebuje kilku potwierdzajacych swiec pod rzad, wiec NIE wchodzi od
+    # razu w LONG/SHORT nawet jesli compositeSpot juz przekracza enter_threshold.
+    assert candles[-1]["signal"] == "HOLD"
     # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
     # nie mial "nowego okna" do policzenia (patrz HyperliquidScoringEngine.run).
     assert st.load_hyperliquid_scoring_state() == {}
@@ -610,12 +627,13 @@ def test_freshness_meta_last_run_utc_is_embedded_in_generated_site(tmp_path, mon
 
 
 def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
-    """Faza "NEUTRAL dead-zone": front-end (template.html) musi stosowac
-    DOKLADNIE ten sam prog co decide_signal() przy kolorowaniu rozbicia
-    spot/perp w hero i przy pill BYCZY/NEUTRALNY/NIEDZWIEDZI w karcie
-    ETH-PERP - zamiast duplikowac wartosc na twardo w JS, kazda swieca
-    dostaje pole `signalThreshold` wprost z `cfg.signal_threshold` (ten sam
-    wzorzec co juz istniejace `perpMaturityThreshold`)."""
+    """Faza "NEUTRAL dead-zone" (kontynuowana przez Faze "sygnal z histereza"):
+    front-end (template.html) musi stosowac DOKLADNIE ten sam prog co
+    `SignalEngine` przy kolorowaniu rozbicia spot/perp w hero i przy pill
+    BYCZY/NEUTRALNY/NIEDZWIEDZI w karcie ETH-PERP - zamiast duplikowac
+    wartosc na twardo w JS, kazda swieca dostaje pole `signalThreshold`
+    wprost z `signal_engine.cfg.enter_threshold` (ten sam wzorzec co juz
+    istniejace `perpMaturityThreshold`)."""
     _patch_all_paths(monkeypatch, tmp_path)
     monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
     monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
@@ -630,7 +648,7 @@ def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
     candles = st.load_candles_history()
     assert len(candles) > 0
     for c in candles:
-        # Domyslny ScoringConfig().signal_threshold (patrz scoring.py) - 0.2,
-        # wartosc startowa wybrana empirycznie na zywej historii, nie wynik
-        # backtestu (patrz komentarz przy polu w ScoringConfig).
-        assert c["signalThreshold"] == 0.2
+        # Domyslny SignalConfig().enter_threshold (patrz scoring.py) - 0.35,
+        # wartosc startowa wybrana empirycznie na zywej historii (225 swiec),
+        # nie wynik backtestu (patrz komentarz przy polu w SignalConfig).
+        assert c["signalThreshold"] == 0.35
