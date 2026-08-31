@@ -52,6 +52,7 @@ from hydra_signals import regime  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
     ScoringConfig,
     ScoringEngine,
+    SignalEngine,
     blend_composite,
     decide_signal,
 )
@@ -103,6 +104,7 @@ def main() -> int:
     wallets_seen = st.load_wallets_seen()
     candles_history = st.load_candles_history()
     regime_state = st.load_regime_state()
+    signal_state = st.load_signal_state()
     wallet_flip_state = st.load_wallet_flip_state()
     hyperliquid_scoring_state = st.load_hyperliquid_scoring_state()
     hyperliquid_wallets_seen = st.load_hyperliquid_wallets_seen()
@@ -303,6 +305,16 @@ def main() -> int:
     # uruchomieniami dokladnie tak samo jak ScoringEngine powyzej.
     regime_engine = regime.RegimeEngine(initial_state=regime_state)
 
+    # Faza "sygnał z histerezą" (zgłoszenie użytkownika 2026-08-31: "zmienia
+    # sygnał co każdy blok... hydra.trading trzyma LONG od 2 tygodni") -
+    # maszyna stanów HOLD/LONG/SHORT z histerezą wejście/wyjście +
+    # potwierdzeniem, architektura 1:1 skopiowana z RegimeEngine powyżej -
+    # patrz hydra_signals/scoring.py::SignalEngine/SignalConfig. Zastępuje
+    # dawne, bezstanowe `decide_signal()` jako źródło głównego `signal`
+    # niżej. Wznawia się między uruchomieniami dokładnie tak samo jak
+    # regime_engine - patrz `signal_state`/`st.save_signal_state` niżej.
+    signal_engine = SignalEngine(initial_state=signal_state)
+
     new_scores = []
     if scoreable_trades:
         new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
@@ -340,27 +352,36 @@ def main() -> int:
             composite_final = blend_composite(
                 s.composite_score, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
             )
-            # Faza "NEUTRAL dead-zone" - decide_signal() nie potrzebuje juz
-            # `prev_signal` (usuniete - patrz docstring w scoring.py): w
-            # pasmie [-threshold, threshold] wprost zwraca Signal.HOLD
-            # ("NEUTRALNY" na froncie) zamiast migotac albo trzymac stara
-            # decyzje. `final_prev_signal`/`scoring_state["final_prev_signal"]`
-            # z Fazy H2 - wycofane, nic juz z nich nie czyta.
-            final_signal = decide_signal(composite_final, threshold=cfg.signal_threshold)
+            # Faza "sygnał z histerezą" - `signal_engine` (maszyna stanów
+            # HOLD/LONG/SHORT z histerezą + potwierdzeniem, patrz wyżej)
+            # ZASTĘPUJE dawne bezstanowe `decide_signal()` jako źródło tego
+            # pola. Wywoływane PO KOLEI dla każdej nowej świecy w tym
+            # uruchomieniu (jak `regime_engine.process_candle` niżej) - przy
+            # wielu nowych świecach naraz (np. po dłuższej przerwie) silnik
+            # "przeżywa" je jedna po drugiej, tak jakby przyszły w osobnych,
+            # godzinowych uruchomieniach. `decide_signal()` zostaje w kodzie
+            # niezmieniona - dalej używana WYŁĄCZNIE wewnątrz
+            # `ScoringEngine.run()` do policzenia `signalSpotOnly`
+            # (diagnostyczne, celowo BEZ histerezy - patrz scoring.py).
+            final_signal = signal_engine.process(composite_final)
 
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
                 "signal": final_signal.value,
                 "composite": round(composite_final, 3),
-                # Faza "NEUTRAL dead-zone" - jedno miejsce prawdy dla progu
-                # uzywanego przy decyzji signal LONG/NEUTRAL/SHORT powyzej;
-                # front-end (template.html) czyta to samo pole, zeby stosowac
-                # IDENTYCZNY prog przy kolorowaniu rozbicia spot/perp w hero
-                # i przy pill BYCZY/NEUTRALNY/NIEDZWIEDZI w karcie ETH-PERP,
-                # zamiast duplikowac wartosc na twardo w JS (ten sam wzorzec
-                # co `perpMaturityThreshold` nizej).
-                "signalThreshold": cfg.signal_threshold,
+                # Faza "sygnał z histerezą" - front-end (template.html) dalej
+                # czyta TO SAMO pole (`signalThreshold`) do kolorowania
+                # rozbicia spot/perp w hero i pill BYCZY/NEUTRALNY/NIEDZWIEDZI
+                # w karcie ETH-PERP - teraz niesie `enter_threshold`
+                # `SignalEngine` (próg, powyżej ktorego wychylenie jest w
+                # ogole "warte uwagi"), zamiast starego, wycofanego
+                # `cfg.signal_threshold`. Jedno miejsce prawdy, zamiast
+                # duplikowania wartosci na twardo w JS (ten sam wzorzec co
+                # `perpMaturityThreshold` nizej) - front-end nie musi nic
+                # wiedziec o `exit_threshold`/potwierdzeniu, ktore sterują
+                # WYŁĄCZNIE samym polem `signal`, nie kolorowaniem liczb.
+                "signalThreshold": signal_engine.cfg.enter_threshold,
                 # --- Faza H2 (brief Hyperliquid) - rozbicie widoczne juz w
                 # danych, zeby przyszla Faza H3 (frontend) mogla to po
                 # prostu wyswietlic bez przeliczania niczego dodatkowo.
@@ -448,6 +469,7 @@ def main() -> int:
     st.save_wallets_seen(engine.total_tracked)
     st.save_candles_history(candles_history)
     st.save_regime_state(regime_engine.export_state())
+    st.save_signal_state(signal_engine.export_state())
     st.save_wallet_flip_state(engine.export_wallet_flip_state())
 
     # Faza "wiarygodna swiezosc" - `lastRunUtc` to zegar SCIANY (kiedy TEN
