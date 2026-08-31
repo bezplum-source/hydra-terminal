@@ -74,6 +74,19 @@ i czytany przez `update.yml`/`run_incremental.py`, analogicznie do
   portfele" w nowej karcie diagnostycznej "ETH-PERP · Hyperliquid" na
   stronie. Czysto diagnostyczny, NIE wpływa na `composite_perp` ani na
   żadną logikę scoringu (patrz `HyperliquidScoringEngine.total_tracked`).
+
+Dziesiąty plik, dodany w Fazie "sygnał z histerezą" (zgłoszenie użytkownika
+2026-08-31: "zmienia sygnał co każdy blok... hydra.trading trzyma LONG od 2
+tygodni") — mały, jak `regime_state.json`:
+
+- `signal_state.json` — bieżący `signal` (LONG/SHORT/HOLD) głównego,
+  zblendowanego sygnału pokazywanego w hero + dwa liczniki potwierdzenia
+  (`long_streak`/`short_streak`). Pozwala `hydra_signals.scoring.
+  SignalEngine` (maszyna stanów z histerezą wejście/wyjście, architektura
+  1:1 skopiowana z `RegimeEngine`) wznowić się dokładnie tam, gdzie
+  skończył poprzedni proces — bez tego KAŻDE uruchomienie zaczynałoby od
+  stanu HOLD i zerowych liczników, tracąc ciągłość dokładnie tak samo, jak
+  straciłby ją `RegimeEngine` bez `regime_state.json`.
 """
 
 from __future__ import annotations
@@ -95,6 +108,7 @@ WALLET_FLIP_STATE_PATH = DATA_DIR / "wallet_flip_state.json"
 HYPERLIQUID_TRADES_BUFFER_PATH = DATA_DIR / "hyperliquid_trades_buffer.jsonl"
 HYPERLIQUID_SCORING_STATE_PATH = DATA_DIR / "hyperliquid_scoring_state.json"
 HYPERLIQUID_WALLETS_SEEN_PATH = DATA_DIR / "hyperliquid_wallets_seen.txt"
+SIGNAL_STATE_PATH = DATA_DIR / "signal_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -240,6 +254,17 @@ def load_hyperliquid_wallets_seen() -> set[str]:
 def save_hyperliquid_wallets_seen(wallets: set[str]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     HYPERLIQUID_WALLETS_SEEN_PATH.write_text("\n".join(sorted(wallets)) + "\n", encoding="utf-8")
+
+
+def load_signal_state() -> dict:
+    if not SIGNAL_STATE_PATH.exists():
+        return {}
+    return json.loads(SIGNAL_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_signal_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SIGNAL_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
