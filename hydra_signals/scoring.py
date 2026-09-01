@@ -21,8 +21,16 @@ class ScoringConfig:
     window_blocks: int = 250  # ~1h przy ~14.4s/blok (Ethereum PoS)
 
     # Ile bloków historii bierzemy pod uwagę przy rankingu portfeli.
-    # 250*24 = ok. 24h ruchomego okna reputacji.
-    classification_lookback_blocks: int = 250 * 24
+    # 250*24*7 = ok. 7 dni ruchomego okna reputacji (Faza "okno reputacji
+    # 7 dni" 2026-09-01 - zgloszenie uzytkownika: sygnal LONG/SHORT trzyma
+    # sie za krotko, bo klasyfikacja GOOD/BAD portfela liczyla sie z zaledwie
+    # ostatnich 24h - przy tylko kilku-kilkunastu aktywnych sklasyfikowanych
+    # portfelach na okno, tak krotkie okno reputacji dawalo bardzo hoslowy
+    # (szumny) composite. Wydluzenie do 7 dni NIE zmienia mechanizmu decyzji
+    # (SignalEngine/histereza zostaje bez zmian - to bylo juz empirycznie
+    # sprawdzone jako niewiele dajace), tylko wejsciowe dane, na ktorych ten
+    # mechanizm dziala. Poprzednia wartosc: 250*24 (~24h).
+    classification_lookback_blocks: int = 250 * 24 * 7
 
     min_trades_for_classification: int = 5
     good_pct: float = 0.15
