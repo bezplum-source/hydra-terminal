@@ -170,7 +170,14 @@ class HyperliquidScoringConfig:
     DEFAULT_MIN_TRADES/DEFAULT_GOOD_PCT/DEFAULT_BAD_PCT wyżej)."""
 
     # W GODZINACH, nie w blokach (Hyperliquid nie ma bloków) - odpowiednik
-    # `classification_lookback_blocks` (250*24 ~ 24h) w ScoringConfig.
+    # `classification_lookback_blocks` w ScoringConfig (od Fazy "okno
+    # reputacji 7 dni", 2026-09-01: spot = 250*24*7 ~ 7 dni). TU CELOWO
+    # zostawione na 24h, NIE wydłużone razem ze spotem w tamtej fazie -
+    # surowy bufor `hyperliquid_trades_buffer.jsonl` (firehose WS, patrz
+    # `DEFAULT_BUFFER_LOOKBACK_HOURS` w `data_sources/hyperliquid_ws.py`) był
+    # już ~83MB przy 48h retencji; wydłużenie do 7 dni napompowałoby go do
+    # ~250-300MB+ commitowanych co godzinę przez GitHub Actions - osobna
+    # decyzja infrastrukturalna, świadomie NIE podjęta bez użytkownika.
     classification_lookback_hours: float = 24.0
 
     min_trades_for_classification: int = DEFAULT_MIN_TRADES
