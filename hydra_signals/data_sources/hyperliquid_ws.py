@@ -41,12 +41,21 @@ HYPERLIQUID_WS_URL = "wss://api.hyperliquid.xyz/ws"
 ETH_COIN = "ETH"
 
 # Ile godzin surowych transakcji trzymac w buforze (`data/hyperliquid_trades_buffer.jsonl`)
-# zanim Faza H1 zdefiniuje wlasciwe okno klasyfikacji (analogiczne do
-# `classification_lookback_blocks` w ScoringConfig). Wartosc STARTOWA,
-# konserwatywnie hojna (podobnie jak inne progi w tym projekcie) - celowo
-# NIE rosniemy w nieskonczonosc od pierwszego dnia, zeby nie napuchnac
-# repozytorium, zanim H1 w ogole zacznie ten bufor konsumowac.
-DEFAULT_BUFFER_LOOKBACK_HOURS = 48.0
+# - odpowiednik `classification_lookback_blocks` w ScoringConfig (spot).
+#
+# 168.0 = 7 dni, zeby dokladnie dopasowac sie do
+# `HyperliquidScoringConfig.classification_lookback_hours` (Faza "bufor
+# poza git" 2026-09-01). Poprzednia wartosc: 48.0 (~2 dni) - CELOWO
+# krotsza niz okno klasyfikacji (24h), bo ten plik byl wtedy commitowany
+# co godzine wprost do historii publicznego repo (Actions), a przy 48h
+# wazyl juz ~83-90MB - przy 7 dniach urosłby do ~300MB+, co przekracza
+# twardy limit GitHuba (100MB/blob) i po prostu zablokowaloby `git push`.
+# Od tej Fazy plik NIE jest juz sledzony przez git (patrz .gitignore) -
+# miedzy uruchomieniami workflow przetrwa jako GitHub Actions cache
+# (patrz .github/workflows/hyperliquid-update.yml), ktory nie ma tego
+# limitu (pojedynczy wpis cache moze wazyc do 10GB). Dzieki temu okno
+# bufora moze wreszcie pokrywac cale okno klasyfikacji.
+DEFAULT_BUFFER_LOOKBACK_HOURS = 168.0
 
 # Jak czesto (w sekundach nasluchu) flushowac zebrane transakcje na dysk w
 # trakcie jednego uruchomienia listenera - zabezpieczenie na wypadek, gdyby
