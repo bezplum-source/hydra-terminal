@@ -718,7 +718,7 @@
       <span class="brand-sub">terminal &middot; ETH/USD on-chain signal</span>
     </div>
     <div class="topbar-right">
-      <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 USDC/WETH</span>
+      <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 WETH (4 pule)</span>
       <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
@@ -972,7 +972,7 @@
   </section>
 
   <footer class="foot reveal reveal-4">
-    <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z puli Uniswap V3 USDC/WETH (Ethereum mainnet), pobranych na żywo przez RPC.</span>
+    <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 4 pul Uniswap V3 WETH (USDC/WETH 0.05%+0.3%, WETH/USDT 0.05%+0.3%, Ethereum mainnet), pobranych na żywo przez RPC.</span>
     <span>To narzędzie badawcze, nie porada inwestycyjna.</span>
   </footer>
 
@@ -1655,7 +1655,7 @@ function renderFooter() {
   if (!el || !candles.length) return;
   const latest = candles[candles.length - 1];
   const first = candles[0];
-  el.innerHTML = 'Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z puli Uniswap V3 USDC/WETH (Ethereum mainnet), pobranych na żywo przez RPC &middot; ' +
+  el.innerHTML = 'Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 4 pul Uniswap V3 WETH (USDC/WETH 0.05%+0.3%, WETH/USDT 0.05%+0.3%, Ethereum mainnet), pobranych na żywo przez RPC &middot; ' +
     latest.tracked.toLocaleString('en-US') + ' śledzonych portfeli &middot; historia widoczna na wykresie: ' +
     first.time + ' &ndash; ' + latest.time + ' &middot; strona aktualizuje się automatycznie co ok. godzinę.';
 }
