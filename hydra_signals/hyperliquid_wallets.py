@@ -170,15 +170,22 @@ class HyperliquidScoringConfig:
     DEFAULT_MIN_TRADES/DEFAULT_GOOD_PCT/DEFAULT_BAD_PCT wyżej)."""
 
     # W GODZINACH, nie w blokach (Hyperliquid nie ma bloków) - odpowiednik
-    # `classification_lookback_blocks` w ScoringConfig (od Fazy "okno
-    # reputacji 7 dni", 2026-09-01: spot = 250*24*7 ~ 7 dni). TU CELOWO
-    # zostawione na 24h, NIE wydłużone razem ze spotem w tamtej fazie -
-    # surowy bufor `hyperliquid_trades_buffer.jsonl` (firehose WS, patrz
-    # `DEFAULT_BUFFER_LOOKBACK_HOURS` w `data_sources/hyperliquid_ws.py`) był
-    # już ~83MB przy 48h retencji; wydłużenie do 7 dni napompowałoby go do
-    # ~250-300MB+ commitowanych co godzinę przez GitHub Actions - osobna
-    # decyzja infrastrukturalna, świadomie NIE podjęta bez użytkownika.
-    classification_lookback_hours: float = 24.0
+    # `classification_lookback_blocks` w ScoringConfig (spot = 250*24*7 ~ 7
+    # dni, od Fazy "okno reputacji 7 dni" 2026-09-01).
+    #
+    # 168.0 = 7 dni (Faza "bufor poza git", 2026-09-01) - dogonione do
+    # spotu. Poprzednio zostawione świadomie na 24h w poprzedniej fazie,
+    # bo surowy bufor `hyperliquid_trades_buffer.jsonl` (firehose WS,
+    # `DEFAULT_BUFFER_LOOKBACK_HOURS` w `data_sources/hyperliquid_ws.py`)
+    # był commitowany co godzinę wprost do historii publicznego repo -
+    # przy 7 dniach ważyłby ~250-300MB+, co przekracza twardy limit
+    # GitHuba (100MB/blob niezależnie od cadencji commitów) i po prostu
+    # zablokowałoby push. Ta faza usuwa ten plik z historii gita (patrz
+    # .gitignore) i przenosi jego trwałość między uruchomieniami na
+    # GitHub Actions cache (patrz .github/workflows/hyperliquid-update.yml)
+    # - to odblokowuje wydłużenie okna klasyfikacji bez zmiany logiki
+    # rankingu GOOD/BAD poniżej.
+    classification_lookback_hours: float = 168.0
 
     min_trades_for_classification: int = DEFAULT_MIN_TRADES
     good_pct: float = DEFAULT_GOOD_PCT
