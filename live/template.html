@@ -774,7 +774,92 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-2" id="regimeCard">
+  <section class="card reveal reveal-2">
+    <div class="card-head">
+      <span class="card-title">Historia sygnałów</span>
+      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału &middot; wynik = wygrana/przegrana sygnału, nie surowa zmiana kursu</span>
+    </div>
+    <div class="stat-grid" style="margin-bottom:18px;">
+      <div class="stat">
+        <span class="stat-label">Łączny wynik</span>
+        <span class="stat-value" id="aggTotalPct">-</span>
+        <span class="stat-hint">iloczyn (1 + wynik) po wszystkich sygnałach LONG/SHORT, narastająco</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Trafione / nietrafione</span>
+        <span class="stat-value" id="aggWinLoss">-</span>
+        <span class="stat-hint">zamknięte sygnały LONG/SHORT (bez HOLD)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Win rate</span>
+        <span class="stat-value" id="aggWinRate">-</span>
+        <span class="stat-hint" id="aggWinRateHint">% sygnałów na plusie</span>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>Sygnał</th>
+            <th>Start</th>
+            <th>Koniec</th>
+            <th class="num">Cena start</th>
+            <th class="num">Cena koniec</th>
+            <th class="num">Wynik</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+    <!-- Faza UX/UI 2 - paginacja: historia sygnałów rośnie bez końca,
+         renderowanie wszystkich wierszy naraz z czasem zrobiłoby tabelę
+         nieczytelną. Kontener domyślnie skryty (display:none w JS ustawiane
+         dynamicznie) - pojawia się tylko gdy jest więcej niż jedna strona. -->
+    <div class="table-pagination" id="historyPagination" style="display:none;">
+      <button type="button" class="page-btn" id="historyPrevBtn">‹ Poprzednie</button>
+      <span class="page-indicator" id="historyPageIndicator">Strona 1 z 1</span>
+      <button type="button" class="page-btn" id="historyNextBtn">Następne ›</button>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-3" id="perpCard">
+    <div class="card-head">
+      <span class="card-title">ETH-PERP &middot; Hyperliquid</span>
+      <span class="card-note" id="perpCardNote">drugi, niezależny tor danych &middot; wpływa na sygnał LONG/SHORT powyżej</span>
+    </div>
+    <div class="card-subnote">Osobna, równoległa populacja traderów niż Uniswap spot — portfele handlujące kontraktami perpetual ETH na Hyperliquid, odkrywane przez publiczny firehose transakcji WebSocket. <code>composite_perp</code> poniżej to wartość SUROWA, sprzed zblendowania ze spotem — rozbicie "spot vs perp" widać w hero powyżej, przy polu "Composite score".</div>
+
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <span class="regime-pill regime-pill--none" id="perpPill">BRAK DANYCH</span>
+      <span class="hero-meta" id="perpNote"></span>
+    </div>
+
+    <div class="regime-meta-grid">
+      <div class="stat">
+        <span class="stat-label">Śledzone portfele</span>
+        <span class="stat-value" id="perpTracked">-</span>
+        <span class="stat-hint">łącznie, narastająco (Hyperliquid)</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Sklasyfikowane w oknie</span>
+        <span class="stat-value" id="perpClassified">-</span>
+        <span class="stat-hint" id="perpMaturityHint">próg dojrzałości: -</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">composite_perp</span>
+        <span class="stat-value" id="perpComposite">-</span>
+        <span class="stat-hint">surowy, przed blendem</span>
+      </div>
+    </div>
+
+    <div class="flip-row" id="perpBuySellRow"></div>
+
+    <div class="caveat">
+      <strong>Uczciwie o ograniczeniach:</strong> PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie Fazy H1, patrz brief Hyperliquid). Dopóki liczba sklasyfikowanych portfeli w oknie jest poniżej progu dojrzałości, <code>composite_perp</code> = BRAK DANYCH, a zblendowany sygnał opiera się wyłącznie na spocie — bez żadnej zmiany zachowania.
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4" id="regimeCard">
     <div class="card-head">
       <span class="card-title">Regime rynkowy</span>
       <span class="card-note">BULL / BEAR / NEUTRAL &middot; niezależne od sygnału LONG/SHORT powyżej</span>
@@ -838,44 +923,7 @@
        realnie wplywa na sygnal w hero powyzej (waga 50/50, patrz brief,
        "Decyzja architektoniczna") - stad ta karta reuzywa kolorystyke
        good/bad (LONG/SHORT), nie regime bull/bear. -->
-  <section class="card reveal reveal-2" id="perpCard">
-    <div class="card-head">
-      <span class="card-title">ETH-PERP &middot; Hyperliquid</span>
-      <span class="card-note" id="perpCardNote">drugi, niezależny tor danych &middot; wpływa na sygnał LONG/SHORT powyżej</span>
-    </div>
-    <div class="card-subnote">Osobna, równoległa populacja traderów niż Uniswap spot — portfele handlujące kontraktami perpetual ETH na Hyperliquid, odkrywane przez publiczny firehose transakcji WebSocket. <code>composite_perp</code> poniżej to wartość SUROWA, sprzed zblendowania ze spotem — rozbicie "spot vs perp" widać w hero powyżej, przy polu "Composite score".</div>
-
-    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-      <span class="regime-pill regime-pill--none" id="perpPill">BRAK DANYCH</span>
-      <span class="hero-meta" id="perpNote"></span>
-    </div>
-
-    <div class="regime-meta-grid">
-      <div class="stat">
-        <span class="stat-label">Śledzone portfele</span>
-        <span class="stat-value" id="perpTracked">-</span>
-        <span class="stat-hint">łącznie, narastająco (Hyperliquid)</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Sklasyfikowane w oknie</span>
-        <span class="stat-value" id="perpClassified">-</span>
-        <span class="stat-hint" id="perpMaturityHint">próg dojrzałości: -</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">composite_perp</span>
-        <span class="stat-value" id="perpComposite">-</span>
-        <span class="stat-hint">surowy, przed blendem</span>
-      </div>
-    </div>
-
-    <div class="flip-row" id="perpBuySellRow"></div>
-
-    <div class="caveat">
-      <strong>Uczciwie o ograniczeniach:</strong> PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie Fazy H1, patrz brief Hyperliquid). Dopóki liczba sklasyfikowanych portfeli w oknie jest poniżej progu dojrzałości, <code>composite_perp</code> = BRAK DANYCH, a zblendowany sygnał opiera się wyłącznie na spocie — bez żadnej zmiany zachowania.
-    </div>
-  </section>
-
-  <section class="card reveal reveal-3">
+  <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
       <!-- Faza UX/UI 2 - przełącznik zakresu czasu wykresu. Domyślnie
@@ -903,7 +951,7 @@
     </div>
   </section>
 
-  <section class="card reveal reveal-3" id="eventLogCard">
+  <section class="card reveal reveal-4" id="eventLogCard">
     <div class="card-head">
       <span class="card-title">Zdarzenia regime</span>
       <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
@@ -921,53 +969,13 @@
         <tbody id="eventLogBody"></tbody>
       </table>
     </div>
-  </section>
-
-  <section class="card reveal reveal-4">
-    <div class="card-head">
-      <span class="card-title">Historia sygnałów</span>
-      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału &middot; wynik = wygrana/przegrana sygnału, nie surowa zmiana kursu</span>
-    </div>
-    <div class="stat-grid" style="margin-bottom:18px;">
-      <div class="stat">
-        <span class="stat-label">Łączny wynik</span>
-        <span class="stat-value" id="aggTotalPct">-</span>
-        <span class="stat-hint">iloczyn (1 + wynik) po wszystkich sygnałach LONG/SHORT, narastająco</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Trafione / nietrafione</span>
-        <span class="stat-value" id="aggWinLoss">-</span>
-        <span class="stat-hint">zamknięte sygnały LONG/SHORT (bez HOLD)</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Win rate</span>
-        <span class="stat-value" id="aggWinRate">-</span>
-        <span class="stat-hint" id="aggWinRateHint">% sygnałów na plusie</span>
-      </div>
-    </div>
-    <div class="table-scroll">
-      <table class="history">
-        <thead>
-          <tr>
-            <th>Sygnał</th>
-            <th>Start</th>
-            <th>Koniec</th>
-            <th class="num">Cena start</th>
-            <th class="num">Cena koniec</th>
-            <th class="num">Wynik</th>
-          </tr>
-        </thead>
-        <tbody id="historyBody"></tbody>
-      </table>
-    </div>
-    <!-- Faza UX/UI 2 - paginacja: historia sygnałów rośnie bez końca,
-         renderowanie wszystkich wierszy naraz z czasem zrobiłoby tabelę
-         nieczytelną. Kontener domyślnie skryty (display:none w JS ustawiane
-         dynamicznie) - pojawia się tylko gdy jest więcej niż jedna strona. -->
-    <div class="table-pagination" id="historyPagination" style="display:none;">
-      <button type="button" class="page-btn" id="historyPrevBtn">‹ Poprzednie</button>
-      <span class="page-indicator" id="historyPageIndicator">Strona 1 z 1</span>
-      <button type="button" class="page-btn" id="historyNextBtn">Następne ›</button>
+    <!-- Faza UX/UI "kolejnosc bloków + paginacja zdarzen regime" - ten sam
+         wzorzec co historia sygnalów: kontener domyslnie ukryty, pojawia sie
+         tylko gdy jest wiecej niz jedna strona. -->
+    <div class="table-pagination" id="eventLogPagination" style="display:none;">
+      <button type="button" class="page-btn" id="eventLogPrevBtn">‹ Poprzednie</button>
+      <span class="page-indicator" id="eventLogPageIndicator">Strona 1 z 1</span>
+      <button type="button" class="page-btn" id="eventLogNextBtn">Następne ›</button>
     </div>
   </section>
 
@@ -1257,6 +1265,14 @@ function renderPerpCard() {
     '<span class="flip-chip">BAD kupuje / sprzedaje: <b class="flip-down">' + latest.perpBadBuyers + '</b> / <b class="flip-up">' + latest.perpBadSellers + '</b></span>';
 }
 
+// Faza "kolejność bloków + paginacja zdarzeń regime" - zdarzenia regime
+// rosną bez końca dokładnie jak historia sygnałów (buildHistory() niżej),
+// więc dostają ten sam wzorzec paginacji zamiast renderować wszystkie
+// wiersze naraz. `rows` jest już najnowsze-na-górze, więc strona 1 = zawsze
+// najnowsze zdarzenia, tak jak w historii sygnałów.
+const EVENTLOG_PAGE_SIZE = 15;
+let eventLogPage = 0;
+
 function buildEventLog() {
   const candles = DATA.candles;
   const rows = [];
@@ -1271,12 +1287,21 @@ function buildEventLog() {
   rows.reverse(); // najnowsze na górze
 
   const tbody = document.getElementById('eventLogBody');
+  const pagination = document.getElementById('eventLogPagination');
+
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Jeszcze żadnych zdarzeń regime — pojawią się tu automatycznie, gdy wystąpią.</td></tr>';
+    pagination.style.display = 'none';
     return;
   }
 
-  rows.forEach((r) => {
+  const totalPages = Math.max(1, Math.ceil(rows.length / EVENTLOG_PAGE_SIZE));
+  eventLogPage = Math.max(0, Math.min(eventLogPage, totalPages - 1));
+  const startIdx = eventLogPage * EVENTLOG_PAGE_SIZE;
+  const pageRows = rows.slice(startIdx, startIdx + EVENTLOG_PAGE_SIZE);
+
+  tbody.innerHTML = '';
+  pageRows.forEach((r) => {
     const cls = r.type.indexOf('END_') === 0 ? 'muted' : isBullish(r.type) ? 'bull' : isBearish(r.type) ? 'bear' : 'muted';
     const tr = document.createElement('tr');
     tr.innerHTML =
@@ -1286,6 +1311,15 @@ function buildEventLog() {
       '<td class="num">' + (r.confidence != null ? r.confidence.toFixed(1) : '-') + '</td>';
     tbody.appendChild(tr);
   });
+
+  if (rows.length > EVENTLOG_PAGE_SIZE) {
+    pagination.style.display = 'flex';
+    document.getElementById('eventLogPageIndicator').textContent = 'Strona ' + (eventLogPage + 1) + ' z ' + totalPages;
+    document.getElementById('eventLogPrevBtn').disabled = eventLogPage === 0;
+    document.getElementById('eventLogNextBtn').disabled = eventLogPage >= totalPages - 1;
+  } else {
+    pagination.style.display = 'none';
+  }
 }
 
 function renderFreshness() {
@@ -1681,6 +1715,13 @@ document.getElementById('historyPrevBtn').addEventListener('click', () => {
 });
 document.getElementById('historyNextBtn').addEventListener('click', () => {
   historyPage++; buildHistory();
+});
+
+document.getElementById('eventLogPrevBtn').addEventListener('click', () => {
+  if (eventLogPage > 0) { eventLogPage--; buildEventLog(); }
+});
+document.getElementById('eventLogNextBtn').addEventListener('click', () => {
+  eventLogPage++; buildEventLog();
 });
 
 // Faza UX/UI 2 - info-tip: hover działa tylko z myszą, więc na dotyku
