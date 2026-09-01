@@ -64,8 +64,9 @@ WARSAW = ZoneInfo("Europe/Warsaw")
 
 # Ile blokow pobrac jednorazowo przy PIERWSZYM uruchomieniu (brak zapisanego
 # stanu) - tyle, ile potrzeba, zeby classification_lookback_blocks (domyslnie
-# 6000) mial od razu pelny, "rozgrzany" bufor, plus niewielki zapas.
-BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BACKFILL_BLOCKS", "6500"))
+# 42000 = 7 dni od Fazy "okno reputacji 7 dni", wczesniej 6000 = 24h) mial
+# od razu pelny, "rozgrzany" bufor, plus niewielki zapas.
+BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BACKFILL_BLOCKS", "42500"))
 BLOCKS_PER_CALL = int(os.environ.get("HYDRA_BLOCKS_PER_CALL", "10"))
 CALLS_PER_BATCH = int(os.environ.get("HYDRA_CALLS_PER_BATCH", "80"))
 # Zabezpieczenie na wypadek dlugiej przerwy w dzialaniu joba (np. wylaczony
