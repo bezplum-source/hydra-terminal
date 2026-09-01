@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
+
+# Faza "bufor poza git" (2026-09-01): surowy firehose transakcji
+# Hyperliquid. Trzymanie 7-dniowego okna (patrz DEFAULT_BUFFER_LOOKBACK_HOURS
+# w hydra_signals/data_sources/hyperliquid_ws.py) w historii publicznego
+# repo waziloby ~250-300MB+ na commit - nad twardym limitem GitHuba
+# (100MB/blob). Ten plik zyje teraz TYLKO lokalnie na runnerze i jako
+# GitHub Actions cache miedzy uruchomieniami (patrz
+# .github/workflows/hyperliquid-update.yml) - nigdy nie trafia do gita.
+data/hyperliquid_trades_buffer.jsonl
