@@ -42,7 +42,7 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
     fetch_trades_from_chain_batched,
 )
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws  # noqa: E402
-from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005  # noqa: E402
+from hydra_signals.data_sources.pools import POOLS  # noqa: E402
 from hydra_signals.hyperliquid_wallets import (  # noqa: E402
     HyperliquidScoringConfig,
     HyperliquidScoringEngine,
@@ -257,7 +257,7 @@ def main() -> int:
     log(f"Pobieram nowe transakcje: bloki {from_block}-{to_block} ({to_block - from_block + 1} blokow)")
     new_trades = fetch_trades_from_chain_batched(
         rpc,
-        UNISWAP_V3_USDC_WETH_005,
+        POOLS,
         from_block,
         to_block,
         blocks_per_call=BLOCKS_PER_CALL,
