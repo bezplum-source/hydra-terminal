@@ -21,6 +21,7 @@ import json
 
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
+from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005
 from live import build_site as bs
 from live import run_incremental as ri
 from live import state as st
@@ -65,6 +66,12 @@ class FakeChain:
                         "logIndex": "0x0",
                         "data": _encode_swap_data(amount0, amount1),
                         "topics": [SWAP_TOPIC0],
+                        # Faza "wiele pul + batchowanie adresow": run_incremental
+                        # teraz filtruje po TABLICY adresow (POOLS), wiec kazdy
+                        # zwrocony log musi niesc "address", zeby dekoder
+                        # zrouotowal go do wlasciwej PoolConfig. Ten fake lancuch
+                        # symuluje transakcje tylko z podstawowej puli USDC/WETH.
+                        "address": UNISWAP_V3_USDC_WETH_005.address,
                     }
                 )
         return out
