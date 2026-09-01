@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from hydra_signals.backtest import print_report, run_backtest  # noqa: E402
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, fetch_trades_from_chain  # noqa: E402
-from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005  # noqa: E402
+from hydra_signals.data_sources.pools import POOLS  # noqa: E402
 from hydra_signals.scoring import ScoringConfig  # noqa: E402
 
 
@@ -67,10 +67,10 @@ def main() -> None:
     to_block = _resolve_block(rpc, args.to_block)
     print(f"Zakres blokow: {from_block} -> {to_block} ({to_block - from_block} blokow)")
 
-    print("Pobieram i dekoduje transakcje Swap z puli "
-          f"{UNISWAP_V3_USDC_WETH_005.token0_symbol}/{UNISWAP_V3_USDC_WETH_005.token1_symbol}...")
+    pool_names = ", ".join(f"{p.token0_symbol}/{p.token1_symbol}" for p in POOLS)
+    print(f"Pobieram i dekoduje transakcje Swap z pul: {pool_names}...")
     trades = fetch_trades_from_chain(
-        rpc, UNISWAP_V3_USDC_WETH_005, from_block, to_block, chunk_size=args.chunk_size
+        rpc, POOLS, from_block, to_block, chunk_size=args.chunk_size
     )
     print(f"Pobrano {len(trades)} transakcji od {len({t.wallet for t in trades})} unikalnych portfeli.")
 
