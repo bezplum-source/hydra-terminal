@@ -230,21 +230,34 @@ def _resolve_tx_senders(rpc: JsonRpcClient, tx_hashes: Iterable[str]) -> dict[st
     return out
 
 
+def _pools_by_address(pools: Sequence[PoolConfig]) -> dict[str, PoolConfig]:
+    return {p.address.lower(): p for p in pools}
+
+
 def fetch_trades_from_chain(
     rpc: JsonRpcClient,
-    pool: PoolConfig,
+    pools: Sequence[PoolConfig],
     from_block: int,
     to_block: int,
     chunk_size: int = 2000,
 ) -> list[Trade]:
-    """Pobiera i dekoduje wszystkie transakcje Swap z danej puli w zadanym
+    """Pobiera i dekoduje wszystkie transakcje Swap z PODANYCH pul w zadanym
     zakresie bloków, zwracając listę `Trade` gotowych do wpiecia w
     `wallets.compute_wallet_stats` / `scoring.ScoringEngine`.
+
+    `pools` może zawierać jedną lub wiele `PoolConfig` - wszystkie adresy
+    lądują w JEDNYM filtrze `eth_getLogs` (`"address"` jako lista, zgodnie
+    ze standardem JSON-RPC), więc liczba wywołań RPC zależy TYLKO od zakresu
+    bloków, nie od liczby pul (patrz `fetch_trades_from_chain_batched` niżej
+    - to samo dotyczy jej). Każdy zwrócony log jest routowany z powrotem do
+    właściwej `PoolConfig` po `log["address"]`, żeby dekodować z poprawnymi
+    decimals/kolejnością tokenów per pula.
 
     `chunk_size` chroni przed przekroczeniem limitu liczby logów/zakresu
     bloków na zapytanie, jaki narzucają publiczne węzły (typowo 2000-10000
     bloków na wywołanie `eth_getLogs`).
     """
+    by_address = _pools_by_address(pools)
     trades: list[Trade] = []
 
     for chunk_start in range(from_block, to_block + 1, chunk_size):
@@ -253,7 +266,7 @@ def fetch_trades_from_chain(
             "eth_getLogs",
             [
                 {
-                    "address": pool.address,
+                    "address": [p.address for p in pools],
                     "topics": [SWAP_TOPIC0],
                     "fromBlock": hex(chunk_start),
                     "toBlock": hex(chunk_end),
@@ -266,6 +279,9 @@ def fetch_trades_from_chain(
         tx_from = _resolve_tx_senders(rpc, (log["transactionHash"] for log in logs))
 
         for log in logs:
+            pool = by_address.get(log["address"].lower())
+            if pool is None:
+                continue
             decoded = decode_swap_log(log)
             wallet = tx_from.get(decoded.tx_hash)
             if wallet is None:
@@ -279,7 +295,7 @@ def fetch_trades_from_chain(
 
 def fetch_trades_from_chain_batched(
     rpc: JsonRpcClient,
-    pool: PoolConfig,
+    pools: Sequence[PoolConfig],
     from_block: int,
     to_block: int,
     *,
@@ -296,6 +312,18 @@ def fetch_trades_from_chain_batched(
     JSON-RPC) i automatycznie ponawia nieudane wywołania - patrz
     `batch_call_with_retry`.
 
+    `pools` - jedna lub więcej `PoolConfig`. WSZYSTKIE adresy pul lądują w
+    JEDNYM filtrze `eth_getLogs` na zakres (`"address"` jako tablica adresów
+    - standardowe zachowanie JSON-RPC, limit `blocks_per_call` dotyczy
+    TYLKO zakresu bloków, nie liczby adresów). Efekt: liczba wywołań RPC na
+    uruchomienie zależy wyłącznie od liczby przetwarzanych bloków, NIE od
+    liczby monitorowanych pul - dodanie kolejnej puli nie zwiększa ryzyka
+    throttlingu Alchemy (patrz decyzja w projekcie Claude,
+    `hydrav2-automation.md`, Faza "wiele pul WETH + batchowanie adresów").
+    Każdy zwrócony log jest routowany do właściwej `PoolConfig` po
+    `log["address"]` przed dekodowaniem (różne pule mają różne
+    decimals/kolejność tokenów).
+
     Przeznaczone do uruchomienia jako proces z prawdziwym, nieograniczonym
     dostępem do internetu (GitHub Actions runner, własny komputer/serwer) -
     patrz `live/run_incremental.py`.
@@ -308,13 +336,16 @@ def fetch_trades_from_chain_batched(
     if from_block > to_block:
         return []
 
+    by_address = _pools_by_address(pools)
+    addresses = [p.address for p in pools]
+
     chunks = [
         (start, min(start + blocks_per_call - 1, to_block))
         for start in range(from_block, to_block + 1, blocks_per_call)
     ]
     log(
         f"eth_getLogs: {len(chunks)} zakres(y) po {blocks_per_call} blokow "
-        f"({from_block}-{to_block})"
+        f"({from_block}-{to_block}), {len(pools)} pul(a) w jednym filtrze"
     )
 
     calls: list[tuple[str, list]] = [
@@ -322,7 +353,7 @@ def fetch_trades_from_chain_batched(
             "eth_getLogs",
             [
                 {
-                    "address": pool.address,
+                    "address": addresses,
                     "topics": [SWAP_TOPIC0],
                     "fromBlock": hex(c[0]),
                     "toBlock": hex(c[1]),
@@ -372,7 +403,12 @@ def fetch_trades_from_chain_batched(
         )
 
     trades: list[Trade] = []
+    unmatched = 0
     for entry in logs:
+        pool = by_address.get(entry["address"].lower())
+        if pool is None:
+            unmatched += 1
+            continue
         decoded = decode_swap_log(entry)
         wallet = tx_from.get(decoded.tx_hash)
         if wallet is None:
@@ -380,6 +416,12 @@ def fetch_trades_from_chain_batched(
         trade = swap_to_trade(decoded, pool, wallet)
         if trade is not None:
             trades.append(trade)
+    if unmatched:
+        log(
+            f"UWAGA: {unmatched} logow Swap z adresu spoza listy monitorowanych "
+            "pul (pominiete) - nie powinno sie zdarzyc, bo filtr eth_getLogs "
+            "juz ogranicza adresy, ale sprawdzane defensywnie."
+        )
 
     log(f"Zdekodowano {len(trades)} transakcji Trade.")
     return trades
