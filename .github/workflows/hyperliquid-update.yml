@@ -14,14 +14,18 @@ name: Aktualizacja danych Hyperliquid ETH-PERP
 # Koszt: zero - repo jest publiczne, GitHub Actions na standardowych
 # runnerach dla repo publicznych to bez limitu minut i bez oplat
 # (zweryfikowane w changelogu cenowym GitHub z konca 2025 - to sie nie
-# zmienia, zmieniaja sie tylko stawki dla repo prywatnych).
+# zmienia, zmieniaja sie tylko stawki dla repo prywatnych). GitHub Actions
+# cache (uzywany ponizej) jest tak samo darmowy dla repo publicznych.
 on:
   schedule:
     - cron: "20 * * * *"
   workflow_dispatch: {}
 
+# Faza "bufor poza git" (2026-09-01): ten workflow juz NIC nie commituje
+# do repo (patrz krok cache ponizej) - "contents: write" nie jest juz
+# potrzebne, wystarczy odczyt (checkout).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: hydra-hyperliquid-update
@@ -31,7 +35,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     # 55 minut nasluchu (HYPERLIQUID_LISTEN_SECONDS w listenerze, domyslnie
-    # 50 minut) + zapas na checkout/install/commit - nastepne uruchomienie
+    # 50 minut) + zapas na checkout/install/cache - nastepne uruchomienie
     # (cron co godzine) i tak nie nadejdzie wczesniej.
     timeout-minutes: 58
     steps:
@@ -46,59 +50,49 @@ jobs:
       - name: Zainstaluj zaleznosci
         run: pip install -r requirements.txt
 
-      - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
+      - name: Uruchom testy jednostkowe (nie startuj listenera, jesli cos nie dziala)
         run: python -m pytest tests/ -q
 
       - name: Wyczysc ewentualne pozostalosci po testach
         # Zabezpieczenie znalezione 2026-08-24: bug w izolacji jednego z
         # istniejacych testow (tests/test_live_incremental.py, naprawiony
         # w tej samej dostawie) potrafil zostawic w drzewie roboczym
-        # NIEZACOMMITOWANE zmiany w data/regime_state.json/
-        # data/wallet_flip_state.json (pisal do prawdziwych sciezek
-        # zamiast do tmp_path). W "update.yml" bylo to nieszkodliwe, bo
-        # ten workflow uruchamia potem prawdziwy run_incremental.py,
-        # ktory nadpisuje smieci poprawnymi danymi PRZED commitem. Tutaj
-        # NIE uruchamiamy run_incremental.py, wiec taki brud zostawalby az
-        # do "git rebase" i psul retry przy konflikcie pusha ("cannot
-        # rebase: You have unstaged changes"). Ten krok to DODATKOWA
-        # warstwa bezpieczenstwa (poza samym fixem testu) - gdyby jakis
-        # PRZYSZLY test mial ten sam blad izolacji, i tak nie zablokuje
-        # commitu bufora Hyperliquid.
+        # niezacommitowane zmiany w niepowiazanych plikach danych. Ten
+        # krok to dodatkowa warstwa bezpieczenstwa (poza samym fixem
+        # testu), zeby listener zawsze startowal z czystego, sledzonego
+        # przez git drzewa roboczego - niezaleznie od tego, ze ten
+        # workflow (od Fazy "bufor poza git") juz nic sam nie commituje.
         run: git checkout -- .
+
+      - name: Przywroc bufor transakcji z GitHub Actions cache
+        # Faza "bufor poza git" (2026-09-01): data/hyperliquid_trades_buffer.jsonl
+        # NIE jest juz sledzony przez git (patrz .gitignore) - przy 7-dniowym
+        # oknie klasyfikacji (DEFAULT_BUFFER_LOOKBACK_HOURS = 168.0) wazylby
+        # ~250-300MB+, co przekracza twardy limit GitHuba (100MB/blob) i
+        # zablokowaloby "git push". Zamiast tego trzyma sie miedzy
+        # uruchomieniami jako Actions cache (limit pojedynczego wpisu:
+        # 10GB - nie problem nawet przy dalszym wzroscie). "restore-keys"
+        # (prefiks bez ID runu) lapie NAJNOWSZY pasujacy wpis, bo klucz
+        # zawsze zawiera unikalny numer runu (patrz krok zapisu na koncu) -
+        # ten sam wzorzec co typowy "always save a new cache entry".
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hyperliquid_trades_buffer.jsonl
+          key: hyperliquid-buffer-v1-${{ github.run_id }}
+          restore-keys: |
+            hyperliquid-buffer-v1-
 
       - name: Nasluchuj transakcje ETH-PERP na Hyperliquid (WebSocket, ~50 min)
         run: python live/hyperliquid_listener.py
 
-      - name: Zacommituj zaktualizowany bufor transakcji
-        run: |
-          git config user.name "hydra-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add data/hyperliquid_trades_buffer.jsonl
-
-          if git diff --cached --quiet; then
-            echo "Brak zmian do zacommitowania."
-            exit 0
-          fi
-
-          git commit -m "Hyperliquid ETH-PERP: aktualizacja bufora transakcji ($(date -u +'%Y-%m-%d %H:%M UTC'))"
-
-          # Ten sam wzorzec retry co w update.yml - jesli w miedzyczasie
-          # "update.yml" (albo recznie ktos) zapisal cos innego w repo,
-          # zwykly push zostanie odrzucony.
-          for i in 1 2 3 4 5; do
-            if git push; then
-              echo "Push udany (proba $i)."
-              exit 0
-            fi
-            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Probuje ponownie..."
-            git fetch origin main
-            if ! git rebase origin/main; then
-              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow) - przerywam."
-              git rebase --abort || true
-              exit 1
-            fi
-            sleep $((RANDOM % 8 + 3))
-          done
-
-          echo "Nie udalo sie zapisac zmian po kilku probach."
-          exit 1
+      - name: Zapisz zaktualizowany bufor transakcji do cache
+        # Zawsze zapisuje POD NOWYM kluczem (numer runu w kluczu gwarantuje
+        # brak kolizji/pominiecia zapisu przez actions/cache) - nastepne
+        # uruchomienie odnajdzie go przez "restore-keys" powyzej. Stare
+        # wpisy wypadaja same (limit 10GB/repo -> wypieranie najstarszych,
+        # plus naturalne wygasanie nieuzywanych po 7 dniach) - nic tu nie
+        # trzeba recznie sprzatac.
+        uses: actions/cache/save@v4
+        with:
+          path: data/hyperliquid_trades_buffer.jsonl
+          key: hyperliquid-buffer-v1-${{ github.run_id }}
