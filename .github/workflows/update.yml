@@ -102,6 +102,15 @@ jobs:
       - name: Pobierz nowe dane on-chain i przelicz sygnal
         env:
           ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}
+          # Faza "Base L2, etap B0" - opcjonalny. Jesli ten sekret nie
+          # istnieje w repo, ${{ secrets.ALCHEMY_BASE_RPC_URL }} rozwija sie
+          # po prostu do pustego stringa - run_incremental.py wykrywa to i
+          # SAM pomija zbieranie danych z Base (patrz komentarz w kodzie),
+          # bez zadnego bledu calego kroku. Zeby wlaczyc: Settings -> Secrets
+          # and variables -> Actions -> dodaj sekret ALCHEMY_BASE_RPC_URL
+          # (URL RPC dla sieci Base, ta sama aplikacja Alchemy co dla
+          # mainnetu, z wlaczona siecia "Base").
+          ALCHEMY_BASE_RPC_URL: ${{ secrets.ALCHEMY_BASE_RPC_URL }}
         run: python live/run_incremental.py
 
       - name: Zacommituj zaktualizowane dane i strone
