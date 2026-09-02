@@ -17,6 +17,12 @@ Co robi, w kolejności:
    Hyperliquid — Faza H3 — do wyświetlenia w nowej karcie na stronie).
 5. Generuje `site/index.html` (przez `live/build_site.py`).
 
+Równolegle (osobna, w pełni niezależna sekcja kodu) — Faza "Base L2, etap
+B0" — zbiera i buforuje transakcje Uniswap V3 z sieci Base (patrz
+`hydra_signals/data_sources/pools.py::BASE_POOLS`), na razie WYŁĄCZNIE do
+`data/base_trade_buffer.csv`, bez wpływu na composite/sygnał/frontend —
+patrz komentarz przy tym bloku kodu niżej.
+
 Ten skrypt SAM NIE robi `git commit`/`git push` — to celowo zostawione
 workflow'owi (`.github/workflows/update.yml`), żeby ten plik dało się
 przetestować lokalnie bez ryzyka przypadkowego commitu.
@@ -24,6 +30,10 @@ przetestować lokalnie bez ryzyka przypadkowego commitu.
 Wymaga zmiennej środowiskowej `ALCHEMY_RPC_URL` (pełny URL RPC z kluczem) —
 w GitHub Actions ustawianej jako **Secret** (Settings → Secrets and
 variables → Actions), NIGDY nie commitowanej do repo w postaci jawnej.
+
+Opcjonalnie: `ALCHEMY_BASE_RPC_URL` (analogiczny URL, ale dla sieci Base) —
+jeśli nieustawiona, sekcja "Base L2" jest po prostu pomijana (loguje
+informację i leci dalej), reszta pipeline'u działa bez zmian.
 """
 
 from __future__ import annotations
@@ -42,7 +52,7 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
     fetch_trades_from_chain_batched,
 )
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws  # noqa: E402
-from hydra_signals.data_sources.pools import POOLS  # noqa: E402
+from hydra_signals.data_sources.pools import BASE_POOLS, POOLS  # noqa: E402
 from hydra_signals.hyperliquid_wallets import (  # noqa: E402
     HyperliquidScoringConfig,
     HyperliquidScoringEngine,
@@ -80,6 +90,27 @@ MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_MAX_NEW_BLOCKS_PER_RUN", "200
 # przez uzytkownika (50/50), do przestrojenia pozniej - patrz
 # hydra_signals.scoring.DEFAULT_PERP_WEIGHT.
 HYPERLIQUID_PERP_WEIGHT = float(os.environ.get("HYDRA_PERP_WEIGHT", "0.5"))
+
+# Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - stale CELOWO
+# ostrozne/male w porownaniu z odpowiednikami mainnetowymi wyzej. Powod:
+# badanie przed ta faza (patrz projekt Claude, hydrav2-automation.md)
+# ustalilo, ze (a) limit `eth_getLogs` to plaskie 10 blokow/wywolanie NA
+# KAZDYM lancuchu niezaleznie od czasu bloku, a (b) budzet
+# throughput/compute-units Alchemy jest WSPOLNY dla calego konta, nie
+# osobny per-siec - a Base ma ~6x krotszy czas bloku niz mainnet (~2s vs
+# ~12s), wiec pokrycie tego samego okresu czasu kosztuje ~6x wiecej wywolan
+# RPC. Zeby NIE powtorzyc wczesniejszego incydentu throttlingu Alchemy,
+# startujemy switnie mniejszymi zakresami niz na mainnecie - do
+# przestrojenia w gore dopiero po obserwacji realnego zuzycia w praktyce.
+BASE_BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BASE_BACKFILL_BLOCKS", "10000"))
+BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "5000"))
+# Okno przycinania bufora `base_trade_buffer.csv` - na etapie B0 (samo
+# zbieranie, BEZ jeszcze klasyfikacji portfeli) to tylko zabezpieczenie
+# przed nieograniczonym wzrostem pliku, nie realne "okno reputacji" (to
+# dopiero Faza B1). Wartosc startowa (~1 dzien przy ~2s/blok) jest
+# JAWNIE prowizoryczna - do przeliczenia na podstawie realnego, obserwowanego
+# rozmiaru pliku, dokladnie ta sama lekcja co przy buforze Hyperliquid.
+BASE_LOOKBACK_BLOCKS = int(os.environ.get("HYDRA_BASE_LOOKBACK_BLOCKS", "43200"))
 
 
 def log(msg: str) -> None:
@@ -200,6 +231,104 @@ def main() -> int:
             }
 
     composite_perp = perp_snapshot["composite"]
+
+    # --- Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - trzeci,
+    # w pelni NIEZALEZNY tor obok Hyperliquid (wyzej) i mainnet Uniswap
+    # (nizej) - patrz hydra_signals/data_sources/pools.py::BASE_POOLS.
+    # CELOWO tylko zbieranie i buforowanie transakcji na tym etapie - BEZ
+    # wliczania ich do composite/ScoringEngine/frontendu (to dopiero kolejne
+    # fazy, B1+), dokladnie tak jak zaczynal Hyperliquid (H0). Numery blokow
+    # Base i Ethereum mainnet NIE sa w zaden sposob porownywalne (inny
+    # lancuch, inny czas bloku) - stad wlasny klient RPC, wlasny kursor
+    # bloku (`base_collector_state`) i wlasny bufor (`base_trade_buffer.csv`),
+    # zupelnie osobne od `rpc`/`trade_buffer` nizej.
+    base_rpc_url = os.environ.get("ALCHEMY_BASE_RPC_URL")
+    if not base_rpc_url:
+        log(
+            "Base L2: brak zmiennej ALCHEMY_BASE_RPC_URL - pomijam zbieranie "
+            "danych z Base w tym uruchomieniu (reszta pipeline'u dziala "
+            "normalnie). Zeby wlaczyc, dodaj sekret ALCHEMY_BASE_RPC_URL w "
+            "GitHub Actions (Settings -> Secrets and variables -> Actions), "
+            "wlaczajac wczesniej siec Base w tej samej aplikacji Alchemy."
+        )
+    else:
+        try:
+            base_rpc = JsonRpcClient(base_rpc_url)
+            base_collector_state = st.load_base_collector_state()
+            base_trade_buffer = st.load_base_trade_buffer()
+
+            base_head_result = batch_call_with_retry(
+                base_rpc, [("eth_blockNumber", [])], batch_size=CALLS_PER_BATCH
+            )[0]
+            if base_head_result is None:
+                log(
+                    "Base L2: nie udalo sie pobrac czola lancucha Base mimo "
+                    "ponowien - pomijam zbieranie danych z Base w tym "
+                    "uruchomieniu (bez zadnego zapisu bufora Base)."
+                )
+            else:
+                base_head = int(base_head_result, 16)
+                base_last_processed = base_collector_state.get("last_processed_block")
+                if base_last_processed is None:
+                    base_from_block = max(0, base_head - BASE_BACKFILL_BLOCKS)
+                    log(
+                        f"Base L2: pierwsze uruchomienie - jednorazowy backfill "
+                        f"{BASE_BACKFILL_BLOCKS} blokow (od {base_from_block})."
+                    )
+                else:
+                    base_from_block = base_last_processed + 1
+
+                base_to_block = base_head
+                if base_from_block > base_to_block:
+                    log("Base L2: brak nowych blokow od ostatniego uruchomienia.")
+                else:
+                    if base_to_block - base_from_block + 1 > BASE_MAX_NEW_BLOCKS_PER_RUN:
+                        base_capped_to = base_from_block + BASE_MAX_NEW_BLOCKS_PER_RUN - 1
+                        log(
+                            f"Base L2: zakres {base_from_block}-{base_to_block} "
+                            f"przekracza limit {BASE_MAX_NEW_BLOCKS_PER_RUN} "
+                            f"blokow/uruchomienie - przycinam do {base_capped_to} "
+                            "(reszta zostanie dogoniona w kolejnych uruchomieniach)."
+                        )
+                        base_to_block = base_capped_to
+
+                    log(
+                        f"Base L2: pobieram nowe transakcje - bloki "
+                        f"{base_from_block}-{base_to_block} "
+                        f"({base_to_block - base_from_block + 1} blokow)"
+                    )
+                    base_new_trades = fetch_trades_from_chain_batched(
+                        base_rpc,
+                        BASE_POOLS,
+                        base_from_block,
+                        base_to_block,
+                        blocks_per_call=BLOCKS_PER_CALL,
+                        calls_per_batch=CALLS_PER_BATCH,
+                        on_progress=log,
+                    )
+                    log(f"Base L2: nowych transakcji: {len(base_new_trades)}")
+
+                    base_combined_buffer = base_trade_buffer + base_new_trades
+                    base_lookback_start = base_to_block - BASE_LOOKBACK_BLOCKS
+                    base_trimmed_buffer = [
+                        t for t in base_combined_buffer if t.block > base_lookback_start
+                    ]
+
+                    st.save_base_trade_buffer(base_trimmed_buffer)
+                    st.save_base_collector_state({"last_processed_block": base_to_block})
+                    log(
+                        f"Base L2: bufor po przycieciu: {len(base_trimmed_buffer)} "
+                        "transakcji (zapisano data/base_trade_buffer.csv)."
+                    )
+        except Exception as exc:  # noqa: BLE001
+            # Faza B0 jest swiadomie IZOLOWANA od reszty pipeline'u - blad po
+            # stronie Base (throttling, zmiana API, przejsciowy problem
+            # sieciowy) NIE MOZE wywrocic calego uruchomienia (mainnet
+            # Uniswap + Hyperliquid musza dzialac dalej niezaleznie od tego,
+            # co dzieje sie z eksperymentalnym na tym etapie torem Base).
+            # Loggujemy i lecimy dalej - kolejne uruchomienie sprobuje
+            # ponownie od tego samego zapisanego `last_processed_block`.
+            log(f"Base L2: BLAD podczas zbierania danych ({exc!r}) - pomijam ten krok w tym uruchomieniu.")
 
     # ZNALEZIONY I NAPRAWIONY realny blad (zgloszenie uzytkownika: "realnie
     # nie trwa to do godziny... czesto odswieza po 2h"): to byl JEDYNY
