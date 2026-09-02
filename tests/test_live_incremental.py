@@ -21,7 +21,7 @@ import json
 
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
-from hydra_signals.data_sources.pools import UNISWAP_V3_USDC_WETH_005
+from hydra_signals.data_sources.pools import BASE_UNISWAP_V3_WETH_USDC_005, UNISWAP_V3_USDC_WETH_005
 from live import build_site as bs
 from live import run_incremental as ri
 from live import state as st
@@ -47,9 +47,15 @@ class FakeChain:
     amount1) reprezentujacych zdarzenia Swap, plus prosty zegar blokow
     (14s/blok, wystarczy do generowania nierosnacych znacznikow czasu)."""
 
-    def __init__(self):
+    def __init__(self, pool_address: str = UNISWAP_V3_USDC_WETH_005.address):
         self.events: list[tuple[int, str, str, int, int]] = []
         self.head = 0
+        # Faza "Base L2, etap B0" - domyslnie ta sama pula mainnetowa co
+        # wczesniej (zero zmiany zachowania istniejacych testow), ale nowe
+        # testy Base ponizej przekazuja tu `BASE_UNISWAP_V3_WETH_USDC_005.address`,
+        # zeby fikcyjne logi "naleZaly" do puli Base, ktora fetch_trades_from_chain_batched
+        # faktycznie filtruje przy przekazaniu BASE_POOLS.
+        self.pool_address = pool_address
 
     def add_swap(self, block: int, tx_hash: str, wallet: str, amount0: int, amount1: int) -> None:
         self.events.append((block, tx_hash, wallet, amount0, amount1))
@@ -71,7 +77,7 @@ class FakeChain:
                         # zwrocony log musi niesc "address", zeby dekoder
                         # zrouotowal go do wlasciwej PoolConfig. Ten fake lancuch
                         # symuluje transakcje tylko z podstawowej puli USDC/WETH.
-                        "address": UNISWAP_V3_USDC_WETH_005.address,
+                        "address": self.pool_address,
                     }
                 )
         return out
@@ -181,6 +187,12 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # Faza H3 - dopisane OD RAZU (patrz komentarz wyzej) razem z wprowadzeniem
     # tej trzeciej sciezki Hyperliquid.
     monkeypatch.setattr(st, "HYPERLIQUID_WALLETS_SEEN_PATH", tmp_path / "data" / "hyperliquid_wallets_seen.txt")
+    # Faza "Base L2, etap B0" - dopisane OD RAZU (patrz komentarze wyzej przy
+    # REGIME_STATE_PATH/HYPERLIQUID_*): bez tego testy ponizej wywolujace
+    # ri.main() czytalyby/pisaly PRAWDZIWE pliki data/base_trade_buffer.csv i
+    # data/base_collector_state.json w repo zamiast do tmp_path.
+    monkeypatch.setattr(st, "BASE_TRADE_BUFFER_PATH", tmp_path / "data" / "base_trade_buffer.csv")
+    monkeypatch.setattr(st, "BASE_COLLECTOR_STATE_PATH", tmp_path / "data" / "base_collector_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -659,3 +671,108 @@ def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
         # wartosc startowa wybrana empirycznie na zywej historii (225 swiec),
         # nie wynik backtestu (patrz komentarz przy polu w SignalConfig).
         assert c["signalThreshold"] == 0.35
+
+
+# =====================================================================
+# Faza "Base L2, etap B0: zbieranie danych" (2026-09-02)
+# =====================================================================
+
+
+def test_base_l2_skipped_gracefully_when_secret_missing(tmp_path, monkeypatch):
+    """Brak ALCHEMY_BASE_RPC_URL (dokladnie stan repo PRZED tym, jak
+    uzytkownik doda nowy sekret recznie) musi byc calkowicie bezpieczny -
+    reszta pipeline'u (mainnet + Hyperliquid) dziala IDENTYCZNIE jak przed
+    ta faza, bufor Base po prostu nie powstaje."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.delenv("ALCHEMY_BASE_RPC_URL", raising=False)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    assert st.load_base_trade_buffer() == []
+    assert st.load_base_collector_state() == {}
+    # Reszta pipeline'u nie zauwaza roznicy.
+    assert len(st.load_candles_history()) > 0
+
+
+def test_base_l2_collects_into_separate_buffer_without_touching_composite(tmp_path, monkeypatch):
+    """Gdy ALCHEMY_BASE_RPC_URL jest ustawiona, nowe transakcje z Base
+    ladunja do WLASNEGO bufora/stanu (`base_trade_buffer.csv`,
+    `base_collector_state.json`) - kompletnie osobno od mainnetowego
+    `trade_buffer.csv`/`scoring_state.json`, i BEZ zadnego wplywu na
+    composite/signal/candles (etap B0 to celowo tylko zbieranie danych)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setenv("HYDRA_BASE_BACKFILL_BLOCKS", "300")
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    base_chain.add_swap(100, "0xBASETX1", "baseWallet1", amount0=3_000_000_000, amount1=-(10**18))
+    base_chain.add_swap(150, "0xBASETX2", "baseWallet2", amount0=-2_900_000_000, amount1=10**18)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            return JsonRpcClient(url, transport=base_chain.transport)
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    candles_before = st.load_candles_history()
+    assert ri.main() == 0
+
+    base_buffer = st.load_base_trade_buffer()
+    assert {t.wallet for t in base_buffer} == {"baseWallet1", "baseWallet2"}
+
+    base_state = st.load_base_collector_state()
+    assert base_state["last_processed_block"] == base_chain.head
+
+    # Mainnet nie zauwazyl niczego z Base - bufory/kursory calkowicie osobne.
+    mainnet_buffer = st.load_trade_buffer()
+    assert all(w not in {"baseWallet1", "baseWallet2"} for w in {t.wallet for t in mainnet_buffer})
+    assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
+
+    # B0 nie wplywa na composite/candles - zadnego nowego pola, zadnej zmiany.
+    candles_after = st.load_candles_history()
+    assert len(candles_after) > len(candles_before)  # normalny przyrost z mainnetu
+    for c in candles_after:
+        assert "compositeBase" not in c
+        assert "baseTracked" not in c
+
+
+def test_base_l2_failure_is_isolated_and_does_not_abort_main_run(tmp_path, monkeypatch):
+    """Faza B0 jest swiadomie izolowana (try/except w run_incremental.py) -
+    blad specyficzny dla Base (throttling, RPC padniety, cokolwiek) NIE MOZE
+    wywrocic calego uruchomienia. Mainnet + Hyperliquid musza dokonczyc
+    normalnie, main() musi zwrocic 0, a bufor Base po prostu zostaje
+    nietkniety (nic nie zapisane w tym uruchomieniu)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            raise ConnectionError("symulowany, trwaly blad sieciowy specyficzny dla Base")
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    assert ri.main() == 0
+    assert st.load_base_trade_buffer() == []
+    assert st.load_base_collector_state() == {}
+    # Mainnet zakonczyl sie normalnie mimo bledu Base.
+    assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
+    assert len(st.load_candles_history()) > 0
