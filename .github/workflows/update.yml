@@ -62,6 +62,43 @@ jobs:
         # podobnego bledu izolacji w przyszlym tescie.
         run: git checkout -- .
 
+      - name: Przywroc bufor transakcji Hyperliquid z cache (tylko odczyt)
+        # NAPRAWA (Faza "bufor poza git", zgloszenie uzytkownika 2026-09-02:
+        # "na stronie nic sie nie odswiezylo w zwiazku z hyperliquid - tyle
+        # samo sledzonych portfeli, takie same decyzje good/bad", mimo ze
+        # "hyperliquid-update.yml" przeszedl 7x w nocy bez bledu).
+        #
+        # PRZYCZYNA: data/hyperliquid_trades_buffer.jsonl przestal byc
+        # sledzony przez git w tej samej fazie (patrz .gitignore) - dobre
+        # dla "hyperliquid-update.yml" (ktory dostal wlasny krok
+        # actions/cache/restore+save), ale ten workflow ("update.yml",
+        # ktory faktycznie liczy composite_perp/klasyfikacje przez
+        # run_incremental.py -> HyperliquidScoringEngine, patrz Faza H2)
+        # NIE dostal ZADNEGO odpowiednika - jego "actions/checkout" po
+        # prostu juz nie znajdowal tego pliku wsrod sledzonych, wiec
+        # `load_hyperliquid_trades_buffer()` (defensywnie, patrz jej
+        # docstring) cicho zwracal pusta liste PRZY KAZDYM URUCHOMIENIU -
+        # HyperliquidScoringEngine.run() na pustej liscie nowych transakcji
+        # nie aktualizuje EMA/stanu (ten sam mechanizm co "dust filter":
+        # "jesli PO odsianiu dustu nie zostaje zadna transakcja w
+        # new_trades, silnik zwraca None") - stad calkowicie zamrozone
+        # liczby sledzonych/sklasyfikowanych portfeli perp, mimo ze
+        # "hyperliquid-update.yml" naprawde zbieral nowe dane w tle.
+        #
+        # NAPRAWA: identyczny krok cache restore co w
+        # "hyperliquid-update.yml" (ten sam "restore-keys" prefiks - cache
+        # jest wspoldzielony miedzy wszystkimi workflow w tym repo, wiec
+        # zawsze zlapie najnowszy wpis zapisany PRZEZ TAMTEN workflow).
+        # Ten workflow NIE zapisuje wlasnego wpisu do cache (nigdy nie
+        # modyfikuje tego pliku, tylko go czyta do klasyfikacji) - stad
+        # tylko "restore", bez odpowiadajacego kroku "save".
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hyperliquid_trades_buffer.jsonl
+          key: hyperliquid-buffer-v1-readonly-${{ github.run_id }}
+          restore-keys: |
+            hyperliquid-buffer-v1-
+
       - name: Pobierz nowe dane on-chain i przelicz sygnal
         env:
           ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}
