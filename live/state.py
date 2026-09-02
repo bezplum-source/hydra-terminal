@@ -109,6 +109,8 @@ HYPERLIQUID_TRADES_BUFFER_PATH = DATA_DIR / "hyperliquid_trades_buffer.jsonl"
 HYPERLIQUID_SCORING_STATE_PATH = DATA_DIR / "hyperliquid_scoring_state.json"
 HYPERLIQUID_WALLETS_SEEN_PATH = DATA_DIR / "hyperliquid_wallets_seen.txt"
 SIGNAL_STATE_PATH = DATA_DIR / "signal_state.json"
+BASE_TRADE_BUFFER_PATH = DATA_DIR / "base_trade_buffer.csv"
+BASE_COLLECTOR_STATE_PATH = DATA_DIR / "base_collector_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -265,6 +267,61 @@ def load_signal_state() -> dict:
 def save_signal_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SIGNAL_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_base_trade_buffer() -> list[Trade]:
+    """Jedenasty plik (Faza "Base L2, etap B0", 2026-09-02) — bufor
+    surowych transakcji Uniswap V3 z sieci Base (ROLNIA, jak
+    `trade_buffer.csv` dla mainnetu, patrz `BASE_TRADE_BUFFER_LOOKBACK_BLOCKS`
+    w `live/run_incremental.py`). CELOWO osobny plik, nie współdzielony z
+    `trade_buffer.csv` — numery bloków Base i Ethereum nie są ze sobą w
+    żaden sposób porównywalne, więc mieszanie ich w jednym buforze byłoby
+    błędem. Ten etap (B0) TYLKO zbiera i przycina - nic jeszcze nie liczy
+    klasyfikacji/composite z tych danych (patrz komentarz w
+    `run_incremental.py`, sekcja "Faza Base L2")."""
+    if not BASE_TRADE_BUFFER_PATH.exists():
+        return []
+    trades: list[Trade] = []
+    with BASE_TRADE_BUFFER_PATH.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            trades.append(
+                Trade(
+                    wallet=row["wallet"],
+                    block=int(row["block"]),
+                    side=Side(row["side"]),
+                    price_usd=float(row["price_usd"]),
+                    size_eth=float(row["size_eth"]),
+                )
+            )
+    return trades
+
+
+def save_base_trade_buffer(trades: list[Trade]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with BASE_TRADE_BUFFER_PATH.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["wallet", "block", "side", "price_usd", "size_eth"])
+        for t in sorted(trades, key=lambda t: t.block):
+            writer.writerow(
+                [t.wallet, t.block, t.side.value, f"{t.price_usd:.8f}", f"{t.size_eth:.10f}"]
+            )
+
+
+def load_base_collector_state() -> dict:
+    """Dwunasty plik (Faza "Base L2, etap B0") — mały: tylko
+    `last_processed_block` NA SIECI BASE (osobna siatka numeracji bloków
+    niż `scoring_state.json`, który śledzi Ethereum mainnet). Pozwala
+    kolektorowi Base wznowić się dokładnie tam, gdzie skończył poprzedni
+    proces, tym samym wzorcem co `scoring_state.json`."""
+    if not BASE_COLLECTOR_STATE_PATH.exists():
+        return {}
+    return json.loads(BASE_COLLECTOR_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_base_collector_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASE_COLLECTOR_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
