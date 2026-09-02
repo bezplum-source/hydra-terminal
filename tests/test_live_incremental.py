@@ -776,3 +776,65 @@ def test_base_l2_failure_is_isolated_and_does_not_abort_main_run(tmp_path, monke
     # Mainnet zakonczyl sie normalnie mimo bledu Base.
     assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
     assert len(st.load_candles_history()) > 0
+
+
+def test_base_l2_runs_after_mainnet_critical_path_is_saved(tmp_path, monkeypatch):
+    """Regresja na REALNY incydent (2026-09-02, pierwszy dzien po wlaczeniu
+    ALCHEMY_BASE_RPC_URL): blok Base pierwotnie stal PRZED krytycznym
+    `eth_blockNumber` mainnetu. Log z prawdziwego uruchomienia pokazal:
+    292/500 zakresow eth_getLogs Base nie powiodlo sie mimo ponowien,
+    WSZYSTKIE 1141 wywolan eth_getTransactionByHash tez nie - throttling byl
+    na tyle silny (wspolny budzet RPC Alchemy dla calego konta), ze zepsul
+    TAKZE nastepujacy po nim `eth_blockNumber` mainnetu -> CALE uruchomienie
+    przerwane (return 1), zero commitu, w tym dla Hydra/Hyperliquid, ktore
+    normalnie dzialaja bezawaryjnie.
+
+    Naprawa: blok Base przeniesiony na sam koniec main(), PO zapisaniu stanu
+    mainnetu i wygenerowaniu strony. Ten test zlicza kolejnosc wywolan RPC
+    do obu klientow (mainnet/Base) i potwierdza: (1) pierwsze wywolanie RPC
+    w ogole idzie do mainnetu, nigdy do Base; (2) stan mainnetu jest juz
+    zapisany na dysku ZANIM jakiekolwiek wywolanie RPC do Base w ogole sie
+    zaczyna - wiec nawet catastrofalny throttling Base nie ma JUZ jak
+    zaszkodzic czemukolwiek krytycznemu."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    base_chain.add_swap(100, "0xBASETX1", "baseWallet1", amount0=3_000_000_000, amount1=-(10**18))
+
+    call_order: list[str] = []
+    mainnet_state_saved_before_first_base_call = {"value": None}
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            def base_transport(u, payload):
+                if mainnet_state_saved_before_first_base_call["value"] is None:
+                    mainnet_state_saved_before_first_base_call["value"] = bool(
+                        st.load_scoring_state()
+                    )
+                call_order.append("base")
+                return base_chain.transport(u, payload)
+
+            return JsonRpcClient(url, transport=base_transport)
+
+        def mainnet_transport(u, payload):
+            call_order.append("mainnet")
+            return mainnet_chain.transport(u, payload)
+
+        return JsonRpcClient(url, transport=mainnet_transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    assert ri.main() == 0
+    assert call_order[0] == "mainnet"
+    assert "base" in call_order
+    assert call_order.index("base") > call_order.index("mainnet")
+    # W momencie PIERWSZEGO wywolania RPC do Base, stan mainnetu byl juz
+    # zapisany na dysku (nie pusty) - dokladnie ta gwarancja, ktorej
+    # zabraklo w realnym incydencie.
+    assert mainnet_state_saved_before_first_base_call["value"] is True
+    assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
