@@ -94,3 +94,40 @@ POOLS: tuple[PoolConfig, ...] = (
     UNISWAP_V3_WETH_USDT_005,
     UNISWAP_V3_WETH_USDT_030,
 )
+
+# ============================================================
+# BASE (L2) — Faza "Base L2, etap B0: zbieranie danych" (2026-09-02)
+# ============================================================
+# Świadomie ODDZIELNA lista od `POOLS` powyżej — to inny łańcuch (Base, nie
+# Ethereum mainnet), więc adresy poniżej wymagają OSOBNEGO klienta RPC
+# (inny URL Alchemy) i OSOBNEGO licznika bloków (numery bloków Base i
+# Ethereum nie są w żaden sposób porównywalne - patrz
+# `live/run_incremental.py`, sekcja "Faza Base L2").
+#
+# Uniswap V3, WETH/USDC, fee 0.05% (500), na sieci Base. Zweryfikowane
+# on-chain (eth_call token0()/token1()/fee()/tickSpacing() przez Basescan
+# "Read Contract", nie przez zaufanie samej etykiecie) - ta sama zasada co
+# przy pulach na mainnecie (patrz odkrycie o mylących tagach Etherscana w
+# komentarzu wyżej). Kontrakt zweryfikowany źródłowo jako "UniswapV3Pool".
+#
+# token0=WETH, token1=USDC (natywny, NIE bridgowany USDC.e) - kolejność
+# OD WROTNA niż na mainnecie (tam token0=USDC), bo to czysto numeryczne
+# sortowanie adresów kontraktów tokenów, różne na każdym łańcuchu. Adres
+# USDC token1 (`0x8335...A02913`) zweryfikowany jako natywny USDC Base -
+# istnieje teraz nieaktywna, dużo mniej płynna wersja USDC.e (bridgowana),
+# celowo pominięta.
+BASE_UNISWAP_V3_WETH_USDC_005 = PoolConfig(
+    address="0xd0b53D9277642d899DF5C87A3966A349A798F224",
+    token0_symbol="WETH",
+    token0_decimals=18,
+    token1_symbol="USDC",
+    token1_decimals=6,
+    eth_is_token0=True,
+)
+
+# Na razie jedna pula (najbardziej płynna na Base dla tej pary) - świadomie
+# mały zakres na start etapu B0, zgodnie z tym samym wzorcem co Hyperliquid
+# H0 (najpierw samo zbieranie, dopiero potem rozszerzanie). Kolejne pule
+# Base (inne fee tiery, WETH/USDbC itd.) można dołożyć tym samym wzorcem co
+# `POOLS` na mainnecie - patrz komentarz wyżej o batchowaniu adresów.
+BASE_POOLS: tuple[PoolConfig, ...] = (BASE_UNISWAP_V3_WETH_USDC_005,)
