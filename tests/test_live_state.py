@@ -18,6 +18,8 @@ def _patch_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "WALLETS_SEEN_PATH", tmp_path / "wallets_seen.txt")
     monkeypatch.setattr(st, "CANDLES_HISTORY_PATH", tmp_path / "candles_history.json")
     monkeypatch.setattr(st, "HYPERLIQUID_TRADES_BUFFER_PATH", tmp_path / "hyperliquid_trades_buffer.jsonl")
+    monkeypatch.setattr(st, "BASE_TRADE_BUFFER_PATH", tmp_path / "base_trade_buffer.csv")
+    monkeypatch.setattr(st, "BASE_COLLECTOR_STATE_PATH", tmp_path / "base_collector_state.json")
 
 
 def test_scoring_state_roundtrip(tmp_path, monkeypatch):
@@ -93,6 +95,49 @@ def test_hyperliquid_trades_buffer_skips_malformed_lines(tmp_path, monkeypatch):
         '{"ts_ms": 1}\nnot json at all\n{"ts_ms": 2}\n\n', encoding="utf-8"
     )
     assert st.load_hyperliquid_trades_buffer() == [{"ts_ms": 1}, {"ts_ms": 2}]
+
+
+def test_base_trade_buffer_roundtrip_preserves_values(tmp_path, monkeypatch):
+    # Faza "Base L2, etap B0" - ten sam format CSV/kontrakt co dla
+    # `TRADE_BUFFER_PATH` (mainnet), tylko OSOBNY plik/OSOBNA funkcja -
+    # numery blokow miedzy siecami nie sa porownywalne, wiec bufory NIGDY
+    # nie moga byc mieszane.
+    _patch_paths(monkeypatch, tmp_path)
+    assert st.load_base_trade_buffer() == []
+
+    trades = [
+        Trade(wallet="0xAAA", block=10, side=Side.BUY, price_usd=2000.123456, size_eth=1.5),
+        Trade(wallet="0xBBB", block=20, side=Side.SELL, price_usd=1999.5, size_eth=0.0001234),
+    ]
+    st.save_base_trade_buffer(trades)
+    loaded = st.load_base_trade_buffer()
+    assert len(loaded) == 2
+    assert loaded[0].wallet == "0xAAA"
+    assert loaded[0].side is Side.BUY
+    assert abs(loaded[0].price_usd - 2000.123456) < 1e-6
+    assert abs(loaded[1].size_eth - 0.0001234) < 1e-9
+
+
+def test_base_trade_buffer_save_overwrites_not_appends(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    st.save_base_trade_buffer(
+        [Trade(wallet="0xAAA", block=1, side=Side.BUY, price_usd=1.0, size_eth=1.0)]
+    )
+    st.save_base_trade_buffer(
+        [Trade(wallet="0xBBB", block=2, side=Side.SELL, price_usd=2.0, size_eth=2.0)]
+    )
+    loaded = st.load_base_trade_buffer()
+    assert len(loaded) == 1
+    assert loaded[0].wallet == "0xBBB"
+
+
+def test_base_collector_state_roundtrip(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    assert st.load_base_collector_state() == {}
+
+    state = {"last_processed_block": 999888}
+    st.save_base_collector_state(state)
+    assert st.load_base_collector_state() == state
 
 
 def test_price_at_block_factory_uses_nearest_known_block_leq_target():
