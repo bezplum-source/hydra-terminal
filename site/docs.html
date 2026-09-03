@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hydra Terminal — Docs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg: #0C0C10;
+    --bg-elevated: #131318;
+    --bg-elevated-2: #1A1A21;
+    --border: #24242C;
+    --text-primary: #F3F1EC;
+    --text-secondary: #A8A6B0;
+    --text-muted: #6E6C78;
+    --accent: #C4821E;
+    --accent-glow: #FFC94A;
+    --good: #1FA65F;
+    --good-glow: #3DFF9B;
+    --bad: #B8253F;
+    --bad-glow: #FF3B5C;
+    --regime-bear: #7C5CFF;
+    --regime-bear-glow: #B7A3FF;
+    --regime-neutral: #8A8894;
+    --font-display: 'Bebas Neue', 'Oswald', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sidebar-w: 288px;
+    --content-max: 820px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--bg); color:var(--text-primary);
+    font-family:var(--font-body); font-size:15.5px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent-glow); text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  code, pre, .mono{font-family:var(--font-mono);}
+  code{
+    background:var(--bg-elevated-2); border:1px solid var(--border);
+    border-radius:4px; padding:1px 6px; font-size:0.86em; color:#F0DEB0;
+    white-space:nowrap;
+  }
+  pre{
+    background:var(--bg-elevated-2); border:1px solid var(--border);
+    border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:13px;
+    line-height:1.6; color:#D9D6E0;
+  }
+  pre code{background:none; border:none; padding:0; white-space:pre; color:inherit;}
+
+  /* ---- topbar ---- */
+  .topbar{
+    position:sticky; top:0; z-index:40; display:flex; align-items:center;
+    gap:14px; padding:0 20px; height:60px; background:rgba(12,12,16,0.92);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--border);
+  }
+  .topbar .brand{display:flex; align-items:baseline; gap:8px; margin-right:auto;}
+  .topbar .brand .word{font-family:var(--font-display); font-size:22px; letter-spacing:0.06em; color:var(--text-primary);}
+  .topbar .brand .tag{
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.14em;
+    color:var(--bg); background:var(--accent); border-radius:4px; padding:2px 6px;
+    text-transform:uppercase; font-weight:600;
+  }
+  .topbar .links{display:flex; gap:18px; font-size:13.5px; align-items:center;}
+  .topbar .links a{color:var(--text-secondary);}
+  .topbar .links a:hover{color:var(--text-primary);}
+  .navtoggle{
+    display:none; background:none; border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; width:34px; height:34px; font-size:16px; cursor:pointer;
+  }
+
+  /* ---- shell / sidebar / main ---- */
+  .shell{display:grid; grid-template-columns:var(--sidebar-w) minmax(0,1fr); max-width:1240px; margin:0 auto;}
+  .sidebar{
+    position:sticky; top:60px; align-self:start; height:calc(100vh - 60px);
+    overflow-y:auto; padding:26px 14px 40px 20px; border-right:1px solid var(--border);
+  }
+  .sidebar::-webkit-scrollbar{width:6px;}
+  .sidebar::-webkit-scrollbar-thumb{background:var(--border); border-radius:3px;}
+  .navgroup{margin-bottom:22px;}
+  .navgroup h4{
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--text-muted); margin:0 0 8px 10px; font-weight:600;
+  }
+  .navgroup a{
+    display:block; padding:6px 10px; border-radius:6px; font-size:13.8px;
+    color:var(--text-secondary); border-left:2px solid transparent;
+  }
+  .navgroup a:hover{color:var(--text-primary); text-decoration:none; background:var(--bg-elevated);}
+  .navgroup a.active{color:var(--accent-glow); border-left-color:var(--accent); background:var(--bg-elevated); font-weight:500;}
+
+  main{padding:36px 28px 100px; min-width:0;}
+  .content{max-width:var(--content-max); margin:0 auto;}
+
+  .doc-hero{margin-bottom:44px;}
+  .doc-hero .kicker{
+    font-family:var(--font-mono); font-size:12px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--accent-glow); margin-bottom:10px;
+  }
+  .doc-hero h1{font-family:var(--font-display); font-size:44px; letter-spacing:0.02em; margin:0 0 12px; line-height:1.05;}
+  .doc-hero p{color:var(--text-secondary); font-size:16.5px; max-width:640px; margin:0 0 18px;}
+  .status-row{display:flex; flex-wrap:wrap; gap:8px;}
+  .status-chip{
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:12px;
+    padding:5px 10px; border-radius:20px; border:1px solid var(--border); background:var(--bg-elevated);
+    color:var(--text-secondary);
+  }
+  .status-chip .dot{width:7px; height:7px; border-radius:50%;}
+  .dot.live{background:var(--good); box-shadow:0 0 8px var(--good-glow);}
+  .dot.partial{background:var(--accent); box-shadow:0 0 8px var(--accent-glow);}
+
+  section{margin-bottom:56px; scroll-margin-top:76px;}
+  section > h2{
+    font-family:var(--font-display); font-size:30px; letter-spacing:0.02em;
+    border-bottom:1px solid var(--border); padding-bottom:12px; margin:0 0 20px;
+  }
+  h3{font-size:19px; font-weight:600; margin:30px 0 10px; color:var(--text-primary);}
+  h4{font-size:15.5px; font-weight:600; margin:20px 0 8px; color:var(--text-primary);}
+  p{margin:0 0 14px; color:var(--text-secondary);}
+  p strong, li strong{color:var(--text-primary); font-weight:600;}
+  ul, ol{margin:0 0 14px; padding-left:22px; color:var(--text-secondary);}
+  li{margin-bottom:6px;}
+  .lede{font-size:16.5px; color:var(--text-secondary);}
+
+  .callout{
+    border:1px solid var(--border); background:var(--bg-elevated); border-radius:10px;
+    padding:14px 18px; margin:18px 0; font-size:14.5px; border-left:3px solid var(--accent);
+  }
+  .callout.good{border-left-color:var(--good);}
+  .callout.bad{border-left-color:var(--bad);}
+  .callout.neutral{border-left-color:var(--regime-neutral);}
+  .callout p:last-child{margin-bottom:0;}
+  .callout .label{
+    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.1em;
+    color:var(--accent-glow); margin-bottom:6px; display:block;
+  }
+  .callout.good .label{color:var(--good-glow);}
+  .callout.bad .label{color:var(--bad-glow);}
+
+  table{width:100%; border-collapse:collapse; margin:16px 0 22px; font-size:14px;}
+  th, td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{font-family:var(--font-mono); font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:600;}
+  td{color:var(--text-secondary);}
+  td code{white-space:normal;}
+  .table-wrap{overflow-x:auto;}
+
+  .pill{
+    display:inline-block; font-family:var(--font-mono); font-size:11.5px; font-weight:600;
+    padding:2px 9px; border-radius:12px; letter-spacing:0.04em;
+  }
+  .pill.long{color:var(--good-glow); background:rgba(31,166,95,0.14); border:1px solid rgba(31,166,95,0.4);}
+  .pill.short{color:var(--bad-glow); background:rgba(184,37,63,0.14); border:1px solid rgba(184,37,63,0.4);}
+  .pill.bull{color:var(--accent-glow); background:rgba(196,130,30,0.14); border:1px solid rgba(196,130,30,0.4);}
+  .pill.bear{color:var(--regime-bear-glow); background:rgba(124,92,255,0.14); border:1px solid rgba(124,92,255,0.4);}
+
+  .diagram{
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
+    padding:22px; margin:20px 0; overflow-x:auto;
+  }
+  .diagram svg{display:block; margin:0 auto; min-width:560px;}
+
+  .card-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:18px 0;}
+  .mini-card{background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:16px;}
+  .mini-card h5{margin:0 0 6px; font-size:14px; color:var(--text-primary); font-family:var(--font-mono);}
+  .mini-card p{margin:0; font-size:13.5px;}
+
+  .swatch-row{display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 22px;}
+  .swatch{
+    display:flex; align-items:center; gap:8px; background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);
+  }
+  .swatch i{width:14px; height:14px; border-radius:4px; display:inline-block; border:1px solid rgba(255,255,255,0.15);}
+
+  footer{
+    border-top:1px solid var(--border); padding:30px 28px 60px; text-align:center;
+    color:var(--text-muted); font-size:13px;
+  }
+  footer a{color:var(--text-secondary);}
+
+  @media (max-width: 900px){
+    .shell{grid-template-columns:1fr;}
+    .sidebar{
+      position:fixed; top:60px; left:0; width:82%; max-width:320px; height:calc(100vh - 60px);
+      background:var(--bg); z-index:39; transform:translateX(-100%); transition:transform 0.2s ease;
+      border-right:1px solid var(--border);
+    }
+    .sidebar.open{transform:translateX(0); box-shadow:20px 0 40px rgba(0,0,0,0.5);}
+    .navtoggle{display:inline-block;}
+    .doc-hero h1{font-size:34px;}
+    main{padding:24px 18px 80px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="navtoggle" id="navToggle" aria-label="Toggle navigation">☰</button>
+  <div class="brand"><span class="word">HYDRA</span><span class="tag">Docs</span></div>
+  <div class="links">
+    <a href="./index.html">← Terminal</a>
+    <a href="https://github.com/bezplum-source/hydra-terminal" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="sidebar" id="sidebar">
+    <div class="navgroup">
+      <h4>Introduction</h4>
+      <a href="#overview">Overview</a>
+      <a href="#origin">Where this comes from</a>
+      <a href="#status">Current status</a>
+    </div>
+    <div class="navgroup">
+      <h4>Core Concepts</h4>
+      <a href="#concept-wallets">Wallets &amp; addresses</a>
+      <a href="#concept-pools">DEX pools &amp; swaps</a>
+      <a href="#concept-perps">Perpetuals</a>
+      <a href="#concept-l2">What is a Layer 2</a>
+    </div>
+    <div class="navgroup">
+      <h4>How Hydra Works</h4>
+      <a href="#classification">Classifying wallets: GOOD / BAD</a>
+      <a href="#composite">Composite score</a>
+      <a href="#windows">Candles &amp; windows</a>
+      <a href="#signal">The signal: LONG / SHORT / HOLD</a>
+      <a href="#regime">Market regime: BULL / BEAR</a>
+    </div>
+    <div class="navgroup">
+      <h4>Data Sources &amp; Pipeline</h4>
+      <a href="#mainnet">Ethereum mainnet</a>
+      <a href="#hyperliquid">Hyperliquid (ETH-PERP)</a>
+      <a href="#base">Base L2</a>
+      <a href="#automation">Automation &amp; state</a>
+      <a href="#reliability">Reliability lessons</a>
+    </div>
+    <div class="navgroup">
+      <h4>Frontend</h4>
+      <a href="#frontend">Reading the terminal</a>
+      <a href="#design-system">Design system</a>
+    </div>
+    <div class="navgroup">
+      <h4>Developer Guide</h4>
+      <a href="#repo-map">Repository map</a>
+      <a href="#running-locally">Running it locally</a>
+      <a href="#contributing">How changes are made</a>
+      <a href="#env-vars">Environment variables</a>
+    </div>
+    <div class="navgroup">
+      <h4>Reference</h4>
+      <a href="#glossary">Glossary</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="content">
+
+      <div class="doc-hero">
+        <div class="kicker">Documentation</div>
+        <h1>Hydra Terminal</h1>
+        <p class="lede">
+          Hydra Terminal watches what specific crypto wallets actually do on-chain —
+          not what people say, not sentiment, not price alone — and turns that into a
+          live LONG / SHORT trading signal and a BULL / BEAR market-regime read for ETH.
+          This page explains the idea, the mechanism, and the codebase, for anyone
+          joining the project without a crypto background.
+        </p>
+        <div class="status-row">
+          <span class="status-chip"><span class="dot live"></span>Ethereum mainnet — live</span>
+          <span class="status-chip"><span class="dot live"></span>Hyperliquid ETH-PERP — live, blended into signal</span>
+          <span class="status-chip"><span class="dot partial"></span>Base L2 — data collection only (B0)</span>
+        </div>
+      </div>
+
+      <section id="overview">
+        <h2>Overview</h2>
+        <p>
+          At the highest level, Hydra runs an hourly pipeline that: pulls raw trade
+          data from three independent sources, scores every wallet it has seen as a
+          historically <strong>GOOD</strong> or <strong>BAD</strong> trader, aggregates what those
+          two groups are doing <em>right now</em>, and turns that into two separate outputs —
+          a short-term trading signal and a longer-term market regime — which are published
+          to a static dashboard.
+        </p>
+        <p>
+          Nothing here predicts price from price. The entire bet the project is making is
+          that a cohort of wallets with a strong historical track record behaves as a
+          leading indicator: when they start buying before everyone else, the aggregate
+          signal should tend to lead the market rather than follow it. Whether that bet
+          actually holds is an open, ongoing empirical question — not an assumption baked
+          into the code.
+        </p>
+      </section>
+
+      <section id="origin">
+        <h2>Where this comes from</h2>
+        <p>
+          Hydra Terminal is a from-scratch reconstruction of the mechanism behind
+          <strong>hydra.trading</strong>, a site that published a live ETH signal derived from
+          classifying DEX wallets into good/bad cohorts. The original project's source
+          and infrastructure were lost, so this codebase re-derives the approach from
+          first principles — reading the same on-chain events, applying the same kind of
+          classification and scoring logic, and rebuilding the pipeline as open, auditable,
+          public code rather than a black box.
+        </p>
+        <p>
+          The project has since grown beyond the original single-pool design: it now
+          blends a second, independent data source (perpetual futures on Hyperliquid) into
+          the same signal, and is in the process of adding a third (Base, an Ethereum
+          Layer 2), specifically to grow the pool of wallets being tracked and to see
+          whether the signal holds up across venues.
+        </p>
+      </section>
+
+      <section id="status">
+        <h2>Current status</h2>
+        <div class="table-wrap">
+        <table>
+          <tr><th>Source</th><th>Phase</th><th>What it feeds</th></tr>
+          <tr>
+            <td><strong>Ethereum mainnet</strong><br>Uniswap V3 USDC/WETH 0.05%</td>
+            <td><span class="pill long">live</span></td>
+            <td>Wallet classification, <code>composite_spot</code>, the primary signal, and market regime</td>
+          </tr>
+          <tr>
+            <td><strong>Hyperliquid</strong><br>ETH-PERP</td>
+            <td><span class="pill long">live · H0–H3 complete</span></td>
+            <td>Independent wallet classification, <code>composite_perp</code>, blended 50/50 into the final signal</td>
+          </tr>
+          <tr>
+            <td><strong>Base L2</strong><br>Uniswap V3 WETH/USDC 0.05%</td>
+            <td><span class="pill short">B0 only</span></td>
+            <td>Currently: raw trade collection into its own buffer. Not yet classified, not yet blended into anything a viewer sees.</td>
+          </tr>
+        </table>
+        </div>
+        <p>
+          Both Hyperliquid and Base follow the same four-phase rollout pattern, so you'll
+          see it referenced throughout this codebase and its history:
+        </p>
+        <div class="card-grid">
+          <div class="mini-card"><h5>Phase 0 — Collect</h5><p>Pull raw trades into an isolated buffer. No effect on the live signal yet.</p></div>
+          <div class="mini-card"><h5>Phase 1 — Classify</h5><p>Score wallets from that source as GOOD / BAD, same method as mainnet.</p></div>
+          <div class="mini-card"><h5>Phase 2 — Blend</h5><p>Merge that source's composite score into the signal the dashboard shows.</p></div>
+          <div class="mini-card"><h5>Phase 3 — Surface</h5><p>Give the new source its own diagnostic card on the frontend.</p></div>
+        </div>
+        <div class="callout">
+          <span class="label">Why phase it like this</span>
+          <p>
+            Every new data source is wired in fully isolated at first — its own state
+            file, its own error handling, its own code path — specifically so that a
+            problem with a brand-new, unproven source (a bad RPC endpoint, a rate limit,
+            a parsing bug) can never take down the mainnet pipeline that's already working.
+            Only once a source is collecting cleanly does it get promoted to actually
+            influencing what a viewer sees.
+          </p>
+        </div>
+      </section>
+
+      <section id="concept-wallets">
+        <h2>Core concepts: wallets &amp; addresses</h2>
+        <p>
+          On Ethereum (and Base, which is built to be compatible with it), an account is
+          identified by an <strong>address</strong> — a 42-character hex string like
+          <code>0x4200...0006</code>. There's no name, email, or KYC attached to it at the
+          protocol level; anyone can generate one for free. A single person can control
+          any number of addresses.
+        </p>
+        <p>
+          Every transaction sent from an address is public, permanent, and free for
+          anyone to read — that's the entire premise the project rests on. Hydra doesn't
+          need permission or an API key from any exchange to see what a wallet is doing;
+          it reads the same public ledger everyone else can read, just at scale and
+          automatically.
+        </p>
+        <p>
+          Hydra never tries to attach a real-world identity to an address. It only cares
+          about one thing per wallet: <em>given its trading history, was this address
+          historically a good or a bad trader?</em>
+        </p>
+      </section>
+
+      <section id="concept-pools">
+        <h2>Core concepts: DEX pools &amp; swaps</h2>
+        <p>
+          A <strong>DEX</strong> (decentralized exchange) like Uniswap doesn't match buyers
+          with sellers order-book style. Instead, it uses a <strong>liquidity pool</strong>: a
+          smart contract holding a reserve of two tokens (here, WETH — wrapped ETH — and
+          USDC, a US-dollar stablecoin). Anyone can deposit both tokens into the pool to
+          earn trading fees; anyone can trade against that reserve at any time.
+        </p>
+        <p>
+          A <strong>swap</strong> is a trade against that reserve: send USDC in, receive WETH
+          out (a <em>buy</em> of ETH), or the reverse (a <em>sell</em>). Every swap emits a
+          public <code>Swap</code> event on-chain, containing the pool, the amounts of each
+          token, and the address that triggered it. That event is the single raw
+          ingredient the mainnet and Base data collectors read — nothing more exotic than
+          "who swapped how much, which direction, when."
+        </p>
+        <p>
+          Hydra specifically tracks the <strong>Uniswap V3 USDC/WETH 0.05% fee pool</strong> —
+          one of the deepest, most actively traded ETH/USD venues on Ethereum, chosen and
+          verified directly against the on-chain contract rather than assumed from a
+          third-party list.
+        </p>
+      </section>
+
+      <section id="concept-perps">
+        <h2>Core concepts: perpetuals</h2>
+        <p>
+          A <strong>perpetual future</strong> ("perp") is a derivative contract that tracks an
+          asset's price without ever settling or expiring — traders open long or short
+          positions with leverage, and a funding-rate mechanism keeps the contract's
+          price tethered to the real spot price. Unlike a DEX swap, a perp trade doesn't
+          require actually owning the underlying asset.
+        </p>
+        <p>
+          <strong>Hyperliquid</strong> is a decentralized perpetuals exchange, and one of the
+          largest venues for on-chain perp trading. Hydra tracks its <strong>ETH-PERP</strong>
+          market specifically — a completely different population of traders than the
+          spot Uniswap pool, since perp traders and spot traders are often different
+          people with different behavior. That's the whole reason it was added: to grow
+          and diversify the wallet base beyond a single pool on a single chain.
+        </p>
+        <p>
+          Technically, Hyperliquid doesn't offer a REST endpoint for "everything that
+          traded in the last hour" the way a block-based chain does — discovering new
+          wallets requires a persistent WebSocket subscription to its public trade
+          firehose, which is why the Hyperliquid side of the pipeline runs as a
+          long-lived listener rather than the hourly "wake up, ask, go back to sleep"
+          pattern used for mainnet and Base.
+        </p>
+      </section>
+
+      <section id="concept-l2">
+        <h2>Core concepts: what is a Layer 2</h2>
+        <p>
+          Ethereum's own capacity is limited, which makes transactions there relatively
+          slow and expensive. A <strong>Layer 2</strong> (L2) is a separate blockchain that
+          processes transactions independently but periodically settles back to Ethereum
+          for security — cheaper and faster, while still inheriting Ethereum's guarantees.
+        </p>
+        <p>
+          <strong>Base</strong> is an L2 built by Coinbase. It has its own block numbers, its
+          own block time (~2 seconds, versus Ethereum's ~12), and its own instance of the
+          same Uniswap V3 contracts — including a WETH/USDC 0.05% pool, verified on-chain
+          the same way as the mainnet one. Because it's a separate chain, its block
+          numbers aren't comparable to Ethereum's at all, which is why Base is tracked as
+          a fully independent data stream with its own cursor and buffer rather than
+          mixed into the mainnet one.
+        </p>
+      </section>
+
+      <section id="classification">
+        <h2>Classifying wallets: GOOD / BAD</h2>
+        <p>
+          Every wallet Hydra has seen trade gets a rolling profit-and-loss (P&amp;L)
+          calculated with an average-cost method (covering both long and short exposure),
+          plus a win rate across its trades. Wallets are then ranked against each other
+          by that historical performance and split into three cohorts:
+        </p>
+        <ul>
+          <li><strong>GOOD</strong> — roughly the top ~15% by historical performance.</li>
+          <li><strong>BAD</strong> — roughly the bottom ~15%.</li>
+          <li><strong>NEUTRAL</strong> — everyone in between; not used in scoring.</li>
+        </ul>
+        <p>
+          This classification is recalculated periodically as new data comes in (roughly
+          every 250 blocks on mainnet, on the order of an hour), and — critically — a
+          wallet is only ever classified using information available <em>up to that
+          point in time</em>. Its future trades are never used to judge its past behavior.
+          This "no look-ahead" rule is enforced deliberately, because without it a
+          backtest of this whole approach would be meaningless — it would just be
+          fitting to the answer.
+        </p>
+        <div class="callout">
+          <span class="label">Why this matters for the science, not just the code</span>
+          <p>
+            The entire hypothesis under test is "does the aggregate behavior of
+            historically-good wallets predict future price action." That's only a real
+            test if the classification at time T could not have known what happens after
+            T. Every classification pass in this codebase respects that boundary.
+          </p>
+        </div>
+      </section>
+
+      <section id="composite">
+        <h2>Composite score</h2>
+        <p>
+          For each scoring window, Hydra measures net buy/sell pressure separately for
+          the GOOD cohort and the BAD cohort — essentially, "of all trading volume from
+          good wallets this window, what fraction was buying versus selling," and the
+          same for bad wallets. Those two pressures are smoothed with a short and a long
+          exponential moving average (EMA) each, giving four tracked indicators per
+          window, and combined into a single <strong>composite score</strong>: positive when
+          good wallets are net buying (and/or bad wallets are net selling), negative in
+          the opposite case.
+        </p>
+        <p>
+          Because two independent sources now feed the pipeline — the spot pool on
+          mainnet and the ETH-PERP market on Hyperliquid — there are technically two
+          composite scores, blended into one:
+        </p>
+        <pre><code>composite_final = blend(composite_spot, composite_perp, weight=0.5)</code></pre>
+        <p>
+          with a graceful fallback to <code>composite_spot</code> alone whenever the perp
+          side doesn't yet have enough data to be considered statistically mature — so a
+          slow day on one source never silently corrupts the signal, it just quietly
+          leans more on the other.
+        </p>
+      </section>
+
+      <section id="windows">
+        <h2>Candles &amp; windows</h2>
+        <p>
+          Mainnet data is aggregated into fixed <strong>250-block windows</strong> (roughly
+          50 minutes at Ethereum's ~12-second block time) — the same unit hydra.trading's
+          original engine used, recognizable in this codebase as a "candle." A window
+          only becomes a scored candle once enough blocks have passed beyond it to be
+          confident it's complete; this is a deliberate, by-design lag, not a bug — it
+          means the timestamp on the terminal's most recent candle will typically read
+          40–50 minutes behind the wall clock, even though the pipeline itself may have
+          run only minutes ago. The separate "data last updated" indicator in the
+          dashboard's topbar tracks the actual last successful pipeline run, distinct
+          from the candle's own window-close time.
+        </p>
+      </section>
+
+      <section id="signal">
+        <h2>The signal: LONG / SHORT / HOLD</h2>
+        <p>
+          The blended composite score, once smoothed, is compared against a threshold to
+          produce the headline signal shown in the terminal's hero:
+          <span class="pill long">LONG</span>, <span class="pill short">SHORT</span>, or
+          <strong>HOLD</strong> when neither side has enough conviction. The signal persists
+          until the composite score moves decisively enough in the other direction —
+          it isn't recomputed from scratch as a coin flip every window, which avoids
+          flipping back and forth on small, noisy swings (the same hysteresis idea used
+          for market regime, described next).
+        </p>
+        <p>
+          The dashboard also tracks every past signal period as a "streak" and reports
+          its outcome — did the price move in the direction the signal implied by the
+          time it ended — plus a running win rate across all closed streaks. That's the
+          project's own scoreboard for whether the underlying hypothesis is actually
+          working, kept visible rather than hidden.
+        </p>
+      </section>
+
+      <section id="regime">
+        <h2>Market regime: BULL / BEAR / NEUTRAL</h2>
+        <p>
+          The signal answers "what should I do right now" — it says nothing about
+          the broader environment. A second, fully independent model answers a different
+          question: "what kind of market are we in?" It's possible (and meaningful) for
+          the regime to read <span class="pill bull">BULL</span> while the short-term
+          signal is <span class="pill short">SHORT</span> — a bullish backdrop with a
+          short-term pullback — and the two are deliberately never conflated on the
+          frontend.
+        </p>
+        <p>
+          Regime detection looks at the same GOOD/BAD cohort data but focuses on
+          <em>change over time</em> rather than a single snapshot: is buy/sell pressure
+          from good wallets improving or deteriorating across multiple horizons (1h out
+          to 30d), is there a growing divergence between what good and bad wallets are
+          doing, and how many individual good wallets have just flipped direction (e.g.
+          closing a short streak and opening a buying one). Those signals feed two 0–100
+          scores, <code>BULL_SCORE</code> and <code>BEAR_SCORE</code>, which only produce a
+          regime once they clear a threshold <em>and</em> hold for several consecutive
+          windows — a persistence requirement that exists specifically to prevent a
+          single noisy candle from flipping the whole regime read.
+        </p>
+        <p>
+          Two additional, rarer events are tracked on top of BULL/BEAR: <strong>CAPITULATION</strong>
+          (bad wallets selling hard while good wallets are absorbing that supply — often
+          a precursor to a bull transition, not the transition itself) and
+          <strong>DISTRIBUTION</strong> (the mirror case — good wallets quietly selling into bad
+          wallets buying, often ahead of a bear transition). Both are shown in a dedicated
+          regime event log on the dashboard.
+        </p>
+      </section>
+
+      <section id="mainnet">
+        <h2>Data source: Ethereum mainnet</h2>
+        <p>
+          The original and still primary source: <code>Swap</code> events from the Uniswap
+          V3 USDC/WETH 0.05% pool, read via JSON-RPC (<code>eth_getLogs</code> plus
+          transaction lookups to resolve the real sender). Because the RPC provider used
+          (Alchemy, free tier) hard-limits <code>eth_getLogs</code> to a 10-block range per
+          call, the collector issues many small ranges as a single batched JSON-RPC
+          request rather than hundreds of individual round trips, with automatic retry
+          on any call that fails or gets rate-limited.
+        </p>
+      </section>
+
+      <section id="hyperliquid">
+        <h2>Data source: Hyperliquid (ETH-PERP)</h2>
+        <p>
+          A persistent WebSocket listener subscribes to Hyperliquid's public
+          <code>trades</code> channel for the ETH market, which streams every trade with
+          both counterparties' addresses. Collected trades are buffered (currently a
+          7-day retention window, to match the reputation window used on the mainnet
+          side) and periodically classified with the same wallet-scoring method as
+          mainnet, entirely independently — Hyperliquid has its own state files, its own
+          classification pass, and its own composite score, which is only combined with
+          the mainnet one at the very last step described above.
+        </p>
+        <p>
+          Because the buffer can grow larger than GitHub's 100MB-per-file push limit, it
+          is deliberately kept out of git history entirely and stored instead in GitHub
+          Actions' own cache between runs.
+        </p>
+      </section>
+
+      <section id="base">
+        <h2>Data source: Base L2 <span class="pill short" style="margin-left:6px;">Phase B0</span></h2>
+        <p>
+          The newest and currently least mature source. Base's <code>Swap</code> events from
+          its own WETH/USDC 0.05% Uniswap V3 pool are collected the same way as mainnet
+          (batched <code>eth_getLogs</code>), but into a completely separate buffer and block
+          cursor — Base's block numbers have nothing to do with Ethereum's, and its
+          ~2-second block time means covering the same wall-clock window costs roughly
+          6x as many RPC calls as mainnet does.
+        </p>
+        <p>
+          At this phase, Base data is <strong>collected only</strong> — it isn't classified,
+          it doesn't touch the composite score, and nothing on the dashboard reflects it
+          yet. That's intentional: the same staged rollout used for Hyperliquid (collect
+          → classify → blend → surface) is being followed again here, and Base hasn't
+          been promoted past step one yet.
+        </p>
+        <div class="callout bad">
+          <span class="label">A real incident worth knowing about</span>
+          <p>
+            On Base's very first live run, its own RPC burst was large enough to exhaust
+            the shared Alchemy account's throughput budget so badly that it broke the
+            <em>mainnet</em> pipeline's own critical call, aborting the entire run with zero
+            data saved — even for the parts that had nothing to do with Base. The fix was
+            architectural: the Base collection step was moved to run strictly after the
+            mainnet+Hyperliquid path has already finished and saved its results, so a
+            Base-side problem can now only ever affect Base's own data, never anything
+            that already succeeded. See <a href="#reliability">Reliability lessons</a> below
+            — it's a pattern worth understanding before touching this part of the code.
+          </p>
+        </div>
+      </section>
+
+      <section id="automation">
+        <h2>Automation &amp; state</h2>
+        <p>
+          The whole pipeline runs unattended via GitHub Actions, on an hourly schedule
+          for the mainnet/Hyperliquid-blend/Base run (<code>update.yml</code>), plus a
+          continuously-running listener workflow for Hyperliquid's WebSocket feed
+          (<code>hyperliquid-update.yml</code>). Each run is <strong>incremental</strong>: it
+          picks up exactly where the last successful run left off, tracked through a set
+          of small state files committed alongside the code (or, for the larger
+          Hyperliquid buffer, cached rather than committed — see above).
+        </p>
+        <div class="table-wrap">
+        <table>
+          <tr><th>State file</th><th>Tracks</th></tr>
+          <tr><td><code>data/scoring_state.json</code></td><td>Mainnet block cursor, EMA state, last signal</td></tr>
+          <tr><td><code>data/regime_state.json</code></td><td>Regime state machine (BULL/BEAR/NEUTRAL, streaks)</td></tr>
+          <tr><td><code>data/wallet_flip_state.json</code></td><td>Per-wallet streak/direction, for flip detection</td></tr>
+          <tr><td><code>data/hyperliquid_scoring_state.json</code></td><td>Hyperliquid classification + <code>composite_perp</code> EMA</td></tr>
+          <tr><td><code>data/base_collector_state.json</code></td><td>Base L2 block cursor</td></tr>
+          <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
+        </table>
+        </div>
+        <p>
+          On every run, once mainnet and Hyperliquid data are pulled and scored,
+          <code>live/build_site.py</code> renders the static <code>site/index.html</code> from
+          <code>live/template.html</code>, which GitHub Pages then serves as the live
+          dashboard.
+        </p>
+      </section>
+
+      <section id="reliability">
+        <h2>Reliability lessons</h2>
+        <p>
+          A few hard-won rules now shape how new data sources get added to this project.
+          They're worth knowing before extending the pipeline:
+        </p>
+        <h4>RPC throughput is shared, not partitioned</h4>
+        <p>
+          The Alchemy account used for both Ethereum and Base RPC calls has a single,
+          account-wide throughput budget — it is not split per chain. Heavy usage on one
+          chain can silently degrade or outright break calls on another. Any new
+          RPC-heavy source has to be treated as competing for the same limited budget as
+          everything that already works.
+        </p>
+        <h4>Order the risky thing last</h4>
+        <p>
+          A new, less-proven data source is always positioned in the code to run
+          <em>after</em> the established, trusted path has already completed and saved its
+          results — never before it. That way, even a catastrophic failure in the new
+          part can only ever harm itself.
+        </p>
+        <h4>Partial failure is silent by design — and that's a trade-off</h4>
+        <p>
+          RPC calls that fail even after retries are logged as a warning and skipped
+          rather than aborting the run (better a slightly incomplete window than no data
+          at all) — but that means a fully "green" successful run can still be quietly
+          discarding a meaningful fraction of real trades. When something on the
+          dashboard looks off (an unusually low active-wallet count, for instance), the
+          run's own log — specifically any <code>UWAGA</code>-prefixed warning lines — is the
+          first place to check before assuming the market itself went quiet.
+        </p>
+        <h4>Verify against reality, not assumption</h4>
+        <p>
+          When a number on the dashboard looks wrong, the project's standing rule is to
+          check it against an independent, real source — Etherscan/Basescan's own event
+          logs, DexScreener's volume figures — rather than guessing whether it's a code
+          bug or genuine market behavior.
+        </p>
+      </section>
+
+      <section id="frontend">
+        <h2>Reading the terminal</h2>
+        <p>
+          The dashboard is a single static HTML page with no client-side API calls — all
+          the data it shows is baked in at build time by <code>build_site.py</code>. Its main
+          sections:
+        </p>
+        <ul>
+          <li><strong>Hero</strong> — current signal (LONG/SHORT/HOLD), price, and how the
+            active signal has performed since it started.</li>
+          <li><strong>Stat grid</strong> — tracked/active wallets, the scoring pool size, and
+            the composite score broken into spot / perp / final.</li>
+          <li><strong>Regime card</strong> — BULL/BEAR/NEUTRAL, bull/bear score tug-of-war,
+            confidence, and recent wallet flips.</li>
+          <li><strong>Event log</strong> — START/END BULL/BEAR, CAPITULATION, DISTRIBUTION.</li>
+          <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair.</li>
+          <li><strong>Signal history</strong> — every closed LONG/SHORT streak with its
+            realized outcome, plus a compounded win-rate summary.</li>
+        </ul>
+        <p>
+          Two time indicators appear in the hero and are easy to conflate but measure
+          different things: the candle's own price timestamp (which lags the wall clock
+          by design — see <a href="#windows">Candles &amp; windows</a>), and the topbar's
+          freshness indicator, which reflects when the pipeline itself last ran
+          successfully.
+        </p>
+      </section>
+
+      <section id="design-system">
+        <h2>Design system</h2>
+        <p>
+          A single, deliberately dark theme ("cinematic," per the project's own brief) —
+          there is no light mode. <code>Bebas Neue</code> is used for the wordmark and
+          section headers, <code>IBM Plex Sans</code> for body copy, and
+          <code>IBM Plex Mono</code> for every number — prices, block heights, percentages,
+          scores.
+        </p>
+        <div class="swatch-row">
+          <span class="swatch"><i style="background:#0C0C10"></i>bg #0C0C10</span>
+          <span class="swatch"><i style="background:#131318"></i>bg-elevated #131318</span>
+          <span class="swatch"><i style="background:#C4821E"></i>accent #C4821E</span>
+          <span class="swatch"><i style="background:#1FA65F"></i>good/LONG #1FA65F</span>
+          <span class="swatch"><i style="background:#B8253F"></i>bad/SHORT #B8253F</span>
+          <span class="swatch"><i style="background:#7C5CFF"></i>regime bear #7C5CFF</span>
+          <span class="swatch"><i style="background:#8A8894"></i>regime neutral #8A8894</span>
+        </div>
+        <p>
+          Regime colors are deliberately kept separate from signal colors (a violet for
+          bear rather than reusing red) specifically so a viewer never confuses "the
+          market's long-term regime" with "what to do right now" at a glance — the two
+          axes are independent by design, and the palette reinforces that.
+        </p>
+      </section>
+
+      <section id="repo-map">
+        <h2>Repository map</h2>
+        <p>
+          The codebase is public at
+          <a href="https://github.com/bezplum-source/hydra-terminal" target="_blank" rel="noopener">github.com/bezplum-source/hydra-terminal</a>.
+          Rough layout:
+        </p>
+        <pre><code>hydra_signals/            core engine (pure logic, no I/O side effects)
+  models.py                Trade, WalletStats, Cohort, WindowScore, Signal
+  wallets.py                wallet P&amp;L + GOOD/BAD/NEUTRAL classification
+  scoring.py                windowed aggregation, EMA, composite score, LONG/SHORT
+  regime.py                 BULL/BEAR/NEUTRAL state machine + events
+  regime_backtest.py        out-of-sample backtesting for the regime model
+  data_sources/
+    pools.py                 verified pool addresses (mainnet + Base)
+    onchain_rpc.py            JSON-RPC client, batching, Swap-log decoding
+
+live/                      the automated, incremental pipeline
+  run_incremental.py         orchestrates one hourly run end-to-end
+  state.py                   load/save for every data/*.json and *.csv state file
+  build_site.py               renders site/index.html from template.html
+  template.html                the dashboard's HTML/CSS/JS, with a data placeholder
+
+data/                      pipeline state (mostly auto-generated, committed to git)
+site/                      generated dashboard output, served by GitHub Pages
+tests/                     pytest suite, one file per module/feature
+.github/workflows/
+  update.yml                  hourly: mainnet + Hyperliquid blend + Base collection
+  hyperliquid-update.yml       long-running Hyperliquid WebSocket listener</code></pre>
+      </section>
+
+      <section id="running-locally">
+        <h2>Running it locally</h2>
+        <ol>
+          <li>Clone the repo: <code>git clone https://github.com/bezplum-source/hydra-terminal.git</code></li>
+          <li>Install Python dependencies (check <code>requirements.txt</code> in the repo root
+            for the exact pinned versions — the core engine depends on <code>pandas</code>
+            and <code>numpy</code>).</li>
+          <li>Run the test suite: <code>pytest tests/ -q</code>. This is the fastest way to
+            confirm your environment is set up correctly and that nothing is broken —
+            every phase described in this document shipped with its own tests, and the
+            suite is expected to stay green.</li>
+          <li>To run the live pipeline locally, you'll need an RPC endpoint (an Alchemy
+            app works well — see <a href="#env-vars">Environment variables</a>) and to run
+            <code>python live/run_incremental.py</code> directly.</li>
+        </ol>
+        <p>
+          You don't need any of this just to read or reason about the code — the engine
+          in <code>hydra_signals/</code> is pure logic with no network calls, and its test
+          suite exercises it entirely offline with synthetic data.
+        </p>
+      </section>
+
+      <section id="contributing">
+        <h2>How changes are made</h2>
+        <p>
+          A few conventions this project has settled into, useful to know before sending
+          a change:
+        </p>
+        <ul>
+          <li><strong>New data sources roll out in phases</strong> (collect → classify →
+            blend → surface, see <a href="#status">Current status</a>) rather than landing
+            fully wired-in on day one. Each phase ships independently, gets applied and
+            confirmed working before the next one starts.</li>
+          <li><strong>A new source is isolated first, integrated later.</strong> Its
+            collection code lives behind a try/except boundary of its own, writes to its
+            own state files, and is positioned to run after any already-trusted path in
+            the same script — so it can never take down what already works (see
+            <a href="#reliability">Reliability lessons</a>).</li>
+          <li><strong>No look-ahead bias, ever</strong>, in anything that classifies a
+            wallet or scores a window — see <a href="#classification">Classifying
+            wallets</a>.</li>
+          <li><strong>Every change ships with tests</strong>, and the full suite
+            (<code>pytest tests/ -q</code>) is expected to pass with zero regressions before
+            anything is considered done.</li>
+          <li><strong>Verify against the real, live repo state</strong> before assuming a
+            previous change actually landed — this project has been burned before by
+            reasoning about code that looked right locally but hadn't actually been
+            applied on GitHub yet.</li>
+        </ul>
+      </section>
+
+      <section id="env-vars">
+        <h2>Environment variables</h2>
+        <div class="table-wrap">
+        <table>
+          <tr><th>Variable</th><th>Required</th><th>Purpose</th></tr>
+          <tr><td><code>ALCHEMY_RPC_URL</code></td><td>Yes</td><td>Ethereum mainnet JSON-RPC endpoint</td></tr>
+          <tr><td><code>ALCHEMY_BASE_RPC_URL</code></td><td>No</td><td>Base JSON-RPC endpoint. Omitted entirely → Base collection is safely skipped, logged, and everything else runs normally.</td></tr>
+          <tr><td><code>HYDRA_BACKFILL_BLOCKS</code></td><td>No</td><td>Mainnet backfill depth on a cold start</td></tr>
+          <tr><td><code>HYDRA_BASE_BACKFILL_BLOCKS</code></td><td>No</td><td>Base backfill depth on a cold start (default ~10,000 blocks, ~5.5h)</td></tr>
+          <tr><td><code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code></td><td>No</td><td>Caps how many Base blocks one run will attempt to catch up, to bound RPC usage (default 1,000)</td></tr>
+          <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default ~43,200 blocks, ~1 day)</td></tr>
+        </table>
+        </div>
+        <p>
+          In production, these are configured as GitHub Actions secrets/variables under
+          Settings → Secrets and variables → Actions, and passed into the workflow —
+          never committed to the repo.
+        </p>
+      </section>
+
+      <section id="glossary">
+        <h2>Glossary</h2>
+        <div class="table-wrap">
+        <table>
+          <tr><td><strong>Wallet / address</strong></td><td>A public Ethereum (or Base) account identifier, not tied to a real-world identity.</td></tr>
+          <tr><td><strong>Swap</strong></td><td>A trade against a DEX liquidity pool; emits a public on-chain <code>Swap</code> event.</td></tr>
+          <tr><td><strong>GOOD / BAD trader</strong></td><td>The top / bottom ~15% of tracked wallets, ranked by historical P&amp;L and win rate.</td></tr>
+          <tr><td><strong>Composite score</strong></td><td>The blended measure of good-vs-bad wallet buy/sell pressure that drives the signal.</td></tr>
+          <tr><td><strong>Candle / window</strong></td><td>A fixed 250-block aggregation period on mainnet (~50 min), the base unit of the whole pipeline.</td></tr>
+          <tr><td><strong>Signal</strong></td><td>The short-term LONG / SHORT / HOLD call shown in the hero.</td></tr>
+          <tr><td><strong>Market regime</strong></td><td>The longer-term BULL / BEAR / NEUTRAL read, independent of the short-term signal.</td></tr>
+          <tr><td><strong>Wallet flip</strong></td><td>A wallet reversing its trading direction after a sustained streak the other way — a regime-model input.</td></tr>
+          <tr><td><strong>Perp (perpetual)</strong></td><td>A leveraged derivative tracking an asset's price with no expiry; Hydra tracks Hyperliquid's ETH-PERP market.</td></tr>
+          <tr><td><strong>Layer 2 (L2)</strong></td><td>A separate, faster/cheaper blockchain that settles back to Ethereum for security; Base is the L2 currently being added.</td></tr>
+          <tr><td><strong>Incremental run</strong></td><td>A pipeline execution that resumes from saved state rather than reprocessing history from scratch.</td></tr>
+          <tr><td><strong>Look-ahead bias</strong></td><td>Using future information to make a past classification — strictly forbidden throughout this codebase.</td></tr>
+        </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<footer>
+  Hydra Terminal Docs · generated for onboarding contributors ·
+  <a href="https://github.com/bezplum-source/hydra-terminal" target="_blank" rel="noopener">source on GitHub</a>
+</footer>
+
+<script>
+(function(){
+  var toggle = document.getElementById('navToggle');
+  var sidebar = document.getElementById('sidebar');
+  if (toggle && sidebar) {
+    toggle.addEventListener('click', function(){
+      sidebar.classList.toggle('open');
+    });
+    sidebar.querySelectorAll('a').forEach(function(a){
+      a.addEventListener('click', function(){ sidebar.classList.remove('open'); });
+    });
+  }
+
+  var links = Array.prototype.slice.call(document.querySelectorAll('.navgroup a'));
+  var sections = links
+    .map(function(a){ return document.querySelector(a.getAttribute('href')); })
+    .filter(Boolean);
+
+  function onScroll(){
+    var pos = window.scrollY + 90;
+    var current = sections[0];
+    sections.forEach(function(sec){
+      if (sec.offsetTop <= pos) current = sec;
+    });
+    links.forEach(function(a){ a.classList.remove('active'); });
+    if (current) {
+      var active = links.find(function(a){ return a.getAttribute('href') === '#' + current.id; });
+      if (active) active.classList.add('active');
+    }
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+</script>
+
+</body>
+</html>
