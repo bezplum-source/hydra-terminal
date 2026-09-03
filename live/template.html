@@ -157,6 +157,25 @@
 
   .topbar-right { display: flex; align-items: center; gap: 8px; opacity: 0; animation: fadeUp 0.7s ease 0.5s both; }
 
+  /* Link do podstrony /docs.html (statyczny plik obok index.html w site/,
+     patrz hydrav2-base-l2-b0.md / dokumentacja dev — nie generowany przez
+     build_site.py, więc nie zmienia się przy każdym uruchomieniu). */
+  .topbar-link {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 6px 2px;
+    border-bottom: 1px solid transparent;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .topbar-link:hover {
+    color: var(--accent-glow);
+    border-bottom-color: var(--accent-glow);
+  }
+
   .chip {
     display: inline-flex;
     align-items: center;
@@ -718,6 +737,7 @@
       <span class="brand-sub">terminal &middot; ETH/USD on-chain signal</span>
     </div>
     <div class="topbar-right">
+      <a class="topbar-link" href="./docs.html">Docs</a>
       <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; Uniswap V3 WETH (4 pule)</span>
       <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
