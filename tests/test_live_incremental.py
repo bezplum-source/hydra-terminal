@@ -193,6 +193,12 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # data/base_collector_state.json w repo zamiast do tmp_path.
     monkeypatch.setattr(st, "BASE_TRADE_BUFFER_PATH", tmp_path / "data" / "base_trade_buffer.csv")
     monkeypatch.setattr(st, "BASE_COLLECTOR_STATE_PATH", tmp_path / "data" / "base_collector_state.json")
+    # Faza "reset licznika wyniku/win rate" - dopisane OD RAZU (patrz
+    # komentarze wyzej przy REGIME_STATE_PATH/HYPERLIQUID_*/BASE_*): bez
+    # tego test ponizej czytalby PRAWDZIWY plik data/stats_reset_state.json
+    # z tego repo (ktory realnie istnieje i ma ustawiona wartosc dla
+    # zywej strony) zamiast izolowanego tmp_path.
+    monkeypatch.setattr(st, "STATS_RESET_STATE_PATH", tmp_path / "data" / "stats_reset_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -643,6 +649,64 @@ def test_freshness_meta_last_run_utc_is_embedded_in_generated_site(tmp_path, mon
     end_idx = html.index(";", start_idx)
     data = json_module.loads(html[start_idx:end_idx])
     assert data["meta"]["lastRunUtc"] == state["updated_at_utc"]
+
+
+def test_stats_reset_from_block_meta_is_embedded_in_generated_site(tmp_path, monkeypatch):
+    """Faza "reset licznika wyniku/win rate" (zgloszenie uzytkownika
+    2026-09-06): gdy `data/stats_reset_state.json` ma ustawiony
+    `reset_from_block`, `ri.main()` musi przekazac go do `build_site()`
+    tak, ze ladu je do `DATA.meta.statsResetFromBlock` w wygenerowanym
+    `site/index.html` - front-end (`renderAggregateStats()`) filtruje
+    streaki po tej wartosci."""
+    import json as json_module
+
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    st.save_stats_reset_state({"reset_from_block": 25878499})
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start_idx = html.index(marker) + len(marker)
+    end_idx = html.index(";", start_idx)
+    data = json_module.loads(html[start_idx:end_idx])
+    assert data["meta"]["statsResetFromBlock"] == 25878499
+
+
+def test_stats_reset_from_block_defaults_to_none_when_no_reset_state_file(tmp_path, monkeypatch):
+    """Bez pliku `data/stats_reset_state.json` (domyslny, dotychczasowy stan
+    kazdego repo sprzed tej fazy) `statsResetFromBlock` musi byc `None` -
+    front-end traktuje to jako "brak filtrowania", identycznie jak przed
+    wprowadzeniem tej fazy."""
+    import json as json_module
+
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start_idx = html.index(marker) + len(marker)
+    end_idx = html.index(";", start_idx)
+    data = json_module.loads(html[start_idx:end_idx])
+    assert data["meta"]["statsResetFromBlock"] is None
 
 
 def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
