@@ -115,8 +115,12 @@ if __name__ == "__main__":
     from live import state as st
 
     last_run_utc = st.load_scoring_state().get("updated_at_utc")
+    stats_reset_from_block = st.load_stats_reset_state().get("reset_from_block")
     build_site(
         st.load_candles_history(),
-        meta={"lastRunUtc": last_run_utc} if last_run_utc else None,
+        meta={
+            "lastRunUtc": last_run_utc,
+            "statsResetFromBlock": stats_reset_from_block,
+        },
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")
