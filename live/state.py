@@ -111,6 +111,7 @@ HYPERLIQUID_WALLETS_SEEN_PATH = DATA_DIR / "hyperliquid_wallets_seen.txt"
 SIGNAL_STATE_PATH = DATA_DIR / "signal_state.json"
 BASE_TRADE_BUFFER_PATH = DATA_DIR / "base_trade_buffer.csv"
 BASE_COLLECTOR_STATE_PATH = DATA_DIR / "base_collector_state.json"
+STATS_RESET_STATE_PATH = DATA_DIR / "stats_reset_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -267,6 +268,36 @@ def load_signal_state() -> dict:
 def save_signal_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SIGNAL_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_stats_reset_state() -> dict:
+    """Faza "reset licznika wyniku/win rate" (zgloszenie uzytkownika
+    2026-09-06: chce wyzerowac TYLKO blok "Laczny wynik / Trafione-
+    nietrafione / Win rate" na froncie, bez kasowania wykresu ceny ani
+    historii swiec/sygnalow).
+
+    To NIE jest stan zarzadzany przez pipeline (w odroznieniu od reszty
+    plikow w tym module) - to reczny "pokretlo" konfiguracyjne, edytowane
+    bezposrednio przez uzytkownika na GitHubie, gdy chce przesunac punkt,
+    od ktorego licza sie zamkniete sygnaly LONG/SHORT w podsumowaniu
+    (np. po naprawie buga, ktory zeprul wczesniejsze wyniki). Brak pliku
+    lub brak/`None` w polu `reset_from_block` = brak filtrowania (100%
+    wstecznie kompatybilne z zachowaniem sprzed tej fazy).
+
+    Format: `{"reset_from_block": <int blok>}` - streaki z `startBlock <
+    reset_from_block` NIE licza sie do "Lacznego wyniku"/"Win rate" (patrz
+    `live/template.html::renderAggregateStats()`), ale nadal sa widoczne w
+    tabeli "Historia sygnalow" i na wykresie ceny - filtrowanie dotyczy
+    WYLACZNIE tego jednego podsumowania.
+    """
+    if not STATS_RESET_STATE_PATH.exists():
+        return {}
+    return json.loads(STATS_RESET_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_stats_reset_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    STATS_RESET_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def load_base_trade_buffer() -> list[Trade]:
