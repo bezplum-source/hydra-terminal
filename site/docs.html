@@ -670,6 +670,7 @@
           <tr><td><code>data/hyperliquid_scoring_state.json</code></td><td>Hyperliquid classification + <code>composite_perp</code> EMA</td></tr>
           <tr><td><code>data/base_collector_state.json</code></td><td>Base L2 block cursor</td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
+          <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
         </table>
         </div>
         <p>
@@ -677,6 +678,28 @@
           <code>live/build_site.py</code> renders the static <code>site/index.html</code> from
           <code>live/template.html</code>, which GitHub Pages then serves as the live
           dashboard.
+        </p>
+
+        <h3 id="stats-reset">Resetting the win-rate counter</h3>
+        <p>
+          The "Signal history" card's compounded result / win-rate summary (see
+          <a href="#frontend">Reading the terminal</a>) is computed entirely client-side
+          in <code>template.html::renderAggregateStats()</code> from every closed
+          LONG/SHORT streak ever recorded. <code>data/stats_reset_state.json</code> is an
+          optional, hand-edited config file — nothing in the pipeline writes it — that
+          lets a maintainer move the starting point for that one summary forward without
+          touching anything else:
+        </p>
+        <pre><code>{"reset_from_block": 25878499}</code></pre>
+        <p>
+          Streaks that started before that block are excluded only from the compounded
+          result / win-rate numbers; the price chart, the full candle history, and the
+          "Signal history" table itself are entirely unaffected — this is a narrow,
+          reversible filter on one summary stat, not a data deletion. Useful after a real
+          bug that corrupted past results — a sign error in how a SHORT streak's outcome
+          was scored was exactly this kind of case earlier in the project's history — or
+          simply to start a clean baseline from a chosen date. Delete the file, or omit
+          <code>reset_from_block</code>, to go back to counting the full history.
         </p>
       </section>
 
