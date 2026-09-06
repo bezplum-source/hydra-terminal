@@ -799,6 +799,7 @@
       <span class="card-title">Historia sygnałów</span>
       <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału &middot; wynik = wygrana/przegrana sygnału, nie surowa zmiana kursu</span>
     </div>
+    <span class="card-note" id="aggResetNote" style="display:none; margin-top:-8px; margin-bottom:10px;"></span>
     <div class="stat-grid" style="margin-bottom:18px;">
       <div class="stat">
         <span class="stat-label">Łączny wynik</span>
@@ -1665,13 +1666,39 @@ function buildHistory() {
 function renderAggregateStats() {
   // Tylko LONG/SHORT liczą się jako "postawiony sygnał" - HOLD nie jest
   // zakładem w żadną stronę, więc nie wchodzi do łącznego wyniku/win rate.
-  const streaks = DATA.streaks.filter((s) => s.signal === 'LONG' || s.signal === 'SHORT');
+  //
+  // Faza "reset licznika wyniku/win rate" (2026-09-06, zgłoszenie
+  // użytkownika: chce policzyć wynik/win rate od nowa od konkretnego
+  // momentu, bez kasowania wykresu ceny ani tabeli "Historia sygnałów" -
+  // patrz `live/state.py::load_stats_reset_state`). Gdy
+  // `DATA.meta.statsResetFromBlock` jest ustawiony, streaki, które
+  // ZACZĘŁY SIĘ przed tym blokiem, są tu pomijane - ale nadal w pełni
+  // widoczne niżej w tabeli historii (ten filtr dotyczy WYŁĄCZNIE tego
+  // jednego podsumowania).
+  const resetFromBlock = (DATA.meta && typeof DATA.meta.statsResetFromBlock === 'number')
+    ? DATA.meta.statsResetFromBlock
+    : null;
+  const streaks = DATA.streaks.filter((s) => {
+    if (s.signal !== 'LONG' && s.signal !== 'SHORT') return false;
+    if (resetFromBlock !== null && s.startBlock < resetFromBlock) return false;
+    return true;
+  });
 
   const elTotal = document.getElementById('aggTotalPct');
   const elWinLoss = document.getElementById('aggWinLoss');
   const elWinRate = document.getElementById('aggWinRate');
   const elWinRateHint = document.getElementById('aggWinRateHint');
+  const elResetNote = document.getElementById('aggResetNote');
   if (!elTotal) return;
+
+  if (elResetNote) {
+    if (resetFromBlock !== null) {
+      elResetNote.textContent = 'liczone od bloku ' + resetFromBlock.toLocaleString('pl-PL') + ' (wcześniejsze sygnały pominięte w tym podsumowaniu, nadal widoczne w tabeli niżej)';
+      elResetNote.style.display = '';
+    } else {
+      elResetNote.style.display = 'none';
+    }
+  }
 
   if (!streaks.length) {
     elTotal.textContent = '-';
