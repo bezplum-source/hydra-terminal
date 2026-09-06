@@ -20,6 +20,7 @@ def _patch_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "HYPERLIQUID_TRADES_BUFFER_PATH", tmp_path / "hyperliquid_trades_buffer.jsonl")
     monkeypatch.setattr(st, "BASE_TRADE_BUFFER_PATH", tmp_path / "base_trade_buffer.csv")
     monkeypatch.setattr(st, "BASE_COLLECTOR_STATE_PATH", tmp_path / "base_collector_state.json")
+    monkeypatch.setattr(st, "STATS_RESET_STATE_PATH", tmp_path / "stats_reset_state.json")
 
 
 def test_scoring_state_roundtrip(tmp_path, monkeypatch):
@@ -138,6 +139,18 @@ def test_base_collector_state_roundtrip(tmp_path, monkeypatch):
     state = {"last_processed_block": 999888}
     st.save_base_collector_state(state)
     assert st.load_base_collector_state() == state
+
+
+def test_stats_reset_state_roundtrip(tmp_path, monkeypatch):
+    # Faza "reset licznika wyniku/win rate" (2026-09-06) - plik reczenie
+    # ustawiany przez uzytkownika (patrz docstring load_stats_reset_state),
+    # ale zapis/odczyt musi dzialac tak samo niezawodnie jak reszta stanu.
+    _patch_paths(monkeypatch, tmp_path)
+    assert st.load_stats_reset_state() == {}
+
+    state = {"reset_from_block": 25878499}
+    st.save_stats_reset_state(state)
+    assert st.load_stats_reset_state() == state
 
 
 def test_price_at_block_factory_uses_nearest_known_block_leq_target():
