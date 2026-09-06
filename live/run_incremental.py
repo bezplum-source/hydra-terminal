@@ -522,7 +522,20 @@ def main() -> int:
     # Front-end (chip swiezosci) uzywa TEGO, zeby uczciwie pokazywac realny
     # odstep miedzy uruchomieniami automatyzacji - patrz komentarz w
     # build_site.py::build_site.
-    build_site(candles_history, meta={"lastRunUtc": new_state["updated_at_utc"]})
+    #
+    # Faza "reset licznika wyniku/win rate" (2026-09-06) - opcjonalny,
+    # reczenie ustawiany przez uzytkownika plik `data/stats_reset_state.json`
+    # (patrz `live/state.py::load_stats_reset_state` docstring). Czysto
+    # lokalny odczyt pliku, zero RPC/sieci - bezpieczny tutaj, PRZED blokiem
+    # Base L2 nizej, tak jak reszta juz-zaufanej sciezki mainnet+Hyperliquid.
+    stats_reset_from_block = st.load_stats_reset_state().get("reset_from_block")
+    build_site(
+        candles_history,
+        meta={
+            "lastRunUtc": new_state["updated_at_utc"],
+            "statsResetFromBlock": stats_reset_from_block,
+        },
+    )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 
     # --- Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - trzeci,
