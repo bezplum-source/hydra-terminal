@@ -747,20 +747,51 @@
         <h2>Reading the terminal</h2>
         <p>
           The dashboard is a single static HTML page with no client-side API calls — all
-          the data it shows is baked in at build time by <code>build_site.py</code>. Its main
-          sections:
+          the data it shows is baked in at build time by <code>build_site.py</code>.
+        </p>
+        <p>
+          <em>Frontend redesign (2026-09):</em> the layout below replaces an earlier
+          version that surfaced every raw number (tracked/active wallet counts, a
+          composite score, a BULL/BEAR tug-of-war score) as its own always-visible stat
+          tile. Nothing was removed — every one of those numbers is still on the page —
+          but most of it now lives in small print or behind a hover/tap
+          <code>(i)</code> icon instead of competing for attention with the signal
+          itself. Its main sections, top to bottom:
         </p>
         <ul>
-          <li><strong>Hero</strong> — current signal (LONG/SHORT/HOLD), price, and how the
-            active signal has performed since it started.</li>
-          <li><strong>Stat grid</strong> — tracked/active wallets, the scoring pool size, and
-            the composite score broken into spot / perp / final.</li>
-          <li><strong>Regime card</strong> — BULL/BEAR/NEUTRAL, bull/bear score tug-of-war,
-            confidence, and recent wallet flips.</li>
-          <li><strong>Event log</strong> — START/END BULL/BEAR, CAPITULATION, DISTRIBUTION.</li>
-          <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair.</li>
+          <li><strong>Hero</strong> — current signal (LONG/SHORT/HOLD), price, and when
+            the active signal entered and at what price (fixed until the signal
+            closes). When Uniswap alone would show a different signal than the final,
+            blended one, a banner names Hyperliquid as the deciding factor.</li>
+          <li><strong>Composite meters</strong> — three plain-language gauges (blended,
+            Uniswap spot, Hyperliquid perp), each a one- or two-word read of direction
+            and strength (e.g. "Wyraźnie niedźwiedzi") plus a centered bar, instead of a
+            raw signed number. The <code>(i)</code> on each carries the underlying score
+            and extra context — the Uniswap tile's scoring-pool size, the Hyperliquid
+            tile's classification maturity and the PnL-methodology caveat that used to
+            live in a separate ETH-PERP card.</li>
+          <li><strong>Wallets card</strong> — GOOD and BAD wallet buy/sell counts combined
+            across Uniswap + Hyperliquid into one number per side (what most viewers
+            actually came to check), with the per-source split underneath in small
+            print. Tracked/active wallet counts are shown the same way, top-right of the
+            card.</li>
+          <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
+            plus a regime ribbon and event markers along the bottom. Unchanged from the
+            previous layout.</li>
+          <li><strong>Nastrój rynku (market mood)</strong> — a deliberately reduced,
+            plain-language read of the regime detector: a one-line mood ("Rynek
+            rośnie"/"Rynek spada"/"Bez wyraźnego kierunku"), a Spadki/Wzrosty pressure
+            bar with no raw score attached, and the latest regime event, if any, again in
+            plain language. The technical detail this used to show inline — BULL/BEAR
+            score history (sparkline), momentum horizon, wallet-flip counts, and the
+            calibration caveat — was dropped here rather than tucked away, at the
+            project owner's explicit request once the plain-language version existed;
+            it is not shown anywhere in the new layout.</li>
+          <li><strong>Zdarzenia regime</strong> — the full, paginated history of regime
+            events (START/END BULL/BEAR, CAPITULATION, DISTRIBUTION). Unchanged.</li>
           <li><strong>Signal history</strong> — every closed LONG/SHORT streak with its
-            realized outcome, plus a compounded win-rate summary.</li>
+            realized outcome, plus a compounded win-rate summary. Unchanged, including
+            the win-rate reset behavior described above.</li>
         </ul>
         <p>
           Two time indicators appear in the hero and are easy to conflate but measure
@@ -794,6 +825,19 @@
           bear rather than reusing red) specifically so a viewer never confuses "the
           market's long-term regime" with "what to do right now" at a glance — the two
           axes are independent by design, and the palette reinforces that.
+        </p>
+        <p>
+          <strong>Hover/tap-to-explain (<code>.info-tip</code>):</strong> the project's
+          one and only tooltip convention — a small <code>ⓘ</code> icon
+          (<code>class="info-tip"</code>, a <code>data-tip="..."</code> attribute holding
+          the explanation) that reveals its text on hover, or on tap on touch devices
+          (a shared click handler toggles a <code>.tip-open</code> class, since
+          <code>:hover</code> alone doesn't exist there). It predates the 2026-09
+          frontend redesign — it already covered the BULL/BEAR score and event-log
+          jargon — and the redesign reuses it as-is rather than introducing a second
+          tooltip mechanism: the composite meters' explanations and the market-mood
+          card's two <code>(i)</code> icons are the same component. Any future
+          explanatory text should go here, not into visible on-page copy.
         </p>
       </section>
 
