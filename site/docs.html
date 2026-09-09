@@ -782,13 +782,18 @@
             plain-language read of the regime detector: a one-line mood ("Rynek
             rośnie"/"Rynek spada"/"Bez wyraźnego kierunku"), a Spadki/Wzrosty pressure
             bar with no raw score attached, and the latest regime event, if any, again in
-            plain language. The technical detail this used to show inline — BULL/BEAR
+            plain language (with its technical name and confidence in small print
+            underneath). The technical detail this used to show inline — BULL/BEAR
             score history (sparkline), momentum horizon, wallet-flip counts, and the
             calibration caveat — was dropped here rather than tucked away, at the
             project owner's explicit request once the plain-language version existed;
-            it is not shown anywhere in the new layout.</li>
-          <li><strong>Zdarzenia regime</strong> — the full, paginated history of regime
-            events (START/END BULL/BEAR, CAPITULATION, DISTRIBUTION). Unchanged.</li>
+            it is not shown anywhere in the new layout. The dedicated "Zdarzenia regime"
+            card that used to sit below this one — a full, paginated history of every
+            past regime event (START/END BULL/BEAR, CAPITULATION, DISTRIBUTION) — was
+            removed outright for the same reason: this card already summarizes the
+            latest event, so a separate historical log was judged unnecessary. The full
+            list of past events is no longer shown anywhere on the page; the price
+            chart's event markers (above) are the only remaining trace of history.</li>
           <li><strong>Signal history</strong> — every closed LONG/SHORT streak with its
             realized outcome, plus a compounded win-rate summary. Unchanged, including
             the win-rate reset behavior described above.</li>
