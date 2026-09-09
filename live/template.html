@@ -278,10 +278,9 @@
 
   /* Faza "NEUTRAL dead-zone" - composite w pasmie [-signalThreshold,
      signalThreshold] to Signal.HOLD, nie LONG/SHORT na sile (patrz
-     hydra_signals/scoring.py). Celowo bez pulsowania/glow, jak
-     .regime-pill--neutral - to jest brak jednoznacznej decyzji, nie
-     "trzeci kierunek", wiec nie powinien wygladac tak samo mocno jak
-     LONG/SHORT. */
+     hydra_signals/scoring.py). Celowo bez pulsowania/glow - to jest brak
+     jednoznacznej decyzji, nie "trzeci kierunek", wiec nie powinien
+     wygladac tak samo mocno jak LONG/SHORT. */
   .pill--neutral {
     color: var(--text-secondary);
     background: rgba(255, 255, 255, 0.04);
@@ -298,86 +297,6 @@
     50% { box-shadow: 0 0 26px 0px rgba(255, 59, 92, 0.55); }
   }
 
-  /* Regime pill: KWADRATOWY znacznik (nie kółko) i BEZ pulsowania - celowo inny język
-     wizualny niż .pill (LONG/SHORT), żeby dwie różne osie nie wyglądały jak to samo. */
-  .regime-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    width: fit-content;
-    padding: 7px 15px;
-    border-radius: 9px;
-    font-family: var(--font-display);
-    font-size: 20px;
-    letter-spacing: 0.05em;
-  }
-  .regime-pill::before { content: ''; width: 9px; height: 9px; border-radius: 3px; flex: none; }
-
-  .regime-pill--bull {
-    color: var(--regime-bull-glow);
-    background: var(--regime-bull-soft);
-    border: 1px solid color-mix(in srgb, var(--regime-bull) 55%, transparent);
-  }
-  .regime-pill--bull::before { background: var(--regime-bull-glow); box-shadow: 0 0 8px var(--regime-bull-glow); }
-
-  .regime-pill--bear {
-    color: var(--regime-bear-glow);
-    background: var(--regime-bear-soft);
-    border: 1px solid color-mix(in srgb, var(--regime-bear) 55%, transparent);
-  }
-  .regime-pill--bear::before { background: var(--regime-bear-glow); box-shadow: 0 0 8px var(--regime-bear-glow); }
-
-  .regime-pill--neutral {
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
-  }
-  .regime-pill--neutral::before { background: var(--text-muted); }
-
-  .regime-pill--none {
-    color: var(--text-muted);
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px dashed var(--border);
-  }
-  .regime-pill--none::before { background: var(--text-muted); }
-
-  /* Faza H3 (brief Hyperliquid) - karta "ETH-PERP" reuzywa ksztalt
-     .regime-pill (kwadratowy znacznik, bez pulsowania - jest to wskaznik
-     DIAGNOSTYCZNY, drugorzedny wobec glownego .pill w hero), ale
-     KOLORYSTYKE --good/--bad, NIE --regime-bull/--regime-bear. To celowe:
-     w przeciwienstwie do regime (osobna os, patrz komentarz przy
-     .regime-pill wyzej), composite_perp jest CZESCIA tej samej osi
-     LONG/SHORT co reszta hero - powinien wygladac pokrewnie z .pill--long/
-     .pill--short, nie z regime. */
-  .regime-pill--good {
-    color: var(--good-glow);
-    background: var(--good-soft);
-    border: 1px solid color-mix(in srgb, var(--good) 55%, transparent);
-  }
-  .regime-pill--good::before { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
-
-  .regime-pill--bad {
-    color: var(--bad-glow);
-    background: var(--bad-soft);
-    border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
-  }
-  .regime-pill--bad::before { background: var(--bad-glow); box-shadow: 0 0 8px var(--bad-glow); }
-
-  .composite-breakdown {
-    display: block;
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    margin-top: 2px;
-  }
-  .composite-breakdown b { font-weight: 600; }
-  .composite-breakdown .cb-spot { color: var(--text-primary); }
-  .composite-breakdown .cb-perp.up { color: var(--good-glow); }
-  .composite-breakdown .cb-perp.down { color: var(--bad-glow); }
-  /* Faza "NEUTRAL dead-zone" - |wartość| <= signalThreshold: wyciszone,
-     zamiast kolorowane na zielono/czerwono (tak jak przy .up/.down powyżej) -
-     to jest słaby, niejednoznaczny odczyt, nie realne wychylenie w stronę. */
-  .composite-breakdown .cb-neutral { color: var(--text-muted); }
 
   .hero-meta--divergence {
     color: var(--accent-glow);
@@ -402,33 +321,6 @@
   .tow-bear { height: 100%; background: linear-gradient(90deg, var(--regime-bear-glow), color-mix(in srgb, var(--regime-bear) 65%, transparent)); }
   .tow-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); margin-top: 7px; }
   .tow-labels strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-
-  .regime-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
-  @media (max-width: 640px) { .regime-meta-grid { grid-template-columns: 1fr 1fr; } }
-
-  .flip-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-  .flip-chip {
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 11px;
-  }
-  .flip-chip b { color: var(--text-primary); font-weight: 600; }
-  .flip-up { color: var(--regime-bull-glow); }
-  .flip-down { color: var(--regime-bear-glow); }
-
-  .caveat {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.55;
-    margin-top: 16px;
-    padding-top: 14px;
-    border-top: 1px dashed var(--border);
-  }
-  .caveat strong { color: var(--text-secondary); }
 
   .hero-price {
     font-family: var(--font-mono);
@@ -633,20 +525,6 @@
   .page-btn:disabled { opacity: 0.35; cursor: default; }
   .page-indicator { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 
-  /* ---------- mini-sparkline trendu BYCZY/NIEDŹWIEDZI (Faza UX/UI 2) ---------- */
-  .sparkline-wrap { margin-top: 16px; }
-  .sparkline-label {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
-  svg.sparkline { width: 100%; height: 48px; display: block; overflow: visible; }
-  .spark-bull { fill: none; stroke: var(--regime-bull-glow); stroke-width: 1.6; stroke-linejoin: round; }
-  .spark-bear { fill: none; stroke: var(--regime-bear-glow); stroke-width: 1.6; stroke-linejoin: round; }
-
   /* ---------- info-tip: ikonka "ⓘ" z tooltipem wyjaśniającym żargon
      (BYCZY/NIEDŹWIEDZI/Confidence/eventy regime) dla nowych odbiorców
      (Faza UX/UI 2). Hover na desktopie, tap-toggle na dotyku (patrz JS) -
@@ -727,8 +605,92 @@
     .pill--long, .pill--short { animation: none !important; box-shadow: none; }
     body::before { animation: none; opacity: 0.85; }
   }
-</style>
 
+  /* ================= plain-language composite meters (Composite/spot/perp) ================= */
+  .composite-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 560px) { .composite-grid { grid-template-columns: 1fr; } }
+  .composite-tile {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .composite-head { display: flex; flex-direction: column; gap: 2px; }
+  .composite-name { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
+  .composite-word { font-size: 15px; font-weight: 600; }
+  .composite-word.up { color: var(--good-glow); }
+  .composite-word.down { color: var(--bad-glow); }
+  .composite-word.neutral { color: var(--text-muted); }
+  .composite-meter-track { position: relative; height: 8px; border-radius: 999px; background: var(--bg-elevated-2); border: 1px solid var(--border); overflow: hidden; }
+  .composite-meter-zero { position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--border-strong); }
+  .composite-meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+  .composite-meter-fill.down { background: linear-gradient(90deg, var(--bad-glow), color-mix(in srgb, var(--bad) 60%, transparent)); }
+  .composite-meter-fill.up { background: linear-gradient(90deg, color-mix(in srgb, var(--good) 60%, transparent), var(--good-glow)); }
+  .composite-meter-fill.neutral { background: var(--text-muted); opacity: 0.5; }
+  .composite-meter-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+  .composite-raw { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted); }
+
+  /* ================= combined GOOD / BAD wallets card ================= */
+  .wallets-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .wallets-meta { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; text-align: right; }
+  .wallets-meta-line { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); }
+  .wallets-meta-line b { color: var(--text-primary); font-weight: 600; }
+  .wallets-meta-split { color: var(--text-muted); margin-left: 8px; }
+
+  .wallets-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .wallet-col { display: flex; flex-direction: column; gap: 14px; padding: 4px 26px; }
+  .wallet-col + .wallet-col { border-left: 1px solid var(--border); }
+  @media (max-width: 640px) {
+    .wallets-grid { grid-template-columns: 1fr; }
+    .wallet-col + .wallet-col { border-left: none; border-top: 1px solid var(--border); padding-top: 20px; margin-top: 6px; }
+  }
+
+  .wallet-label { display: flex; align-items: center; gap: 9px; }
+  .wallet-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .wallet-dot--good { background: var(--good-glow); box-shadow: 0 0 10px var(--good-glow); }
+  .wallet-dot--bad { background: var(--bad-glow); box-shadow: 0 0 10px var(--bad-glow); }
+  .wallet-name { font-family: var(--font-display); font-size: 24px; letter-spacing: 0.05em; }
+  .wallet-name--good { color: var(--good-glow); }
+  .wallet-name--bad { color: var(--bad-glow); }
+
+  .wallet-nums { display: flex; align-items: flex-end; gap: 30px; }
+  .wallet-num-block { display: flex; flex-direction: column; gap: 2px; }
+  .wallet-num-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .wallet-num-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 46px; font-weight: 500; line-height: 1; color: var(--text-primary); }
+  .tri { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
+  .tri--up { border-bottom: 7px solid var(--good-glow); }
+  .tri--down { border-top: 7px solid var(--bad-glow); }
+
+  .wallet-breakdown { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); display: flex; gap: 14px; flex-wrap: wrap; }
+  .wallet-breakdown b { color: var(--text-primary); font-weight: 600; }
+
+  /* ================= plain-language market mood (replaces the old BULL/BEAR regime-pill card) ================= */
+  .regime-body { display: flex; flex-direction: column; gap: 16px; }
+  .mood-row { display: flex; align-items: center; gap: 14px; }
+  .mood-icon-wrap { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; flex: none; }
+  .mood-icon-wrap.neutral { background: rgba(255,255,255,0.04); color: var(--text-secondary); border: 1px solid var(--border); }
+  .mood-icon-wrap.bull { background: var(--regime-bull-soft); color: var(--regime-bull-glow); border: 1px solid color-mix(in srgb, var(--regime-bull) 55%, transparent); }
+  .mood-icon-wrap.bear { background: var(--regime-bear-soft); color: var(--regime-bear-glow); border: 1px solid color-mix(in srgb, var(--regime-bear) 55%, transparent); }
+  .mood-text { display: flex; flex-direction: column; gap: 2px; }
+  .mood-label { font-family: var(--font-display); font-size: 19px; letter-spacing: 0.03em; color: var(--text-primary); }
+  .mood-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.03em; text-transform: uppercase; }
+
+  .event-row { display: flex; align-items: center; gap: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+  .event-icon-wrap { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; flex: none; border: 1px solid var(--border); }
+  .event-icon-wrap.bull { background: var(--regime-bull-soft); color: var(--regime-bull-glow); border-color: color-mix(in srgb, var(--regime-bull) 55%, transparent); }
+  .event-icon-wrap.bear { background: var(--regime-bear-soft); color: var(--regime-bear-glow); border-color: color-mix(in srgb, var(--regime-bear) 55%, transparent); }
+  .event-icon-wrap.muted { background: rgba(255,255,255,0.04); color: var(--text-muted); }
+  .event-text { display: flex; flex-direction: column; gap: 2px; }
+  .event-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .event-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; text-transform: uppercase; }
+</style>
 <div class="page">
 
   <header class="topbar">
@@ -743,6 +705,7 @@
     </div>
   </header>
 
+
   <section class="hero reveal reveal-1">
     <div class="hero-signal">
       <span class="eyebrow">Aktywny sygnał</span>
@@ -751,49 +714,188 @@
       <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
       <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span> (stała do zamknięcia sygnału)</span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="composite-grid">
+
+        <div class="composite-tile">
+          <div class="composite-head">
+            <span class="composite-name">Ogólnie<span class="info-tip" tabindex="0" data-tip="Łączy presję kupna/sprzedaży z Uniswap (spot) i Hyperliquid (perp) w jedną liczbę: dodatnia = przewaga kupujących, ujemna = przewaga sprzedających.">ⓘ</span></span>
+            <span class="composite-word" id="compositeWordAll">-</span>
+          </div>
+          <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillAll"></div></div>
+          <div class="composite-meter-labels"><span>Sprzedaż</span><span>Kupno</span></div>
+          <span class="composite-raw" id="compositeRawAll">-</span>
+        </div>
+
+        <div class="composite-tile">
+          <div class="composite-head">
+            <span class="composite-name">Uniswap (spot)<span class="info-tip" tabindex="0" id="compositeTipSpot" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na Uniswap.">ⓘ</span></span>
+            <span class="composite-word" id="compositeWordSpot">-</span>
+          </div>
+          <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillSpot"></div></div>
+          <div class="composite-meter-labels"><span>Sprzedaż</span><span>Kupno</span></div>
+          <span class="composite-raw" id="compositeRawSpot">-</span>
+        </div>
+
+        <div class="composite-tile">
+          <div class="composite-head">
+            <span class="composite-name">Hyperliquid (perp)<span class="info-tip" tabindex="0" id="compositeTipPerp" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących kontraktami perpetual ETH na Hyperliquid.">ⓘ</span></span>
+            <span class="composite-word" id="compositeWordPerp">-</span>
+          </div>
+          <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillPerp"></div></div>
+          <div class="composite-meter-labels"><span>Sprzedaż</span><span>Kupno</span></div>
+          <span class="composite-raw" id="compositeRawPerp">-</span>
+        </div>
+
+      </div>
       <!-- Faza H3 (brief Hyperliquid) - widoczna TYLKO gdy sam spot (Uniswap)
            wskazywalby inny sygnal niz ten po zblendowaniu z Hyperliquid -
            "pelna przejrzystosc", zeby nigdy nie bylo niejasne, co realnie
            zadecydowalo. Patrz renderHero() w JS. -->
       <span class="hero-meta hero-meta--divergence" id="heroDivergenceNote"></span>
     </div>
-    <div class="stat-grid">
-      <div class="stat">
-        <span class="stat-label">Śledzone portfele</span>
-        <span class="stat-value" id="statTracked">-</span>
-        <span class="stat-hint">łącznie, narastająco</span>
+  </section>
+
+  <section class="card reveal reveal-2">
+    <div class="wallets-card-head">
+      <span class="card-title">Wallets</span>
+      <div class="wallets-meta">
+        <span class="wallets-meta-line">Śledzone <b id="walletsTrackedTotal">-</b><span class="wallets-meta-split" id="walletsTrackedSplit"></span></span>
+        <span class="wallets-meta-line">Aktywne w oknie <b id="walletsActiveTotal">-</b><span class="wallets-meta-split" id="walletsActiveSplit"></span></span>
       </div>
-      <div class="stat">
-        <span class="stat-label">Aktywne w oknie</span>
-        <span class="stat-value" id="statActive">-</span>
-        <span class="stat-hint">ostatnia świeca (250 bloków)</span>
+    </div>
+    <div class="wallets-grid">
+
+      <div class="wallet-col">
+        <div class="wallet-label">
+          <span class="wallet-dot wallet-dot--good"></span>
+          <span class="wallet-name wallet-name--good">GOOD</span>
+        </div>
+        <div class="wallet-nums">
+          <div class="wallet-num-block">
+            <span class="wallet-num-tag"><span class="tri tri--up"></span>Kupuje</span>
+            <span class="wallet-num-value" id="walletGoodBuy">-</span>
+          </div>
+          <div class="wallet-num-block">
+            <span class="wallet-num-tag"><span class="tri tri--down"></span>Sprzedaje</span>
+            <span class="wallet-num-value" id="walletGoodSell">-</span>
+          </div>
+        </div>
+        <div class="wallet-breakdown">
+          <span>Uniswap <b id="walletGoodUniBuy">-</b>&nbsp;/&nbsp;<b id="walletGoodUniSell">-</b></span>
+          <span>Hyperliquid <b id="walletGoodHlBuy">-</b>&nbsp;/&nbsp;<b id="walletGoodHlSell">-</b></span>
+        </div>
       </div>
-      <div class="stat">
-        <span class="stat-label">Pula scoringu</span>
-        <span class="stat-value" id="statPool">-</span>
-        <span class="stat-hint">portfele GOOD w oknie</span>
+
+      <div class="wallet-col">
+        <div class="wallet-label">
+          <span class="wallet-dot wallet-dot--bad"></span>
+          <span class="wallet-name wallet-name--bad">BAD</span>
+        </div>
+        <div class="wallet-nums">
+          <div class="wallet-num-block">
+            <span class="wallet-num-tag"><span class="tri tri--up"></span>Kupuje</span>
+            <span class="wallet-num-value" id="walletBadBuy">-</span>
+          </div>
+          <div class="wallet-num-block">
+            <span class="wallet-num-tag"><span class="tri tri--down"></span>Sprzedaje</span>
+            <span class="wallet-num-value" id="walletBadSell">-</span>
+          </div>
+        </div>
+        <div class="wallet-breakdown">
+          <span>Uniswap <b id="walletBadUniBuy">-</b>&nbsp;/&nbsp;<b id="walletBadUniSell">-</b></span>
+          <span>Hyperliquid <b id="walletBadHlBuy">-</b>&nbsp;/&nbsp;<b id="walletBadHlSell">-</b></span>
+        </div>
       </div>
-      <div class="stat">
-        <span class="stat-label">Composite score</span>
-        <span class="stat-value" id="statScore">-</span>
-        <span class="stat-hint">EMA z historii, próg decyzji: 0.0</span>
-        <!-- Faza H3 - rozbicie spot/perp (brief: "Pelna przejrzystosc w
-             hero"). Wypelniane w renderHero(). -->
-        <span class="composite-breakdown" id="statScoreBreakdown"></span>
+
+    </div>
+  </section>
+  <section class="card reveal reveal-4">
+    <div class="card-head">
+      <span class="card-title">Cena i sygnał w czasie</span>
+      <!-- Faza UX/UI 2 - przełącznik zakresu czasu wykresu. Domyślnie
+           "WSZYSTKO" (patrz JS, currentRange), żeby zachowanie od razu po
+           wczytaniu strony było identyczne jak przed tą fazą - użytkownik
+           musi świadomie wybrać krótszy zakres. -->
+      <div class="range-switch" id="rangeSwitch" role="group" aria-label="Zakres czasu wykresu">
+        <button type="button" class="range-btn" data-range="24h">24H</button>
+        <button type="button" class="range-btn" data-range="7d">7D</button>
+        <button type="button" class="range-btn" data-range="30d">30D</button>
+        <button type="button" class="range-btn active" data-range="all">WSZYSTKO</button>
       </div>
-      <div class="stat">
-        <span class="stat-label">Good: kupuje / sprzedaje</span>
-        <span class="stat-value" id="statGood">-</span>
-        <span class="stat-hint">surowo, tylko ostatnie okno</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Bad: kupuje / sprzedaje</span>
-        <span class="stat-value" id="statBad">-</span>
-        <span class="stat-hint">surowo, tylko ostatnie okno</span>
-      </div>
+    </div>
+    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź lub dotknij, by zobaczyć szczegóły danej świecy.</div>
+    <div class="chart-wrap" id="mainChartWrap">
+      <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FFC94A" stop-opacity="0.32"></stop>
+            <stop offset="100%" stop-color="#FFC94A" stop-opacity="0"></stop>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="tooltip" id="mainTooltip"></div>
     </div>
   </section>
 
+  <section class="card reveal reveal-4" id="regimeCard">
+    <div class="card-head"><span class="card-title">Nastrój rynku</span></div>
+    <div class="regime-body">
+
+      <div class="mood-row">
+        <span class="mood-icon-wrap neutral" id="moodIconWrap"></span>
+        <div class="mood-text">
+          <span class="mood-label"><span id="moodLabelText">-</span><span class="info-tip" tabindex="0" data-tip="Ogólny nastrój rynku liczony z dłuższej historii presji portfeli — osobny wskaźnik od sygnału LONG/SHORT powyżej, może wskazywać inny kierunek.">ⓘ</span></span>
+          <span class="mood-sub" id="moodSub">-</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="tow-track">
+          <div class="tow-bull" id="towBull" style="width:50%"></div>
+          <div class="tow-bear" id="towBear" style="width:50%"></div>
+        </div>
+        <div class="tow-labels"><span>Spadki</span><span>Wzrosty</span></div>
+      </div>
+
+      <div class="event-row" id="eventRow" style="display:none;">
+        <span class="event-icon-wrap" id="eventIconWrap"></span>
+        <div class="event-text">
+          <span class="event-label"><span id="eventLabelText">-</span><span class="info-tip" tabindex="0" data-tip="Rzadki wzorzec w zachowaniu portfeli, który może zapowiadać zmianę trendu — sygnał ostrzegawczy, nie pewność.">ⓘ</span></span>
+          <span class="event-sub" id="eventSub">-</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+  <section class="card reveal reveal-4" id="eventLogCard">
+    <div class="card-head">
+      <span class="card-title">Zdarzenia regime</span>
+      <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
+    </div>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>Zdarzenie<span class="info-tip" tabindex="0" data-tip="START/END BULL/BEAR MARKET: przejścia maszyny stanów regime'u. CAPITULATION/DISTRIBUTION: pojedyncze, silne momenty presji sprzedaży (capitulation) albo rozładowywania pozycji przez dobrych traderów (distribution) — same nie zmieniają stanu BULL/BEAR, tylko go potęgują.">ⓘ</span></th>
+            <th>Kiedy</th>
+            <th class="num">Cena</th>
+            <th class="num">Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="eventLogBody"></tbody>
+      </table>
+    </div>
+    <!-- Faza UX/UI "kolejnosc bloków + paginacja zdarzen regime" - ten sam
+         wzorzec co historia sygnalów: kontener domyslnie ukryty, pojawia sie
+         tylko gdy jest wiecej niz jedna strona. -->
+    <div class="table-pagination" id="eventLogPagination" style="display:none;">
+      <button type="button" class="page-btn" id="eventLogPrevBtn">‹ Poprzednie</button>
+      <span class="page-indicator" id="eventLogPageIndicator">Strona 1 z 1</span>
+      <button type="button" class="page-btn" id="eventLogNextBtn">Następne ›</button>
+    </div>
+  </section>
   <section class="card reveal reveal-2">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
@@ -842,171 +944,12 @@
       <button type="button" class="page-btn" id="historyNextBtn">Następne ›</button>
     </div>
   </section>
-
-  <section class="card reveal reveal-3" id="perpCard">
-    <div class="card-head">
-      <span class="card-title">ETH-PERP &middot; Hyperliquid</span>
-      <span class="card-note" id="perpCardNote">drugi, niezależny tor danych &middot; wpływa na sygnał LONG/SHORT powyżej</span>
-    </div>
-    <div class="card-subnote">Osobna, równoległa populacja traderów niż Uniswap spot — portfele handlujące kontraktami perpetual ETH na Hyperliquid, odkrywane przez publiczny firehose transakcji WebSocket. <code>composite_perp</code> poniżej to wartość SUROWA, sprzed zblendowania ze spotem — rozbicie "spot vs perp" widać w hero powyżej, przy polu "Composite score".</div>
-
-    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-      <span class="regime-pill regime-pill--none" id="perpPill">BRAK DANYCH</span>
-      <span class="hero-meta" id="perpNote"></span>
-    </div>
-
-    <div class="regime-meta-grid">
-      <div class="stat">
-        <span class="stat-label">Śledzone portfele</span>
-        <span class="stat-value" id="perpTracked">-</span>
-        <span class="stat-hint">łącznie, narastająco (Hyperliquid)</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Sklasyfikowane w oknie</span>
-        <span class="stat-value" id="perpClassified">-</span>
-        <span class="stat-hint" id="perpMaturityHint">próg dojrzałości: -</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">composite_perp</span>
-        <span class="stat-value" id="perpComposite">-</span>
-        <span class="stat-hint">surowy, przed blendem</span>
-      </div>
-    </div>
-
-    <div class="flip-row" id="perpBuySellRow"></div>
-
-    <div class="caveat">
-      <strong>Uczciwie o ograniczeniach:</strong> PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie Fazy H1, patrz brief Hyperliquid). Dopóki liczba sklasyfikowanych portfeli w oknie jest poniżej progu dojrzałości, <code>composite_perp</code> = BRAK DANYCH, a zblendowany sygnał opiera się wyłącznie na spocie — bez żadnej zmiany zachowania.
-    </div>
-  </section>
-
-  <section class="card reveal reveal-4" id="regimeCard">
-    <div class="card-head">
-      <span class="card-title">Regime rynkowy</span>
-      <span class="card-note">BULL / BEAR / NEUTRAL &middot; niezależne od sygnału LONG/SHORT powyżej</span>
-    </div>
-    <div class="card-subnote">Osobny, wolniejszy tor detekcji reżimu rynku (presja dobrych/złych traderów, momentum wieloczasowe, capitulation/distribution) — może wskazywać inny kierunek niż aktywny sygnał LONG/SHORT. Eksperymentalne, w trakcie kalibracji.</div>
-
-    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-      <span class="regime-pill regime-pill--none" id="regimePill">BRAK DANYCH</span>
-      <span class="hero-meta" id="regimeEventNote"></span>
-    </div>
-
-    <div style="margin-top:18px;">
-      <div class="tow-track">
-        <div class="tow-bull" id="towBull" style="width:50%"></div>
-        <div class="tow-bear" id="towBear" style="width:50%"></div>
-      </div>
-      <div class="tow-labels">
-        <span>BYCZY <strong id="towBullVal">-</strong><span class="info-tip" tabindex="0" data-tip="BYCZY (bull score): presja kupna dobrych (skutecznych) traderów, liczona w wielu horyzontach czasowych naraz, 0–90 (sufit tymczasowy — komponent Capital Flow jeszcze nieaktywny, patrz uwaga niżej). Wyższa wartość = mocniejszy sygnał rynku BULL.">ⓘ</span></span>
-        <span>NIEDŹWIEDZI <strong id="towBearVal">-</strong><span class="info-tip" tabindex="0" data-tip="NIEDŹWIEDZI (bear score): to samo co BYCZY, ale liczone z presji sprzedaży/pozycji spadkowych dobrych traderów. Wyższa wartość = mocniejszy sygnał rynku BEAR.">ⓘ</span></span>
-      </div>
-      <!-- Faza UX/UI 2 - mini-sparkline trendu bullScore/bearScore, żeby nie
-           trzeba było zgadywać "czy to się nasila czy słabnie" z jednej,
-           statycznej liczby. Wypełniane w renderRegimeSparkline(), wywołane
-           z renderRegimeCard(). Domyślnie skryte - pokazywane tylko gdy
-           jest co najmniej 2 świece z danymi regime. -->
-      <div class="sparkline-wrap" id="regimeSparklineWrap" style="display:none;">
-        <div class="sparkline-label">Trend BYCZY / NIEDŹWIEDZI <span id="sparklineRange"></span></div>
-        <svg class="sparkline" id="regimeSparkline" viewBox="0 0 300 48" preserveAspectRatio="none"></svg>
-      </div>
-    </div>
-
-    <div class="regime-meta-grid">
-      <div class="stat">
-        <span class="stat-label">Confidence<span class="info-tip" tabindex="0" data-tip="Confidence: heurystyczna miara czytelności aktualnego regime'u (na ile jednoznacznie dominuje BYCZY, NIEDŹWIEDZI czy NEUTRAL) — nieskalibrowana, do odczytu orientacyjnego, nie jako prawdopodobieństwo.">ⓘ</span></span>
-        <span class="stat-value" id="regimeConfidence">-</span>
-        <span class="stat-hint">heurystyka czytelności, nieskalibrowana</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Horyzont momentum<span class="info-tip" tabindex="0" data-tip="Horyzont momentum: najdłuższe okno czasowe (np. 1h, 1d, 7d, 30d), dla którego regime-detection ma już wystarczająco historii danych, żeby policzyć trend. Rośnie z czasem, w miarę jak zbiera się historia świec.">ⓘ</span></span>
-        <span class="stat-value" id="regimeHorizon">-</span>
-        <span class="stat-hint">najdłuższy dostępny w historii</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Historia danych</span>
-        <span class="stat-value" id="regimeMaturity">-</span>
-        <span class="stat-hint" id="regimeMaturityHint">świec zebranych do teraz</span>
-      </div>
-    </div>
-
-    <div class="flip-row" id="flipRow"></div>
-
-    <div class="caveat">
-      <strong>Uczciwie o ograniczeniach:</strong> suma BYCZY+NIEDŹWIEDZI świadomie nie sięga 100 — komponent Capital Flow (E) nie jest jeszcze aktywny (sufit 90). Progi i wagi to wartości startowe, nieprzestrojone jeszcze backtestem. Długie horyzonty momentum (7&ndash;30 dni) będą puste, dopóki nie zbierze się tyle historii.
-    </div>
-  </section>
-
-  <!-- Faza H3 (brief hydrav2-hyperliquid-brief.md) - drugi, niezalezny tor
-       danych (portfele handlujace ETH-PERP na Hyperliquid, nie ETH/USDC
-       spot na Uniswap). W przeciwienstwie do karty "Regime rynkowy" wyzej
-       (ktora jest CELOWO niezalezna od LONG/SHORT), composite_perp TUTAJ
-       realnie wplywa na sygnal w hero powyzej (waga 50/50, patrz brief,
-       "Decyzja architektoniczna") - stad ta karta reuzywa kolorystyke
-       good/bad (LONG/SHORT), nie regime bull/bear. -->
-  <section class="card reveal reveal-4">
-    <div class="card-head">
-      <span class="card-title">Cena i sygnał w czasie</span>
-      <!-- Faza UX/UI 2 - przełącznik zakresu czasu wykresu. Domyślnie
-           "WSZYSTKO" (patrz JS, currentRange), żeby zachowanie od razu po
-           wczytaniu strony było identyczne jak przed tą fazą - użytkownik
-           musi świadomie wybrać krótszy zakres. -->
-      <div class="range-switch" id="rangeSwitch" role="group" aria-label="Zakres czasu wykresu">
-        <button type="button" class="range-btn" data-range="24h">24H</button>
-        <button type="button" class="range-btn" data-range="7d">7D</button>
-        <button type="button" class="range-btn" data-range="30d">30D</button>
-        <button type="button" class="range-btn active" data-range="all">WSZYSTKO</button>
-      </div>
-    </div>
-    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź lub dotknij, by zobaczyć szczegóły danej świecy.</div>
-    <div class="chart-wrap" id="mainChartWrap">
-      <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#FFC94A" stop-opacity="0.32"></stop>
-            <stop offset="100%" stop-color="#FFC94A" stop-opacity="0"></stop>
-          </linearGradient>
-        </defs>
-      </svg>
-      <div class="tooltip" id="mainTooltip"></div>
-    </div>
-  </section>
-
-  <section class="card reveal reveal-4" id="eventLogCard">
-    <div class="card-head">
-      <span class="card-title">Zdarzenia regime</span>
-      <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
-    </div>
-    <div class="table-scroll">
-      <table class="history">
-        <thead>
-          <tr>
-            <th>Zdarzenie<span class="info-tip" tabindex="0" data-tip="START/END BULL/BEAR MARKET: przejścia maszyny stanów regime'u. CAPITULATION/DISTRIBUTION: pojedyncze, silne momenty presji sprzedaży (capitulation) albo rozładowywania pozycji przez dobrych traderów (distribution) — same nie zmieniają stanu BULL/BEAR, tylko go potęgują.">ⓘ</span></th>
-            <th>Kiedy</th>
-            <th class="num">Cena</th>
-            <th class="num">Confidence</th>
-          </tr>
-        </thead>
-        <tbody id="eventLogBody"></tbody>
-      </table>
-    </div>
-    <!-- Faza UX/UI "kolejnosc bloków + paginacja zdarzen regime" - ten sam
-         wzorzec co historia sygnalów: kontener domyslnie ukryty, pojawia sie
-         tylko gdy jest wiecej niz jedna strona. -->
-    <div class="table-pagination" id="eventLogPagination" style="display:none;">
-      <button type="button" class="page-btn" id="eventLogPrevBtn">‹ Poprzednie</button>
-      <span class="page-indicator" id="eventLogPageIndicator">Strona 1 z 1</span>
-      <button type="button" class="page-btn" id="eventLogNextBtn">Następne ›</button>
-    </div>
-  </section>
-
   <footer class="foot reveal reveal-4">
     <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 4 pul Uniswap V3 WETH (USDC/WETH 0.05%+0.3%, WETH/USDT 0.05%+0.3%, Ethereum mainnet), pobranych na żywo przez RPC.</span>
     <span>To narzędzie badawcze, nie porada inwestycyjna.</span>
   </footer>
 
 </div>
-
 <script>
 const DATA = __DATA_JSON__;
 const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1078,40 +1021,61 @@ function renderHero() {
   document.getElementById('heroDataTime').textContent = latest.time;
   document.getElementById('heroBlock').textContent = latest.block.toLocaleString('en-US');
 
-  animateNumber(document.getElementById('statTracked'), latest.tracked, { format: (v) => Math.round(v).toLocaleString('en-US') });
-  animateNumber(document.getElementById('statActive'), latest.active, { format: (v) => Math.round(v).toLocaleString('en-US') });
-  animateNumber(document.getElementById('statPool'), latest.pool, { format: (v) => Math.round(v).toLocaleString('en-US') });
-  document.getElementById('statScore').textContent = fmtSigned(latest.composite);
-  document.getElementById('statGood').textContent = latest.goodBuyers + ' / ' + latest.goodSellers;
-  document.getElementById('statBad').textContent = latest.badBuyers + ' / ' + latest.badSellers;
-
-  // --- Faza H3 (brief Hyperliquid, "Pelna przejrzystosc w hero") ---
-  // Rozbicie composite na spot/perp - tylko gdy dana swieca w ogole ma te
-  // pola (starsze swiece sprzed Fazy H2 ich nie mają, dokładnie tak samo
-  // jak `regime` sprzed Fazy 2 - ten sam wzorzec ochronny co w renderRegimeCard()).
-  // Faza "NEUTRAL dead-zone" - to samo pasmo neutralne stosowane TU do
-  // wizualnego wyciszenia spot/perp z osobna (nie tylko do finalnego,
-  // zblendowanego `signal` powyzej) - `signalThreshold` czytany wprost ze
-  // swiecy (jedno miejsce prawdy, patrz live/run_incremental.py), zeby JS
-  // nie duplikowal wartosci progu na twardo.
+  // --- Composite: pokazany jako słowny opis + miernik (Ogólnie/spot/perp),
+  // zamiast surowych liczb - zgłoszenie użytkownika "czym jest composite,
+  // nie bardzo to rozumiem". Reużywa dokładnie ten sam próg (`signalThreshold`,
+  // jedno miejsce prawdy), co dawny statScoreBreakdown/karta ETH-PERP. ---
   const threshold = latest.signalThreshold != null ? latest.signalThreshold : 0;
-  const breakdown = document.getElementById('statScoreBreakdown');
-  if (latest.compositeSpot !== undefined) {
-    const spotNeutral = Math.abs(latest.compositeSpot) <= threshold;
-    const spotHtml = spotNeutral
-      ? '<span class="cb-spot cb-neutral">spot neutralny (' + fmtSigned(latest.compositeSpot) + ')</span>'
-      : '<span class="cb-spot">spot ' + fmtSigned(latest.compositeSpot) + '</span>';
-    if (latest.compositePerp != null) {
-      const perpNeutral = Math.abs(latest.compositePerp) <= threshold;
-      const perpCls = perpNeutral ? 'cb-neutral' : (latest.compositePerp >= 0 ? 'up' : 'down');
-      const perpLabel = perpNeutral ? 'perp neutralny (' + fmtSigned(latest.compositePerp) + ')' : 'perp ' + fmtSigned(latest.compositePerp);
-      breakdown.innerHTML = spotHtml + ' &middot; <span class="cb-perp ' + perpCls + '">' + perpLabel + '</span>';
-    } else {
-      breakdown.innerHTML = spotHtml + ' &middot; perp jeszcze niedojrzały (brak danych)';
-    }
+  renderCompositeMeter('All', latest.composite, threshold);
+  renderCompositeMeter('Spot', latest.compositeSpot !== undefined ? latest.compositeSpot : null, threshold);
+  renderCompositeMeter('Perp', latest.compositePerp != null ? latest.compositePerp : null, threshold);
+
+  // Dodatkowy kontekst dopisywany do (i) przy licznikach - dawna "Pula
+  // scoringu" (Uniswap) i dawna karta ETH-PERP (dojrzałość/próg klasyfikacji
+  // Hyperliquid, PnL bez funding payments) - zamiast osobnych, dużych kart
+  // na te same dane (patrz komentarz H3 przy pierwotnej karcie ETH-PERP).
+  const spotTip = document.getElementById('compositeTipSpot');
+  spotTip.setAttribute('data-tip', spotTip.getAttribute('data-tip') + ' Pula scoringu (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.');
+
+  const perpTip = document.getElementById('compositeTipPerp');
+  const perpBaseTip = 'Presja kupna/sprzedaży wśród portfeli handlujących kontraktami perpetual ETH na Hyperliquid.';
+  if (latest.perpTracked === undefined) {
+    perpTip.setAttribute('data-tip', perpBaseTip + ' Dane z Hyperliquid jeszcze się nie pojawiły w tej historii świec.');
+  } else if (!latest.perpIsMature || latest.compositePerp == null) {
+    perpTip.setAttribute('data-tip', perpBaseTip + ' Jeszcze niedojrzałe: ' + latest.perpClassified.toLocaleString('en-US') + ' / ' + latest.perpMaturityThreshold + ' sklasyfikowanych portfeli w oknie — nie wpływa jeszcze na sygnał, sam spot decyduje bez zmian.');
   } else {
-    breakdown.innerHTML = '';
+    perpTip.setAttribute('data-tip', perpBaseTip + ' Dojrzałe (' + latest.perpClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.perpMaturityThreshold + ') — realnie wpływa na zblendowany sygnał (waga 50/50). PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie).');
   }
+
+  // --- Wallets: GOOD/BAD kupuje/sprzedaje połączone z obu źródeł (Uniswap +
+  // Hyperliquid) w jedną liczbę, z rozbiciem źródeł małym drukiem - patrz
+  // zgłoszenie użytkownika "najbardziej interesuje mnie good/bad portfele,
+  // bez różnicy czy to uniswap czy hyperliquid". ---
+  const hlAvailable = latest.perpTracked !== undefined;
+  const perpGoodBuyers = latest.perpGoodBuyers || 0, perpGoodSellers = latest.perpGoodSellers || 0;
+  const perpBadBuyers = latest.perpBadBuyers || 0, perpBadSellers = latest.perpBadSellers || 0;
+
+  document.getElementById('walletGoodBuy').textContent = latest.goodBuyers + perpGoodBuyers;
+  document.getElementById('walletGoodSell').textContent = latest.goodSellers + perpGoodSellers;
+  document.getElementById('walletBadBuy').textContent = latest.badBuyers + perpBadBuyers;
+  document.getElementById('walletBadSell').textContent = latest.badSellers + perpBadSellers;
+
+  document.getElementById('walletGoodUniBuy').textContent = latest.goodBuyers;
+  document.getElementById('walletGoodUniSell').textContent = latest.goodSellers;
+  document.getElementById('walletBadUniBuy').textContent = latest.badBuyers;
+  document.getElementById('walletBadUniSell').textContent = latest.badSellers;
+  document.getElementById('walletGoodHlBuy').textContent = hlAvailable ? perpGoodBuyers : '–';
+  document.getElementById('walletGoodHlSell').textContent = hlAvailable ? perpGoodSellers : '–';
+  document.getElementById('walletBadHlBuy').textContent = hlAvailable ? perpBadBuyers : '–';
+  document.getElementById('walletBadHlSell').textContent = hlAvailable ? perpBadSellers : '–';
+
+  const trackedTotal = latest.tracked + (hlAvailable ? latest.perpTracked : 0);
+  document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
+  document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US') + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
+
+  const activeTotal = latest.active + (hlAvailable ? latest.perpActive : 0);
+  document.getElementById('walletsActiveTotal').textContent = activeTotal.toLocaleString('en-US');
+  document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US') + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
 
   // Uwaga o rozbieznosci: sam spot wskazywalby inny sygnal niz finalny,
   // zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete do
@@ -1119,13 +1083,81 @@ function renderHero() {
   // zachowania.
   const divNote = document.getElementById('heroDivergenceNote');
   if (latest.signalSpotOnly !== undefined && latest.signalSpotOnly !== latest.signal) {
-    divNote.style.display = 'inline-block';
-    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował Hyperliquid (karta ETH-PERP niżej).';
+    divNote.style.display = 'block';
+    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował Hyperliquid.';
   } else {
     divNote.style.display = 'none';
   }
 }
 
+// Composite pokazany jako słowny opis siły/kierunku + miernik wyśrodkowany na
+// zerze, zamiast surowej liczby - zgłoszenie użytkownika "czym jest composite,
+// nie bardzo to rozumiem". Progi "Wyraźnie"/"Silnie" liczone względem
+// `threshold` (signalThreshold, jedno miejsce prawdy), a nie na sztywno -
+// "Neutralnie" to dokładnie ten sam próg, co gdzie indziej decyduje o
+// (nie)wliczeniu sygnału.
+function renderCompositeMeter(suffix, value, threshold) {
+  const wordEl = document.getElementById('compositeWord' + suffix);
+  const fillEl = document.getElementById('compositeFill' + suffix);
+  const rawEl = document.getElementById('compositeRaw' + suffix);
+
+  if (value == null) {
+    wordEl.textContent = 'Niedojrzałe';
+    wordEl.className = 'composite-word neutral';
+    fillEl.className = 'composite-meter-fill neutral';
+    fillEl.style.left = '50%'; fillEl.style.right = 'auto'; fillEl.style.width = '0%';
+    rawEl.textContent = '-';
+    return;
+  }
+
+  const abs = Math.abs(value);
+  const neutral = abs <= threshold;
+  const mid = threshold * 1.7;
+  const bullish = value >= 0;
+  let word;
+  if (neutral) word = 'Neutralnie';
+  else word = (abs <= mid ? 'Wyraźnie' : 'Silnie') + ' ' + (bullish ? 'byczy' : 'niedźwiedzi');
+
+  wordEl.textContent = word;
+  wordEl.className = 'composite-word ' + (neutral ? 'neutral' : (bullish ? 'up' : 'down'));
+
+  const halfWidth = (Math.min(abs, 1) * 50).toFixed(1) + '%';
+  if (bullish) {
+    fillEl.style.left = '50%'; fillEl.style.right = 'auto'; fillEl.style.width = halfWidth;
+  } else {
+    fillEl.style.right = '50%'; fillEl.style.left = 'auto'; fillEl.style.width = halfWidth;
+  }
+  fillEl.className = 'composite-meter-fill ' + (neutral ? 'neutral' : (bullish ? 'up' : 'down'));
+
+  rawEl.textContent = fmtSigned(value);
+}
+
+const MOOD_ICON_FLAT = '<svg width="22" height="22" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="2" rx="1" fill="currentColor"/></svg>';
+const MOOD_ICON_UP = '<svg width="22" height="22" viewBox="0 0 24 24"><polygon points="12,4 21,18 3,18" fill="currentColor"/></svg>';
+const MOOD_ICON_DOWN = '<svg width="22" height="22" viewBox="0 0 24 24"><polygon points="12,20 3,6 21,6" fill="currentColor"/></svg>';
+const EVENT_ICON_WARN = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3 L22 20 H2 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><rect x="11" y="9" width="2" height="6" rx="1" fill="currentColor"/><rect x="11" y="16.5" width="2" height="2" rx="1" fill="currentColor"/></svg>';
+
+// Zdarzenia regime -> krótki opis po polsku, bez żargonu. Pełna lista typów
+// zdarzeń i objaśnienie żargonu (START/END BULL/BEAR, CAPITULATION/
+// DISTRIBUTION) zostają w tabeli "Zdarzenia regime" niżej, przy (i) na
+// nagłówku "Zdarzenie" - tu tylko ostatni event, jako jedno zdanie.
+const EVENT_WORDS = {
+  START_BULL_MARKET: 'Początek trendu wzrostowego',
+  END_BULL_MARKET: 'Koniec trendu wzrostowego',
+  START_BEAR_MARKET: 'Początek trendu spadkowego',
+  END_BEAR_MARKET: 'Koniec trendu spadkowego',
+  CAPITULATION: 'Możliwe dno',
+  DISTRIBUTION: 'Możliwa wyprzedaż',
+};
+
+// Faza "Regime uproszczony do makiety" (zgłoszenie użytkownika: karta
+// "Regime rynkowy" ma być zrozumiała bez znajomości rynku, zmniejszona do
+// tego, co pokazywała zatwierdzona makieta) - usunięte względem
+// poprzedniej wersji: sparkline trendu BYCZY/NIEDŹWIEDZI, meta-grid
+// (Confidence/Horyzont momentum/Historia danych jako osobne kafelki - sam
+// Confidence zostaje, w mood-sub), flip-row (GOOD/BAD flips) i akapit
+// zastrzeżeń. Pełna historia zdarzeń zostaje osobno w karcie "Zdarzenia
+// regime" niżej.
 function renderRegimeCard() {
   const candles = DATA.candles;
   // Nie każda świeca ma pola regime (te z przed wdrożenia Fazy 2 nie mają) - szukamy
@@ -1133,157 +1165,53 @@ function renderRegimeCard() {
   const withRegime = candles.filter((c) => c.regime !== undefined);
   const latest = withRegime.length ? withRegime[withRegime.length - 1] : null;
 
-  const pill = document.getElementById('regimePill');
-  const note = document.getElementById('regimeEventNote');
+  const iconWrap = document.getElementById('moodIconWrap');
+  const labelText = document.getElementById('moodLabelText');
+  const sub = document.getElementById('moodSub');
+  const eventRow = document.getElementById('eventRow');
 
   if (!latest) {
-    pill.textContent = 'BRAK DANYCH';
-    pill.className = 'regime-pill regime-pill--none';
-    note.textContent = 'regime-detection jeszcze nie wystartowało w tej historii świec.';
+    iconWrap.className = 'mood-icon-wrap neutral';
+    iconWrap.innerHTML = MOOD_ICON_FLAT;
+    labelText.textContent = 'Brak danych';
+    sub.textContent = 'regime-detection jeszcze nie wystartowało w tej historii świec';
     document.getElementById('towBull').style.width = '50%';
     document.getElementById('towBear').style.width = '50%';
-    document.getElementById('towBullVal').textContent = '-';
-    document.getElementById('towBearVal').textContent = '-';
-    document.getElementById('regimeConfidence').textContent = '-';
-    document.getElementById('regimeHorizon').textContent = '-';
-    document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
-    document.getElementById('flipRow').innerHTML = '';
-    document.getElementById('regimeSparklineWrap').style.display = 'none';
+    eventRow.style.display = 'none';
     return;
   }
 
-  pill.textContent = latest.regime;
-  pill.className = 'regime-pill regime-pill--' + (latest.regime === 'BULL' ? 'bull' : latest.regime === 'BEAR' ? 'bear' : 'neutral');
-
-  if (latest.regimeEvent) {
-    note.textContent = 'ostatni event na tej świecy: ' + latest.regimeEvent;
-  } else if (latest.specialEvent) {
-    note.textContent = 'ostatni event na tej świecy: ' + latest.specialEvent + ' (confidence ' + latest.specialEventConfidence.toFixed(0) + ')';
-  } else {
-    note.textContent = 'brak eventu na ostatniej świecy';
-  }
+  const moodBySignal = {
+    BULL: { cls: 'bull', icon: MOOD_ICON_UP, text: 'Rynek rośnie', word: 'Byczy' },
+    BEAR: { cls: 'bear', icon: MOOD_ICON_DOWN, text: 'Rynek spada', word: 'Niedźwiedzi' },
+    NEUTRAL: { cls: 'neutral', icon: MOOD_ICON_FLAT, text: 'Bez wyraźnego kierunku', word: 'Neutralny' },
+  };
+  const mood = moodBySignal[latest.regime] || moodBySignal.NEUTRAL;
+  iconWrap.className = 'mood-icon-wrap ' + mood.cls;
+  iconWrap.innerHTML = mood.icon;
+  labelText.textContent = mood.text;
+  sub.textContent = mood.word + (latest.regimeConfidence != null ? ' · pewność ' + latest.regimeConfidence.toFixed(0) + '%' : '');
 
   const bull = latest.bullScore || 0, bear = latest.bearScore || 0;
   const total = bull + bear;
   const bullPct = total > 0 ? (bull / total) * 100 : 50;
   document.getElementById('towBull').style.width = bullPct.toFixed(1) + '%';
   document.getElementById('towBear').style.width = (100 - bullPct).toFixed(1) + '%';
-  document.getElementById('towBullVal').textContent = bull.toFixed(1);
-  document.getElementById('towBearVal').textContent = bear.toFixed(1);
 
-  document.getElementById('regimeConfidence').textContent = latest.regimeConfidence != null ? latest.regimeConfidence.toFixed(1) : '-';
-  document.getElementById('regimeHorizon').textContent = latest.regimeMomentumHorizon || '-';
-
-  document.getElementById('regimeMaturity').textContent = candles.length.toLocaleString('en-US');
-  document.getElementById('regimeMaturityHint').innerHTML = 'świec &middot; od ' + candles[0].time;
-
-  const flipRow = document.getElementById('flipRow');
-  if (latest.goodBullishFlips === undefined) {
-    flipRow.innerHTML = '<span class="flip-chip">Wallet flips: dane jeszcze się zbierają (Faza 3)</span>';
+  // Najnowszy event (stanu regime albo specjalny) - priorytet dla eventu
+  // "stanu", tak jak w oryginalnej notce hero (renderRegimeCard sprzed tej fazy).
+  const evt = latest.regimeEvent || latest.specialEvent;
+  if (!evt) {
+    eventRow.style.display = 'none';
   } else {
-    flipRow.innerHTML =
-      '<span class="flip-chip">GOOD flips: <b class="flip-up">&uarr;' + latest.goodBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.goodBearishFlips + '</b></span>' +
-      '<span class="flip-chip">BAD flips: <b class="flip-up">&uarr;' + latest.badBullishFlips + '</b> / <b class="flip-down">&darr;' + latest.badBearishFlips + '</b></span>';
+    eventRow.style.display = 'flex';
+    const bullish = isBullish(evt), bearish = isBearish(evt);
+    document.getElementById('eventIconWrap').className = 'event-icon-wrap ' + (bullish ? 'bull' : bearish ? 'bear' : 'muted');
+    document.getElementById('eventIconWrap').innerHTML = EVENT_ICON_WARN;
+    document.getElementById('eventLabelText').textContent = EVENT_WORDS[evt] || evt.replace(/_/g, ' ');
+    const conf = evt === latest.regimeEvent ? latest.regimeConfidence : latest.specialEventConfidence;
+    document.getElementById('eventSub').textContent = evt.replace(/_/g, ' ') + (conf != null ? ' · pewność ' + conf.toFixed(0) + '%' : '');
   }
-
-  renderRegimeSparkline(withRegime);
-}
-
-// Faza UX/UI 2 - mini-sparkline trendu bullScore/bearScore. Reużywa ten sam
-// wzorzec filtrowania co renderRegimeCard() ("nie każda świeca ma te pola") -
-// tu dodatkowo wymagane OBA bullScore i bearScore na tej samej świecy, bo
-// rysujemy dwie linie na współnej osi. Ucięte do ostatnich 40 punktów, żeby
-// trend był czytelny (nie ściśnięty), nie do pełnej historii.
-function renderRegimeSparkline(withRegime) {
-  const wrap = document.getElementById('regimeSparklineWrap');
-  const svg = document.getElementById('regimeSparkline');
-  const pts = withRegime.filter((c) => c.bullScore != null && c.bearScore != null).slice(-40);
-
-  if (pts.length < 2) {
-    wrap.style.display = 'none';
-    return;
-  }
-  wrap.style.display = 'block';
-
-  const W = 300, H = 48, PAD = 3;
-  const allVals = pts.flatMap((c) => [c.bullScore, c.bearScore]).concat([0, 90]); // 0-90: patrz "sufit 90" w caveat karty
-  const vMin = Math.min(...allVals), vMax = Math.max(...allVals);
-  const xAt = (i) => PAD + (i / (pts.length - 1)) * (W - PAD * 2);
-  const yAt = (v) => H - PAD - ((v - vMin) / (vMax - vMin || 1)) * (H - PAD * 2);
-
-  const ns = 'http://www.w3.org/2000/svg';
-  const mkPath = (key, cls) => {
-    let d = '';
-    pts.forEach((c, i) => { d += (i === 0 ? 'M ' : 'L ') + xAt(i).toFixed(2) + ',' + yAt(c[key]).toFixed(2) + ' '; });
-    const p = document.createElementNS(ns, 'path');
-    p.setAttribute('d', d.trim());
-    p.setAttribute('class', cls);
-    return p;
-  };
-
-  svg.innerHTML = '';
-  svg.appendChild(mkPath('bullScore', 'spark-bull'));
-  svg.appendChild(mkPath('bearScore', 'spark-bear'));
-
-  document.getElementById('sparklineRange').textContent = '(ostatnie ' + pts.length + ' świec)';
-}
-
-function renderPerpCard() {
-  // Faza H3 (brief Hyperliquid) - odpowiednik renderRegimeCard() dla
-  // drugiego, niezaleznego toru danych (ETH-PERP na Hyperliquid). Ten sam
-  // wzorzec ochronny: nie kazda swieca ma pola "perp*" (te sprzed Fazy H2/H3
-  // nie maja) - szukamy od konca najnowszej swiecy, ktora faktycznie je ma.
-  const candles = DATA.candles;
-  const withPerp = candles.filter((c) => c.perpTracked !== undefined);
-  const latest = withPerp.length ? withPerp[withPerp.length - 1] : null;
-
-  const pill = document.getElementById('perpPill');
-  const note = document.getElementById('perpNote');
-
-  if (!latest) {
-    pill.textContent = 'BRAK DANYCH';
-    pill.className = 'regime-pill regime-pill--none';
-    note.textContent = 'dane z Hyperliquid jeszcze się nie pojawiły w tej historii świec.';
-    document.getElementById('perpTracked').textContent = '-';
-    document.getElementById('perpClassified').textContent = '-';
-    document.getElementById('perpComposite').textContent = '-';
-    document.getElementById('perpBuySellRow').innerHTML = '';
-    return;
-  }
-
-  document.getElementById('perpTracked').textContent = latest.perpTracked.toLocaleString('en-US');
-  document.getElementById('perpClassified').textContent = latest.perpClassified.toLocaleString('en-US');
-  const threshold = latest.perpMaturityThreshold != null ? latest.perpMaturityThreshold : '-';
-  document.getElementById('perpMaturityHint').textContent = 'próg dojrzałości: ' + threshold;
-
-  if (!latest.perpIsMature || latest.compositePerp == null) {
-    pill.textContent = 'BRAK DANYCH (niedojrzałe)';
-    pill.className = 'regime-pill regime-pill--none';
-    note.textContent = latest.perpClassified + ' / ' + threshold + ' sklasyfikowanych portfeli w oknie — composite_perp nie wpływa jeszcze na sygnał, sam spot decyduje bez zmian.';
-    document.getElementById('perpComposite').textContent = '-';
-  } else {
-    document.getElementById('perpComposite').textContent = fmtSigned(latest.compositePerp);
-    // Faza "NEUTRAL dead-zone" - ten sam prog co przy decyzji LONG/SHORT w
-    // hero (`signalThreshold`, jedno miejsce prawdy w danych), zastosowany
-    // tu do samego compositePerp - slaby, niejednoznaczny odczyt z
-    // Hyperliquid pokazuje sie jako NEUTRALNY, nie na sile BYCZY/NIEDZWIEDZI.
-    const neutralBand = latest.signalThreshold != null ? latest.signalThreshold : 0;
-    if (Math.abs(latest.compositePerp) <= neutralBand) {
-      pill.textContent = 'NEUTRALNY';
-      pill.className = 'regime-pill regime-pill--neutral';
-      note.textContent = 'dojrzałe, ale composite_perp w paśmie neutralnym (|wartość| ≤ ' + neutralBand.toFixed(2) + ') — zbyt słaby, żeby jednoznacznie wskazać kierunek.';
-    } else {
-      const bullish = latest.compositePerp > 0;
-      pill.textContent = bullish ? 'BYCZY (+)' : 'NIEDŹWIEDZI (−)';
-      pill.className = 'regime-pill ' + (bullish ? 'regime-pill--good' : 'regime-pill--bad');
-      note.textContent = 'dojrzałe — realnie wpływa na zblendowany sygnał LONG/SHORT w hero (waga 50/50).';
-    }
-  }
-
-  const buySellRow = document.getElementById('perpBuySellRow');
-  buySellRow.innerHTML =
-    '<span class="flip-chip">GOOD kupuje / sprzedaje: <b class="flip-up">' + latest.perpGoodBuyers + '</b> / <b class="flip-down">' + latest.perpGoodSellers + '</b></span>' +
-    '<span class="flip-chip">BAD kupuje / sprzedaje: <b class="flip-down">' + latest.perpBadBuyers + '</b> / <b class="flip-up">' + latest.perpBadSellers + '</b></span>';
 }
 
 // Faza "kolejność bloków + paginacja zdarzeń regime" - zdarzenia regime
@@ -1788,7 +1716,6 @@ document.addEventListener('click', () => {
 
 renderHero();
 renderRegimeCard();
-renderPerpCard();
 buildMainChart(filterCandlesByRange(currentRange));
 buildEventLog();
 buildHistory();
