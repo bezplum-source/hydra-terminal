@@ -869,33 +869,6 @@
 
     </div>
   </section>
-  <section class="card reveal reveal-4" id="eventLogCard">
-    <div class="card-head">
-      <span class="card-title">Zdarzenia regime</span>
-      <span class="card-note">START/END BULL/BEAR &middot; CAPITULATION/DISTRIBUTION, najnowsze na górze</span>
-    </div>
-    <div class="table-scroll">
-      <table class="history">
-        <thead>
-          <tr>
-            <th>Zdarzenie<span class="info-tip" tabindex="0" data-tip="START/END BULL/BEAR MARKET: przejścia maszyny stanów regime'u. CAPITULATION/DISTRIBUTION: pojedyncze, silne momenty presji sprzedaży (capitulation) albo rozładowywania pozycji przez dobrych traderów (distribution) — same nie zmieniają stanu BULL/BEAR, tylko go potęgują.">ⓘ</span></th>
-            <th>Kiedy</th>
-            <th class="num">Cena</th>
-            <th class="num">Confidence</th>
-          </tr>
-        </thead>
-        <tbody id="eventLogBody"></tbody>
-      </table>
-    </div>
-    <!-- Faza UX/UI "kolejnosc bloków + paginacja zdarzen regime" - ten sam
-         wzorzec co historia sygnalów: kontener domyslnie ukryty, pojawia sie
-         tylko gdy jest wiecej niz jedna strona. -->
-    <div class="table-pagination" id="eventLogPagination" style="display:none;">
-      <button type="button" class="page-btn" id="eventLogPrevBtn">‹ Poprzednie</button>
-      <span class="page-indicator" id="eventLogPageIndicator">Strona 1 z 1</span>
-      <button type="button" class="page-btn" id="eventLogNextBtn">Następne ›</button>
-    </div>
-  </section>
   <section class="card reveal reveal-2">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
@@ -1137,10 +1110,18 @@ const MOOD_ICON_UP = '<svg width="22" height="22" viewBox="0 0 24 24"><polygon p
 const MOOD_ICON_DOWN = '<svg width="22" height="22" viewBox="0 0 24 24"><polygon points="12,20 3,6 21,6" fill="currentColor"/></svg>';
 const EVENT_ICON_WARN = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3 L22 20 H2 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><rect x="11" y="9" width="2" height="6" rx="1" fill="currentColor"/><rect x="11" y="16.5" width="2" height="2" rx="1" fill="currentColor"/></svg>';
 
-// Zdarzenia regime -> krótki opis po polsku, bez żargonu. Pełna lista typów
-// zdarzeń i objaśnienie żargonu (START/END BULL/BEAR, CAPITULATION/
-// DISTRIBUTION) zostają w tabeli "Zdarzenia regime" niżej, przy (i) na
-// nagłówku "Zdarzenie" - tu tylko ostatni event, jako jedno zdanie.
+// Zdarzenia regime -> krótki opis po polsku, bez żargonu, tylko ostatni
+// event jako jedno zdanie (ikona + etykieta w mood-row, techniczna nazwa +
+// confidence w event-sub małym drukiem). Faza "usunięcie karty Zdarzenia
+// regime" (zgłoszenie użytkownika: Nastrój rynku już to podsumowuje, więc
+// osobna, paginowana tabela pełnej historii zdarzeń nie jest potrzebna) -
+// ta tabela istniała tu wcześniej jako osobna karta pod kartą Nastrój
+// rynku; usunięta razem z buildEventLog() niżej. Pełna lista technicznych
+// typów zdarzeń zostaje tylko w komentarzu tutaj, nie w UI:
+// START/END BULL/BEAR MARKET (przejścia maszyny stanów regime'u),
+// CAPITULATION/DISTRIBUTION (pojedyncze, silne momenty presji sprzedaży
+// albo rozładowywania pozycji przez dobrych traderów - same nie zmieniają
+// stanu BULL/BEAR, tylko go potęgują).
 const EVENT_WORDS = {
   START_BULL_MARKET: 'Początek trendu wzrostowego',
   END_BULL_MARKET: 'Koniec trendu wzrostowego',
@@ -1156,8 +1137,9 @@ const EVENT_WORDS = {
 // poprzedniej wersji: sparkline trendu BYCZY/NIEDŹWIEDZI, meta-grid
 // (Confidence/Horyzont momentum/Historia danych jako osobne kafelki - sam
 // Confidence zostaje, w mood-sub), flip-row (GOOD/BAD flips) i akapit
-// zastrzeżeń. Pełna historia zdarzeń zostaje osobno w karcie "Zdarzenia
-// regime" niżej.
+// zastrzeżeń. Pełna historia zdarzeń miała wcześniej osobną kartę
+// "Zdarzenia regime" niżej - usunięta w kolejnej fazie (patrz komentarz
+// przy EVENT_WORDS wyżej), skoro ta karta już podsumowuje najnowszy event.
 function renderRegimeCard() {
   const candles = DATA.candles;
   // Nie każda świeca ma pola regime (te z przed wdrożenia Fazy 2 nie mają) - szukamy
@@ -1211,63 +1193,6 @@ function renderRegimeCard() {
     document.getElementById('eventLabelText').textContent = EVENT_WORDS[evt] || evt.replace(/_/g, ' ');
     const conf = evt === latest.regimeEvent ? latest.regimeConfidence : latest.specialEventConfidence;
     document.getElementById('eventSub').textContent = evt.replace(/_/g, ' ') + (conf != null ? ' · pewność ' + conf.toFixed(0) + '%' : '');
-  }
-}
-
-// Faza "kolejność bloków + paginacja zdarzeń regime" - zdarzenia regime
-// rosną bez końca dokładnie jak historia sygnałów (buildHistory() niżej),
-// więc dostają ten sam wzorzec paginacji zamiast renderować wszystkie
-// wiersze naraz. `rows` jest już najnowsze-na-górze, więc strona 1 = zawsze
-// najnowsze zdarzenia, tak jak w historii sygnałów.
-const EVENTLOG_PAGE_SIZE = 15;
-let eventLogPage = 0;
-
-function buildEventLog() {
-  const candles = DATA.candles;
-  const rows = [];
-  candles.forEach((c) => {
-    if (c.regimeEvent && REGIME_STATE_EVENTS.indexOf(c.regimeEvent) !== -1) {
-      rows.push({ type: c.regimeEvent, time: c.time, price: c.price, confidence: c.regimeConfidence });
-    }
-    if (c.specialEvent && SPECIAL_EVENTS.indexOf(c.specialEvent) !== -1) {
-      rows.push({ type: c.specialEvent, time: c.time, price: c.price, confidence: c.specialEventConfidence });
-    }
-  });
-  rows.reverse(); // najnowsze na górze
-
-  const tbody = document.getElementById('eventLogBody');
-  const pagination = document.getElementById('eventLogPagination');
-
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Jeszcze żadnych zdarzeń regime — pojawią się tu automatycznie, gdy wystąpią.</td></tr>';
-    pagination.style.display = 'none';
-    return;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(rows.length / EVENTLOG_PAGE_SIZE));
-  eventLogPage = Math.max(0, Math.min(eventLogPage, totalPages - 1));
-  const startIdx = eventLogPage * EVENTLOG_PAGE_SIZE;
-  const pageRows = rows.slice(startIdx, startIdx + EVENTLOG_PAGE_SIZE);
-
-  tbody.innerHTML = '';
-  pageRows.forEach((r) => {
-    const cls = r.type.indexOf('END_') === 0 ? 'muted' : isBullish(r.type) ? 'bull' : isBearish(r.type) ? 'bear' : 'muted';
-    const tr = document.createElement('tr');
-    tr.innerHTML =
-      '<td><span class="row-pill ' + cls + '">' + r.type.replace(/_/g, ' ') + '</span></td>' +
-      '<td>' + r.time + '</td>' +
-      '<td class="num">' + fmtUsd(r.price) + '</td>' +
-      '<td class="num">' + (r.confidence != null ? r.confidence.toFixed(1) : '-') + '</td>';
-    tbody.appendChild(tr);
-  });
-
-  if (rows.length > EVENTLOG_PAGE_SIZE) {
-    pagination.style.display = 'flex';
-    document.getElementById('eventLogPageIndicator').textContent = 'Strona ' + (eventLogPage + 1) + ' z ' + totalPages;
-    document.getElementById('eventLogPrevBtn').disabled = eventLogPage === 0;
-    document.getElementById('eventLogNextBtn').disabled = eventLogPage >= totalPages - 1;
-  } else {
-    pagination.style.display = 'none';
   }
 }
 
@@ -1692,13 +1617,6 @@ document.getElementById('historyNextBtn').addEventListener('click', () => {
   historyPage++; buildHistory();
 });
 
-document.getElementById('eventLogPrevBtn').addEventListener('click', () => {
-  if (eventLogPage > 0) { eventLogPage--; buildEventLog(); }
-});
-document.getElementById('eventLogNextBtn').addEventListener('click', () => {
-  eventLogPage++; buildEventLog();
-});
-
 // Faza UX/UI 2 - info-tip: hover działa tylko z myszą, więc na dotyku
 // (gdzie hover nie istnieje) klik/tap przełącza widoczność tooltipa;
 // klik gdziekolwiek indziej zamyka wszystkie otwarte.
@@ -1717,7 +1635,6 @@ document.addEventListener('click', () => {
 renderHero();
 renderRegimeCard();
 buildMainChart(filterCandlesByRange(currentRange));
-buildEventLog();
 buildHistory();
 renderAggregateStats();
 renderFooter();
