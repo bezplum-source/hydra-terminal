@@ -199,6 +199,14 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # z tego repo (ktory realnie istnieje i ma ustawiona wartosc dla
     # zywej strony) zamiast izolowanego tmp_path.
     monkeypatch.setattr(st, "STATS_RESET_STATE_PATH", tmp_path / "data" / "stats_reset_state.json")
+    # BUGFIX (znaleziony 2026-09-09 przy okazji redesignu frontu): SIGNAL_STATE_PATH
+    # istnieje w live/state.py od Fazy 0/1 (razem z SCORING_STATE_PATH wyzej), ale
+    # nigdy nie zostalo tutaj dopatchowane - dokladnie ta sama klasa bledu co przy
+    # REGIME_STATE_PATH/WALLET_FLIP_STATE_PATH (patrz komentarz wyzej): testy nizej
+    # wywolujace run_incremental.main()/SignalEngine czytaly/pisaly PRAWDZIWY plik
+    # data/signal_state.json w tym repo zamiast do tmp_path (zaobserwowana realna
+    # zmiana "SHORT" -> "HOLD" po samym odpaleniu `pytest`, bez zadnych innych zmian).
+    monkeypatch.setattr(st, "SIGNAL_STATE_PATH", tmp_path / "data" / "signal_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
