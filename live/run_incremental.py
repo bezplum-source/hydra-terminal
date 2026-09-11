@@ -66,6 +66,7 @@ from hydra_signals.scoring import (  # noqa: E402
     ScoringConfig,
     ScoringEngine,
     SignalEngine,
+    SpotPoolEngine,
     blend_composite,
     decide_signal,
 )
@@ -151,14 +152,20 @@ BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY = int(
     os.environ.get("HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY", "20")
 )
 
-# Waga composite_base w POLACZONEJ wartosci "spot" (mainnet+Base) - ten sam
-# wzorzec i ta sama wartosc startowa (50/50) co HYPERLIQUID_PERP_WEIGHT
-# nizej, zaakceptowana przez uzytkownika przez AskUserQuestion ("Base
-# wzmacnia strone spot"). composite_spot_combined = blend_composite(
-# composite_spot_mainnet, composite_base, perp_weight=BASE_SPOT_WEIGHT) -
-# ta polaczona wartosc idzie DALEJ do blendu z composite_perp, dokladnie tak
-# jak surowy composite_spot robil to wczesniej (patrz main() nizej).
-BASE_SPOT_WEIGHT = float(os.environ.get("HYDRA_BASE_SPOT_WEIGHT", "0.5"))
+# USUNIETE (Faza "wspolna pula SPOT", 2026-09-11) - `BASE_SPOT_WEIGHT`/
+# `HYDRA_BASE_SPOT_WEIGHT` istnialy tu wczesniej (Faza "integracja Base
+# B1-B3"): stala waga 50/50, z jaka `composite_base` byl blendowany z
+# `composite_spot` mainnetu. Zgloszenie uzytkownika po zobaczeniu zywych
+# danych: przy zaledwie 7 sklasyfikowanych transakcjach Base w oknie (wobec
+# 31 na Uniswapie) Base i tak dostawal pelne 50% wagi - garstka portfeli
+# potrafila przeciagnac polaczona wartosc z SHORT do NEUTRALNIE. Zamiast
+# stalej wagi: Uniswap i Base sa teraz w JEDNEJ wspolnej puli liczników
+# (patrz `SpotPoolEngine` w hydra_signals/scoring.py i jego uzycie w
+# main() nizej) - wplyw kazdego venue jest proporcjonalny do jego
+# RZECZYWISTEJ aktywnosci w danym oknie, bez zadnej sztywnej stalej. Jesli
+# ktos ma jeszcze ustawiona zmienna `HYDRA_BASE_SPOT_WEIGHT` w GitHub
+# Actions - jest teraz calkowicie nieszkodliwie ignorowana (nic juz jej nie
+# czyta).
 
 # Okno przycinania bufora `base_trade_buffer.csv` - od Fazy "integracja Base
 # B1-B3" to JUZ NIE tylko zabezpieczenie przed nieograniczonym wzrostem
@@ -203,6 +210,7 @@ def main() -> int:
     hyperliquid_wallets_seen = st.load_hyperliquid_wallets_seen()
     base_scoring_state = st.load_base_scoring_state()
     base_wallets_seen = st.load_base_wallets_seen()
+    spot_pool_state = st.load_spot_pool_state()
 
     # --- Faza H2/H3 (brief Hyperliquid) - osobny, rownolegly silnik na danych
     # z Hyperliquid (zbieranych przez OSOBNY workflow/listener, patrz
@@ -421,6 +429,24 @@ def main() -> int:
         initial_wallet_flip_state=wallet_flip_state,
     )
 
+    # Faza "wspolna pula SPOT" - `SpotPoolEngine` zastepuje wczesniejszy
+    # `blend_composite(composite_spot, composite_base, BASE_SPOT_WEIGHT)`
+    # (patrz USUNIETY komentarz `BASE_SPOT_WEIGHT` wyzej i docstring klasy
+    # w hydra_signals/scoring.py). MIGRACJA: jesli `spot_pool_state.json`
+    # jeszcze nie istnieje (pierwsze uruchomienie po wdrozeniu tej fazy),
+    # NIE zaczynamy z EMA=None "na zimno" - dziedziczymy JUZ ROZGRZANE EMA
+    # z `scoring_state` (mainnet, wczytany wyzej, PRZED aktualizacja w tym
+    # uruchomieniu). Dzieki temu, dopoki Base nie wnosi zadnych transakcji
+    # do puli (niedojrzaly/nieskonfigurowany - patrz zerowanie licznikow
+    # Base nizej), `composite_spot_combined` zostaje BAJT W BAJT identyczne
+    # z `compositeSpot` (Uniswap), bez sztucznego okresu rozgrzewania -
+    # dokladnie ta sama gwarancja "zero ryzyka", co przy wprowadzeniu
+    # samego Base (Faza B1-B3).
+    spot_pool_engine = SpotPoolEngine(
+        cfg,
+        initial_ema=spot_pool_state if spot_pool_state else scoring_state,
+    )
+
     price_source = trimmed_buffer if trimmed_buffer else new_trades
     price_at_block = st.price_at_block_factory(price_source)
 
@@ -474,20 +500,31 @@ def main() -> int:
             # nadrabiania zaleglosci - swiadome uproszczenie, jak wiele
             # innych progow/przyblizen w tym projekcie).
             #
-            # --- Faza "integracja Base B1-B3" - `composite_base` (jak
-            # `composite_perp`, policzone raz PRZED ta petla) NAJPIERW
-            # blenduje sie z `s.composite_score` (mainnet, NIEZMIENIONE) w
-            # JEDNA polaczona wartosc "spot" - decyzja uzytkownika ("Base
-            # wzmacnia strone spot"), zamiast osobnego trzeciego toru. Ta
-            # polaczona wartosc idzie DALEJ do istniejacego blendu z
-            # composite_perp, dokladnie tak jak surowy composite_spot robil
-            # to wczesniej - `blend_composite` sam gracefully degraduje do
-            # WYLACZNIE `s.composite_score`, dopoki `composite_base is None`
-            # (Base niedojrzaly/nieskonfigurowany), wiec ta zmiana jest
-            # ZERO-RYZYKOWNA dla kazdego, kto nie ma jeszcze ustawionego
-            # `ALCHEMY_BASE_RPC_URL`.
-            composite_spot_combined = blend_composite(
-                s.composite_score, composite_base, perp_weight=BASE_SPOT_WEIGHT
+            # --- Faza "wspolna pula SPOT" (2026-09-11) - zamiast blendowac
+            # `composite_base` (osobne EMA Base) z `s.composite_score`
+            # (mainnet) stala waga 50/50 (jak w Fazie "integracja Base
+            # B1-B3"), SUMUJEMY surowe liczniki good/bad buyers-sellers
+            # OBU torow w JEDNA polaczona pule i liczymy z niej JEDEN
+            # wskaznik przez `spot_pool_engine` (patrz jego docstring w
+            # hydra_signals/scoring.py). Gdy Base jest niedojrzaly/
+            # nieskonfigurowany (`base_snapshot["is_mature"]` False),
+            # wnosi ZERO do liczników - pula naturalnie redukuje sie do
+            # samego Uniswapa, ta sama gwarancja "graceful degradation" co
+            # wczesniej przy `blend_composite(spot, None)`.
+            # (nazwa celowo INNA niz `base_is_mature` uzywana pozniej w
+            # bloku zbierania Base na koncu main() - to dwie ODREBNE zmienne
+            # lokalne w tej samej funkcji, zeby nie sugerowac mylnie, ze to
+            # ten sam stan).
+            base_counts_mature = base_snapshot["is_mature"]
+            pool_good_buyers = s.good_buyers + (base_snapshot["good_buyers"] if base_counts_mature else 0)
+            pool_good_sellers = s.good_sellers + (base_snapshot["good_sellers"] if base_counts_mature else 0)
+            pool_bad_buyers = s.bad_buyers + (base_snapshot["bad_buyers"] if base_counts_mature else 0)
+            pool_bad_sellers = s.bad_sellers + (base_snapshot["bad_sellers"] if base_counts_mature else 0)
+            composite_spot_combined = spot_pool_engine.update(
+                good_buyers=pool_good_buyers,
+                good_sellers=pool_good_sellers,
+                bad_buyers=pool_bad_buyers,
+                bad_sellers=pool_bad_sellers,
             )
             composite_final = blend_composite(
                 composite_spot_combined, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
@@ -631,6 +668,7 @@ def main() -> int:
     st.save_regime_state(regime_engine.export_state())
     st.save_signal_state(signal_engine.export_state())
     st.save_wallet_flip_state(engine.export_wallet_flip_state())
+    st.save_spot_pool_state(spot_pool_engine.export_state())
 
     # Faza "wiarygodna swiezosc" - `lastRunUtc` to zegar SCIANY (kiedy TEN
     # skrypt faktycznie zakonczyl dzialanie), nie znacznik czasu bloku.
