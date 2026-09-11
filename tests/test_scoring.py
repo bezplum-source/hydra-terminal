@@ -1,5 +1,13 @@
+import pytest
+
 from hydra_signals.models import Side, Trade, Signal
-from hydra_signals.scoring import ScoringConfig, ScoringEngine, blend_composite, decide_signal
+from hydra_signals.scoring import (
+    ScoringConfig,
+    ScoringEngine,
+    SpotPoolEngine,
+    blend_composite,
+    decide_signal,
+)
 
 
 def make_trade(wallet, block, side, price, size):
@@ -215,6 +223,106 @@ def test_total_good_bad_classified_reports_whole_cohort_not_just_active_window()
     assert s.pool_size == 0
     assert s.bad_sellers == 1
     assert s.good_buyers == 0 and s.good_sellers == 0
+
+
+# =====================================================================
+# Faza "wspolna pula SPOT" (2026-09-11) - SpotPoolEngine (Uniswap+Base
+# w JEDNEJ puli, zamiast blend_composite ze stala waga BASE_SPOT_WEIGHT)
+# =====================================================================
+
+
+def test_spot_pool_engine_cold_start_matches_single_window_formula():
+    # Pierwsze wywolanie (EMA=None) - _ema_step zwraca surowa wartosc
+    # niezmieniona, wiec composite to po prostu (w_good_short+w_good_long)*
+    # (good_ratio-0.5) - (w_bad_short+w_bad_long)*(bad_ratio-0.5) z
+    # domyslnymi wagami (1.0+0.5=1.5 po obu stronach).
+    engine = SpotPoolEngine(ScoringConfig())
+    composite = engine.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
+    good_ratio = 3 / 4
+    bad_ratio = 1 / 4
+    expected = 1.5 * (good_ratio - 0.5) - 1.5 * (bad_ratio - 0.5)
+    assert composite == pytest.approx(expected)
+
+
+def test_spot_pool_engine_no_activity_in_a_cohort_is_neutral_not_nan():
+    # Brak aktywnosci w kohorcie (0/0) -> ratio=0.5 (neutralne), tak samo
+    # jak w ScoringEngine.run() - zaden dzielenie-przez-zero/NaN.
+    engine = SpotPoolEngine(ScoringConfig())
+    composite = engine.update(good_buyers=0, good_sellers=0, bad_buyers=2, bad_sellers=0)
+    # good_ratio=0.5 (brak aktywnosci) -> skladnik good=0. bad_ratio=1.0
+    # (same zakupy w kohorcie BAD - kontrariansko niedzwiedzie).
+    expected = 1.5 * (0.5 - 0.5) - 1.5 * (1.0 - 0.5)
+    assert composite == pytest.approx(expected)
+
+
+def test_spot_pool_engine_zero_contribution_matches_single_venue_alone():
+    # Rdzen "graceful degradation": dopisanie WENUE z zerowymi licznikami
+    # (odpowiednik niedojrzalego/nieskonfigurowanego Base) do puli MUSI dac
+    # identyczny wynik, jakby tego venue w ogole nie bylo - dokladnie tak
+    # samo jak `blend_composite(spot, None)` degradowalo wczesniej do
+    # samego spot.
+    solo = SpotPoolEngine(ScoringConfig())
+    solo_composite = solo.update(good_buyers=5, good_sellers=2, bad_buyers=1, bad_sellers=4)
+
+    pooled = SpotPoolEngine(ScoringConfig())
+    pooled_composite = pooled.update(
+        good_buyers=5 + 0, good_sellers=2 + 0, bad_buyers=1 + 0, bad_sellers=4 + 0
+    )
+    assert pooled_composite == solo_composite
+
+
+def test_spot_pool_engine_small_venue_gets_proportional_not_equal_influence():
+    # Test na REALNY problem zgloszony przez uzytkownika po zobaczeniu
+    # zywych danych (2026-09-11): Uniswap mial w oknie 31 sklasyfikowanych
+    # transakcji (good 2 kupno/16 sprzedaz, bad 11 kupno/2 sprzedaz),
+    # Base zaledwie 7 (good 1/1, bad 1/4) - a stary mechanizm
+    # (blend_composite ze stala waga 0.5) dawal Base DOKLADNIE tyle samo
+    # wplywu na wynik co Uniswapowi, mimo ~4-5x mniejszej probki.
+    #
+    # Nowy mechanizm (pula wspolnych licznikow) MUSI dawac wynik BLIZSZY
+    # samemu Uniswapowi niz stary, sztywny blend 50/50 - dokladnie to
+    # sprawdza ten test, na tych samych liczbach co zrzut ekranu
+    # uzytkownika.
+    uniswap_only = SpotPoolEngine(ScoringConfig())
+    composite_uniswap_alone = uniswap_only.update(
+        good_buyers=2, good_sellers=16, bad_buyers=11, bad_sellers=2
+    )
+
+    base_only = SpotPoolEngine(ScoringConfig())
+    composite_base_alone = base_only.update(good_buyers=1, good_sellers=1, bad_buyers=1, bad_sellers=4)
+
+    old_style_blend = blend_composite(composite_uniswap_alone, composite_base_alone, perp_weight=0.5)
+
+    pooled = SpotPoolEngine(ScoringConfig())
+    composite_pooled = pooled.update(
+        good_buyers=2 + 1, good_sellers=16 + 1, bad_buyers=11 + 1, bad_sellers=2 + 4
+    )
+
+    distance_pooled = abs(composite_pooled - composite_uniswap_alone)
+    distance_old_blend = abs(old_style_blend - composite_uniswap_alone)
+    assert distance_pooled < distance_old_blend
+    # Konkretne liczby (na wypadek regresji formuly) - patrz wyliczenie w
+    # komentarzu PR/dostawie: pooled ~ -0.775, stary blend ~ -0.326, sam
+    # Uniswap ~ -1.1025.
+    assert composite_pooled == pytest.approx(-0.775, abs=1e-3)
+    assert old_style_blend == pytest.approx(-0.32615, abs=1e-3)
+    assert composite_uniswap_alone == pytest.approx(-1.1025, abs=1e-3)
+
+
+def test_spot_pool_engine_resumes_from_exported_state():
+    # Wznowienie miedzy uruchomieniami (initial_ema) - ten sam wzorzec co
+    # ScoringEngine/RegimeEngine/SignalEngine.
+    engine = SpotPoolEngine(ScoringConfig())
+    engine.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
+    state = engine.export_state()
+    assert set(state) == {"good_short", "good_long", "bad_short", "bad_long"}
+
+    resumed = SpotPoolEngine(ScoringConfig(), initial_ema=state)
+    # Ta sama kolejna aktualizacja na wznowionym silniku i na oryginalnym
+    # (kontynuowanym) silniku musi dac identyczny wynik.
+    expected = engine.update(good_buyers=1, good_sellers=1, bad_buyers=1, bad_sellers=1)
+    actual = resumed.update(good_buyers=1, good_sellers=1, bad_buyers=1, bad_sellers=1)
+    assert actual == expected
 
 
 # =====================================================================
