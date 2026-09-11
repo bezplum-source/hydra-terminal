@@ -133,6 +133,129 @@ def blend_composite(
     return (1.0 - perp_weight) * composite_spot + perp_weight * composite_perp
 
 
+def _ema_step(current: float | None, new_value: float, span: int) -> float:
+    """Jeden krok EMA - wydzielone z `ScoringEngine._update_ema` (Faza
+    "wspólna pula SPOT" niżej), żeby `SpotPoolEngine` mógł używać DOKŁADNIE
+    tego samego wzoru bez duplikowania go w drugim miejscu. Zachowanie
+    `ScoringEngine._update_ema` bez zmian - to czysty refaktor (przeniesienie
+    ciała funkcji), nie nowa logika."""
+    alpha = 2.0 / (span + 1)
+    if current is None:
+        return new_value
+    return alpha * new_value + (1 - alpha) * current
+
+
+# =====================================================================
+# Faza "wspólna pula SPOT" (2026-09-11) — Uniswap+Base w JEDNEJ puli
+# =====================================================================
+
+
+class SpotPoolEngine:
+    """Zastępuje poprzedni mechanizm łączenia Uniswap+Base: "policz
+    `composite_spot` (mainnet) i `composite_base` (Base) OSOBNO, każdy z
+    WŁASNYM EMA liczonym z RATIO tego venue, potem zblenduj obie liczby
+    stałą wagą 50/50" (`blend_composite` + `BASE_SPOT_WEIGHT`, Faza
+    "integracja Base B1-B3").
+
+    Zgłoszenie użytkownika (2026-09-11, po zobaczeniu żywych danych): Base
+    miało w danym oknie zaledwie 7 sklasyfikowanych transakcji (1 GOOD
+    buyer, 1 GOOD seller, 1 BAD buyer, 4 BAD sellers) wobec 31 po stronie
+    Uniswapa (2+16+11+2) - a mimo to dostawał DOKŁADNIE tyle samo wagi
+    (50%) w połączonej wartości "spot", co widać było w praktyce jako
+    kafelek "Spot" pokazujący "Neutralnie", podczas gdy sam Uniswap
+    wskazywałby SHORT. Rozwiązanie zaproponowane przez użytkownika: Uniswap
+    i Base powinny być w TEJ SAMEJ puli decyzyjnej, nie w dwóch osobnych
+    blendowanych stałą wagą.
+
+    Zamiast osobnych EMA per venue: SUMUJEMY surowe liczniki
+    (`good_buyers`/`good_sellers`/`bad_buyers`/`bad_sellers`) z obu torów w
+    JEDNĄ połączoną pulę (patrz `update()` niżej), i dopiero z NIEJ liczymy
+    JEDNO `good_ratio_raw`/`bad_ratio_raw`, przepuszczone przez JEDNO
+    wspólne EMA - dokładnie ten sam wzór/te same stałe co
+    `ScoringEngine.run()` (patrz `ScoringConfig.w_good_short` i sąsiednie
+    pola, celowo używane WPROST, a nie duplikowane, żeby jedna zmiana progu
+    nie rozjechała się cicho między dwoma miejscami).
+
+    Efekt: waga każdego venue w wyniku jest teraz proporcjonalna do jego
+    RZECZYWISTEJ aktywności w danym oknie, a nie do sztywnej stałej. Gdy
+    Base nie wnosi żadnych sklasyfikowanych transakcji w oknie (0/0,
+    najczęściej dlatego, że wywołujący celowo wyzerował liczniki - patrz
+    `run_incremental.py`, sekcja "Base gate dojrzałości" - zanim je tu
+    poda), pula naturalnie redukuje się do "czysty Uniswap" - bez żadnej
+    osobnej bramki/specjalnego przypadku wewnątrz tej klasy, dokładnie tak
+    samo jak `blend_composite(spot, None)` degradowało wcześniej do samego
+    spot.
+
+    Świadome uproszczenie: portfel handlujący W TEJ SAMEJ godzinie na OBU
+    łańcuchach liczy się osobno w każdym z nich (nie nettujemy jego pozycji
+    między łańcuchami) - Uniswap i Base mają kompletnie niekompatybilne,
+    niezależne siatki blokowe (patrz obszerne komentarze w
+    `run_incremental.py`), więc prawdziwe zdeduplikowanie wymagałoby
+    wspólnych znaczników czasu zamiast numerów bloków - dużo większy
+    refaktor, nieuzasadniony na tym etapie (rzadki przypadek: ten sam adres
+    aktywny na obu łańcuchach w TEJ SAMEJ godzinie).
+
+    Stan (cztery liczby EMA) wznawia się między uruchomieniami dokładnie
+    tak samo jak `ScoringEngine`/`RegimeEngine` - patrz `export_state()`
+    niżej i `live/state.py` (`load_spot_pool_state`/`save_spot_pool_state`).
+    """
+
+    def __init__(
+        self,
+        config: ScoringConfig | None = None,
+        *,
+        initial_ema: dict[str, float | None] | None = None,
+    ) -> None:
+        self.cfg = config or ScoringConfig()
+        ema = initial_ema or {}
+        self._ema_good_short: float | None = ema.get("good_short")
+        self._ema_good_long: float | None = ema.get("good_long")
+        self._ema_bad_short: float | None = ema.get("bad_short")
+        self._ema_bad_long: float | None = ema.get("bad_long")
+
+    def export_state(self) -> dict:
+        return {
+            "good_short": self._ema_good_short,
+            "good_long": self._ema_good_long,
+            "bad_short": self._ema_bad_short,
+            "bad_long": self._ema_bad_long,
+        }
+
+    def update(
+        self,
+        *,
+        good_buyers: int,
+        good_sellers: int,
+        bad_buyers: int,
+        bad_sellers: int,
+    ) -> float:
+        """Jedno wywołanie na jedną nową świecę (w kolejności czasu!) -
+        `good_buyers`/itd. to JUŻ POŁĄCZONE liczniki (Uniswap + Base tego
+        okna, patrz wywołanie w `run_incremental.py`), nie surowe transakcje
+        - ta klasa nie zna nic o blokach/transakcjach, tylko o gotowych
+        licznikach z ilu portfeli kupowało/sprzedawało w danej kohorcie."""
+        cfg = self.cfg
+        good_total = good_buyers + good_sellers
+        bad_total = bad_buyers + bad_sellers
+
+        # Brak aktywnosci w danej kohorcie -> neutralne 0.5 (brak
+        # przesuniecia), ten sam wzorzec co w ScoringEngine.run().
+        good_ratio_raw = good_buyers / good_total if good_total > 0 else 0.5
+        bad_ratio_raw = bad_buyers / bad_total if bad_total > 0 else 0.5
+
+        self._ema_good_short = _ema_step(self._ema_good_short, good_ratio_raw, cfg.ema_short_span)
+        self._ema_good_long = _ema_step(self._ema_good_long, good_ratio_raw, cfg.ema_long_span)
+        self._ema_bad_short = _ema_step(self._ema_bad_short, bad_ratio_raw, cfg.ema_short_span)
+        self._ema_bad_long = _ema_step(self._ema_bad_long, bad_ratio_raw, cfg.ema_long_span)
+
+        return (
+            cfg.w_good_short * (self._ema_good_short - 0.5)
+            + cfg.w_good_long * (self._ema_good_long - 0.5)
+            - cfg.w_bad_short * (self._ema_bad_short - 0.5)
+            - cfg.w_bad_long * (self._ema_bad_long - 0.5)
+        )
+
+
 def decide_signal(composite: float, *, threshold: float) -> Signal:
     """Ta sama reguła co wewnątrz `ScoringEngine.run` niżej
     (`composite > threshold -> LONG`, `< -threshold -> SHORT`, inaczej
@@ -345,10 +468,10 @@ class ScoringEngine:
         }
 
     def _update_ema(self, current: float | None, new_value: float, span: int) -> float:
-        alpha = 2.0 / (span + 1)
-        if current is None:
-            return new_value
-        return alpha * new_value + (1 - alpha) * current
+        # Refaktor (Faza "wspólna pula SPOT") - cialo funkcji przeniesione do
+        # modulowej `_ema_step` powyzej, zeby `SpotPoolEngine` mogl uzywac
+        # DOKLADNIE tego samego wzoru bez duplikacji. Zachowanie bez zmian.
+        return _ema_step(current, new_value, span)
 
     def run(
         self,
