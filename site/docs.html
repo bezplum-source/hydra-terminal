@@ -829,10 +829,21 @@
           <span class="swatch"><i style="background:#8A8894"></i>regime neutral #8A8894</span>
         </div>
         <p>
-          Regime colors are deliberately kept separate from signal colors (a violet for
-          bear rather than reusing red) specifically so a viewer never confuses "the
-          market's long-term regime" with "what to do right now" at a glance — the two
-          axes are independent by design, and the palette reinforces that.
+          Regime colors were originally kept deliberately separate from signal colors
+          (a violet for bear rather than reusing red) so a viewer would never confuse
+          "the market's long-term regime" with "what to do right now" at a glance. That
+          still holds for the <strong>price chart</strong>'s regime ribbon and event
+          markers (violet/amber, unchanged) — the chart already carries the green/red
+          LONG/SHORT signal bands, so giving regime its own hue there avoids two
+          different concepts sharing one color. It was dropped, at the project owner's
+          explicit request, for the <strong>Nastrój rynku</strong> card itself (mood
+          icon, Spadki/Wzrosty bar, event icon): those now use the same green/red as
+          everywhere else on the page (GOOD/BAD wallets, composite meters) rather than
+          the violet/amber pair, on the reasoning that within that one card there's no
+          competing green/red element to be confused with. Earlier revisions of this
+          bar also had its two segments reversed relative to their own labels — the
+          bearish (Spadki) share rendered on the side under "Wzrosty" and vice versa;
+          this was corrected alongside the recolor.
         </p>
         <p>
           <strong>Hover/tap-to-explain (<code>.info-tip</code>):</strong> the project's
