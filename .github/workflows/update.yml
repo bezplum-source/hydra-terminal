@@ -17,10 +17,44 @@ name: Aktualizacja danych Hydra Terminal
 # "workflow_dispatch" pozwala odpalic to recznie z zakladki Actions w
 # GitHub - przydatne przy pierwszym uruchomieniu, zeby nie czekac do
 # najblizszej pelnej godziny.
+#
+# "workflow_run" (dodane w Fazie "wyscig harmonogramu z Hyperliquid",
+# zgloszenie uzytkownika 2026-09-11: "strona odswiezyla sie bez
+# Hyperliquid, bo Hyperliquid nadal bylo w trakcie aktualizacji - Actions
+# dla hyperliquid zakonczylo sie 2 minuty po aktualizacji strony").
+#
+# PRZYCZYNA: ten workflow czyta bufor Hyperliquid z GitHub Actions cache
+# (patrz krok "Przywroc bufor..." nizej), zapisywany PRZEZ
+# "hyperliquid-update.yml" dopiero PO zakonczeniu ~50-minutowego nasluchu
+# WS. Ten workflow odpala sie o minucie 7, "hyperliquid-update.yml" o
+# minucie 20 + ~50 min nasluchu = konczy sie kolo minuty 10 NASTEPNEJ
+# godziny - czyli 3 minuty PO tym, jak ten workflow juz przeczytal
+# (nieuchronnie starszy o ~godzine) cache. Oba offsety (7 i 20) zostaly
+# dobrane wylacznie zeby joby nie rywalizowaly o runnery w tej samej
+# minucie (patrz komentarze w obu plikach) - nikt nie liczyl wtedy, ze
+# 20+50=70 wypycha koniec nasluchu ZA nastepny cykl tego workflow'a.
+# Przesuniecie samego crona byloby kruche (dalej zaklada STALY czas
+# nasluchu, ktory moze sie wahac, plus GitHub czasem opoznia start
+# zaplanowanych workflow'ow pod obciazeniem) - zamiast zgadywac offset,
+# ten workflow odpala sie DODATKOWO natychmiast po KAZDYM zakonczeniu
+# "hyperliquid-update.yml" (sukces czy porazka - kroki nizej i tak
+# bezpiecznie czytaja NAJNOWSZY dostepny cache przez "restore-keys", wiec
+# uruchomienie po nieudanym nasluchu nie szkodzi, tylko czyta to, co bylo
+# wczesniej). Efekt: obok cogodzinnego crona (zapasowy, np. gdyby
+# "hyperliquid-update.yml" zostal kiedys wylaczony), strona dostaje DRUGI,
+# samonaprawiajacy sie przebieg zaraz po kazdym Hyperliquid - jesli
+# zaplanowany przebieg o minucie 7 zlapal stare dane, ten kolejny (kolo
+# minuty 10-15) je koryguje, bez czekania na pelna godzine. Tanie i
+# bezpieczne - GitHub Actions jest bezplatny bez limitu dla repo
+# publicznych (patrz komentarz na gorze pliku).
 on:
   schedule:
     - cron: "7 * * * *"
   workflow_dispatch: {}
+  workflow_run:
+    workflows: ["Aktualizacja danych Hyperliquid ETH-PERP"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
