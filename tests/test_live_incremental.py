@@ -207,6 +207,14 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # data/signal_state.json w tym repo zamiast do tmp_path (zaobserwowana realna
     # zmiana "SHORT" -> "HOLD" po samym odpaleniu `pytest`, bez zadnych innych zmian).
     monkeypatch.setattr(st, "SIGNAL_STATE_PATH", tmp_path / "data" / "signal_state.json")
+    # Faza "integracja Base B1-B3" - dopisane OD RAZU (patrz wszystkie
+    # komentarze wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy
+    # nowa sciezka stanu w live/state.py nie trafia od razu do tego helpera):
+    # bez tego testy ponizej wywolujace ri.main() czytalyby/pisaly PRAWDZIWE
+    # pliki data/base_scoring_state.json i data/base_wallets_seen.txt w tym
+    # repo zamiast do tmp_path.
+    monkeypatch.setattr(st, "BASE_SCORING_STATE_PATH", tmp_path / "data" / "base_scoring_state.json")
+    monkeypatch.setattr(st, "BASE_WALLETS_SEEN_PATH", tmp_path / "data" / "base_wallets_seen.txt")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -773,12 +781,20 @@ def test_base_l2_skipped_gracefully_when_secret_missing(tmp_path, monkeypatch):
     assert len(st.load_candles_history()) > 0
 
 
-def test_base_l2_collects_into_separate_buffer_without_touching_composite(tmp_path, monkeypatch):
+def test_base_l2_collects_into_separate_buffer_and_stays_immature_with_few_wallets(
+    tmp_path, monkeypatch
+):
     """Gdy ALCHEMY_BASE_RPC_URL jest ustawiona, nowe transakcje z Base
     ladunja do WLASNEGO bufora/stanu (`base_trade_buffer.csv`,
     `base_collector_state.json`) - kompletnie osobno od mainnetowego
-    `trade_buffer.csv`/`scoring_state.json`, i BEZ zadnego wplywu na
-    composite/signal/candles (etap B0 to celowo tylko zbieranie danych)."""
+    `trade_buffer.csv`/`scoring_state.json`. Od Fazy "integracja Base
+    B1-B3" (2026-09-11) diagnostyczne pola `compositeBase`/`base*` SA
+    obecne na kazdej swiecy (w przeciwienstwie do Fazy B0 sprzed tej
+    zmiany) - ale przy zaledwie 2 portfelach Base (znacznie ponizej
+    `BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY`) `compositeBase` zostaje
+    `None` (niedojrzale), a `compositeSpotCombined` jest IDENTYCZNE z
+    `compositeSpot` (mainnet) - `blend_composite` gracefully degraduje,
+    dokladnie jak dla `composite_perp` przy niedojrzalym Hyperliquid."""
     _patch_all_paths(monkeypatch, tmp_path)
     monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
     monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
@@ -813,12 +829,18 @@ def test_base_l2_collects_into_separate_buffer_without_touching_composite(tmp_pa
     assert all(w not in {"baseWallet1", "baseWallet2"} for w in {t.wallet for t in mainnet_buffer})
     assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
 
-    # B0 nie wplywa na composite/candles - zadnego nowego pola, zadnej zmiany.
+    # Pola base* SA obecne (Faza "integracja Base B1-B3"), ale nie zmieniaja
+    # finalnego sygnalu/composite dopoki populacja Base jest zbyt mala -
+    # tylko 2 portfele w tym tescie, wiec composite_base=None (niedojrzale)
+    # i compositeSpotCombined == compositeSpot (blend_composite degraduje do
+    # samego mainnetu, identycznie jak przy niedojrzalym composite_perp).
     candles_after = st.load_candles_history()
     assert len(candles_after) > len(candles_before)  # normalny przyrost z mainnetu
     for c in candles_after:
-        assert "compositeBase" not in c
-        assert "baseTracked" not in c
+        assert c["compositeBase"] is None
+        assert c["baseIsMature"] is False
+        assert c["compositeSpotCombined"] == c["compositeSpot"]
+        assert "baseTracked" in c
 
 
 def test_base_l2_failure_is_isolated_and_does_not_abort_main_run(tmp_path, monkeypatch):
@@ -910,3 +932,141 @@ def test_base_l2_runs_after_mainnet_critical_path_is_saved(tmp_path, monkeypatch
     # zabraklo w realnym incydencie.
     assert mainnet_state_saved_before_first_base_call["value"] is True
     assert st.load_scoring_state()["last_processed_block"] == mainnet_chain.head
+
+
+def _seed_base_wallets_for_maturity(chain: FakeChain) -> None:
+    """Generuje 80 odrebnych portfeli Base (40 systematycznie zyskownych,
+    40 systematycznie stratnych), po 3 pelne round-tripy kupno/sprzedaz
+    kazdy (6 transakcji/portfel >= `min_trades_for_classification=5`) -
+    wystarczajaco duza i wyraznie rozdzielona (rank-based) populacja, zeby
+    przy domyslnym `good_pct=bad_pct=0.15` przekroczyc
+    `BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY=20`: 0.15*80=12 GOOD + 12 BAD
+    = 24 sklasyfikowanych >= 20. Wszystko miesci sie w PIERWSZYM oknie Base
+    (blocks 0..1799, `BASE_WINDOW_BLOCKS=1800`) - ostatnia transakcja jest
+    celowo na bloku 1799, zeby ustawic `chain.head` na koncu tego okna
+    (patrz komentarz w kodzie run_incremental.py: `base_last_closed_end =
+    ((base_to_block+1)//BASE_WINDOW_BLOCKS)*BASE_WINDOW_BLOCKS - 1`)."""
+    tx = [0]
+
+    def next_hash() -> str:
+        tx[0] += 1
+        return f"0xBASETXM{tx[0]:06d}"
+
+    block = 10
+    for i in range(40):
+        wallet = f"basegood{i}"
+        for _ in range(3):
+            # kupuje 1 WETH za 2000 USDC...
+            chain.add_swap(block, next_hash(), wallet, amount0=2_000_000_000, amount1=-(10**18))
+            block += 1
+            # ...i sprzedaje za 2200 USDC - systematyczny zysk -> GOOD.
+            chain.add_swap(block, next_hash(), wallet, amount0=-2_200_000_000, amount1=10**18)
+            block += 1
+    for j in range(40):
+        wallet = f"basebad{j}"
+        for _ in range(3):
+            chain.add_swap(block, next_hash(), wallet, amount0=2_000_000_000, amount1=-(10**18))
+            block += 1
+            # sprzedaje za 1800 USDC - systematyczna strata -> BAD.
+            chain.add_swap(block, next_hash(), wallet, amount0=-1_800_000_000, amount1=10**18)
+            block += 1
+    assert block < 1799, "seedowanie nie miesci sie juz w pierwszym oknie Base"
+    # domyka pierwsze okno Base (blocks 0..1799) - patrz docstring wyzej.
+    chain.add_swap(1799, next_hash(), "basegood0", amount0=2_000_000_000, amount1=-(10**18))
+
+
+def test_base_maturity_gate_lags_one_run_then_blends_into_spot(tmp_path, monkeypatch):
+    """Test na CALY sens integracji Base B1-B3: dojrzalosc (`composite_base`
+    niedojrzale wobec `BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY`) NIE moze
+    wplynac na sygnal w TYM SAMYM uruchomieniu, w ktorym zostala policzona -
+    bo blok RPC Base musi zostac na samym koncu `main()` (patrz test
+    `test_base_l2_runs_after_mainnet_critical_path_is_saved` wyzej), po
+    stronie mainnetu/site juz zapisanej na dysk. Zamiast tego:
+
+    - Uruchomienie 1: seeduje 80 portfeli Base (>= progu dojrzalosci) -
+      Base scoring NA KONCU tego uruchomienia poprawnie liczy dojrzaly,
+      niepusty `composite_base` i zapisuje go do `base_scoring_state.json`,
+      ale swiece WYPRODUKOWANE W TYM uruchomieniu nadal pokazuja
+      `compositeBase=None`/`baseIsMature=False` (bo `base_snapshot` do
+      blendu zostal odczytany na POCZATKU tego samego uruchomienia, ZANIM
+      Base w ogole policzylo cokolwiek nowego - dokladnie zamierzone ~1h
+      opoznienie z komentarza w run_incremental.py).
+    - Uruchomienie 2 (nowe bloki mainnetu, zeby powstala nowa swieca; Base
+      nie ma juz nic nowego do przeliczenia): NOWE swiece powinny nareszcie
+      pokazac dojrzaly, niepusty `compositeBase` i `compositeSpotCombined
+      != compositeSpot` - dowod, ze blend faktycznie zaczyna dzialac,
+      z dokladnie jednego uruchomienia opoznienia."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    # UWAGA: `BASE_BACKFILL_BLOCKS`/`BASE_MAX_NEW_BLOCKS_PER_RUN` (jak i
+    # `BACKFILL_BLOCKS` powyzej) sa stalymi MODULOWYMI wyliczonymi z
+    # os.environ JUZ PRZY IMPORCIE `run_incremental` - ktory dawno sie
+    # dokonal (na gorze tego pliku testowego), zanim ten test w ogole
+    # ustawil jakiekolwiek zmienne srodowiskowe. `monkeypatch.setenv` na nie
+    # WIec juz nie dziala (cichy no-op) - trzeba podmienic same stale na
+    # module przez `monkeypatch.setattr`. Domyslny limit 1000 blokow/
+    # uruchomienie przycialby nasze seedowanie (0..1799) na dwa uruchomienia
+    # Base - podnosimy go, zeby "Uruchomienie 1" ponizej faktycznie domknelo
+    # caly pierwszy zakres Base w jednym kroku (test sprawdza konkretnie "1
+    # uruchomienie opoznienia", nie kolejkowanie backfillu Base).
+    monkeypatch.setattr(ri, "BASE_BACKFILL_BLOCKS", 2000)
+    monkeypatch.setattr(ri, "BASE_MAX_NEW_BLOCKS_PER_RUN", 2000)
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=1000)
+
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    _seed_base_wallets_for_maturity(base_chain)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            return JsonRpcClient(url, transport=base_chain.transport)
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    # --- Uruchomienie 1 ---
+    assert ri.main() == 0
+
+    candles_after_1 = st.load_candles_history()
+    assert len(candles_after_1) > 0
+    for c in candles_after_1:
+        assert c["compositeBase"] is None
+        assert c["baseIsMature"] is False
+        assert c["compositeSpotCombined"] == c["compositeSpot"]
+
+    # Base scoring NA KONCU uruchomienia 1 policzylo i zapisalo dojrzaly
+    # snapshot na dysku - gotowy do uzycia dopiero w NASTEPNYM uruchomieniu.
+    base_state_after_1 = st.load_base_scoring_state()
+    snapshot_after_1 = base_state_after_1["last_base_snapshot"]
+    assert snapshot_after_1["is_mature"] is True
+    assert snapshot_after_1["classified"] >= 20
+    assert snapshot_after_1["composite"] is not None
+
+    # --- Uruchomienie 2: nowe bloki mainnetu (nowa swieca), Base bez zmian
+    #     (juz przeliczone w run 1 - nic nowego do domkniecia) ---
+    _seed_wallets(mainnet_chain, start_block=1000, end_block=1500)
+
+    assert ri.main() == 0
+
+    candles_after_2 = st.load_candles_history()
+    assert len(candles_after_2) > len(candles_after_1)
+    # historia z uruchomienia 1 nie zostala nadpisana/utracona.
+    assert candles_after_2[: len(candles_after_1)] == candles_after_1
+
+    new_candles = candles_after_2[len(candles_after_1):]
+    assert len(new_candles) > 0
+    for c in new_candles:
+        assert c["baseIsMature"] is True
+        assert c["compositeBase"] is not None
+        assert c["compositeBase"] == snapshot_after_1["composite"]
+        # blend faktycznie zmienil wartosc uzywana w finalnym sygnale wzgledem
+        # samego mainnetu - to jest sedno tej fazy integracji.
+        assert c["compositeSpotCombined"] != c["compositeSpot"]
+
+    # Base scoring stan pozostaje niezmieniony w run 2 (zaden nowy blok Base
+    # do domkniecia) - ale nadal poprawnie odczytany/zblendowany.
+    base_state_after_2 = st.load_base_scoring_state()
+    assert base_state_after_2["last_base_snapshot"] == snapshot_after_1
