@@ -273,7 +273,7 @@
         <div class="status-row">
           <span class="status-chip"><span class="dot live"></span>Ethereum mainnet — live</span>
           <span class="status-chip"><span class="dot live"></span>Hyperliquid ETH-PERP — live, blended into signal</span>
-          <span class="status-chip"><span class="dot partial"></span>Base L2 — data collection only (B0)</span>
+          <span class="status-chip"><span class="dot live"></span>Base L2 — live, blended into spot (B1–B3)</span>
         </div>
       </div>
 
@@ -310,10 +310,12 @@
         </p>
         <p>
           The project has since grown beyond the original single-pool design: it now
-          blends a second, independent data source (perpetual futures on Hyperliquid) into
-          the same signal, and is in the process of adding a third (Base, an Ethereum
-          Layer 2), specifically to grow the pool of wallets being tracked and to see
-          whether the signal holds up across venues.
+          blends in two further, independent data sources — perpetual futures on
+          Hyperliquid, and spot swaps on Base (an Ethereum Layer 2) — specifically to
+          grow the pool of wallets being tracked and to see whether the signal holds up
+          across venues. Base was added after noticing that Uniswap mainnet was tracking
+          far fewer wallets than Hyperliquid; see <a href="#base">Data source: Base L2</a>
+          below for why, and what changed.
         </p>
       </section>
 
@@ -334,8 +336,8 @@
           </tr>
           <tr>
             <td><strong>Base L2</strong><br>Uniswap V3 WETH/USDC 0.05%</td>
-            <td><span class="pill short">B0 only</span></td>
-            <td>Currently: raw trade collection into its own buffer. Not yet classified, not yet blended into anything a viewer sees.</td>
+            <td><span class="pill long">live · B1–B3 complete</span></td>
+            <td>Independent wallet classification, <code>composite_base</code>, blended 50/50 into the combined "spot" value (mainnet + Base) — one run behind, see <a href="#base">Data source: Base L2</a></td>
           </tr>
         </table>
         </div>
@@ -347,7 +349,7 @@
           <div class="mini-card"><h5>Phase 0 — Collect</h5><p>Pull raw trades into an isolated buffer. No effect on the live signal yet.</p></div>
           <div class="mini-card"><h5>Phase 1 — Classify</h5><p>Score wallets from that source as GOOD / BAD, same method as mainnet.</p></div>
           <div class="mini-card"><h5>Phase 2 — Blend</h5><p>Merge that source's composite score into the signal the dashboard shows.</p></div>
-          <div class="mini-card"><h5>Phase 3 — Surface</h5><p>Give the new source its own diagnostic card on the frontend.</p></div>
+          <div class="mini-card"><h5>Phase 3 — Surface</h5><p>Give the new source its own visible breakdown on the frontend — a dedicated card (Hyperliquid) or its own row within an existing one (Base's Wallets-card row, its own line in the Spot tile's tooltip).</p></div>
         </div>
         <div class="callout">
           <span class="label">Why phase it like this</span>
@@ -502,16 +504,24 @@
           the opposite case.
         </p>
         <p>
-          Because two independent sources now feed the pipeline — the spot pool on
-          mainnet and the ETH-PERP market on Hyperliquid — there are technically two
-          composite scores, blended into one:
+          Because three independent sources now feed the pipeline — Uniswap on mainnet,
+          Uniswap on Base, and the ETH-PERP market on Hyperliquid — there are technically
+          three composite scores, blended in two stages:
         </p>
-        <pre><code>composite_final = blend(composite_spot, composite_perp, weight=0.5)</code></pre>
+        <pre><code>composite_spot_combined = blend(composite_spot, composite_base, weight=0.5)
+composite_final         = blend(composite_spot_combined, composite_perp, weight=0.5)</code></pre>
         <p>
-          with a graceful fallback to <code>composite_spot</code> alone whenever the perp
-          side doesn't yet have enough data to be considered statistically mature — so a
-          slow day on one source never silently corrupts the signal, it just quietly
-          leans more on the other.
+          Both stages use the exact same graceful-fallback blend function: whenever a
+          side doesn't yet have enough classified wallets to be considered statistically
+          mature (see <a href="#base">Data source: Base L2</a> and
+          <a href="#hyperliquid">Data source: Hyperliquid</a> for each source's specific
+          threshold), that stage's blend collapses to just the other side, unchanged —
+          so a slow or immature source never silently corrupts the signal, it just
+          quietly leans more on what's already proven. <code>composite_spot</code> itself
+          stays mainnet-only throughout, purely as a diagnostic baseline (it's what the
+          "sam spot" divergence note on the dashboard compares against) —
+          <code>composite_spot_combined</code> is the value that actually carries Base's
+          contribution forward into the final blend.
         </p>
       </section>
 
@@ -618,22 +628,56 @@
       </section>
 
       <section id="base">
-        <h2>Data source: Base L2 <span class="pill short" style="margin-left:6px;">Phase B0</span></h2>
+        <h2>Data source: Base L2 <span class="pill long" style="margin-left:6px;">Phase B1–B3</span></h2>
         <p>
-          The newest and currently least mature source. Base's <code>Swap</code> events from
-          its own WETH/USDC 0.05% Uniswap V3 pool are collected the same way as mainnet
-          (batched <code>eth_getLogs</code>), but into a completely separate buffer and block
-          cursor — Base's block numbers have nothing to do with Ethereum's, and its
-          ~2-second block time means covering the same wall-clock window costs roughly
-          6x as many RPC calls as mainnet does.
+          Base's <code>Swap</code> events from its own WETH/USDC 0.05% Uniswap V3 pool are
+          collected the same way as mainnet (batched <code>eth_getLogs</code>), but into a
+          completely separate buffer and block cursor — Base's block numbers have
+          nothing to do with Ethereum's, and its ~2-second block time means covering the
+          same wall-clock window costs roughly 6x as many RPC calls as mainnet does.
         </p>
         <p>
-          At this phase, Base data is <strong>collected only</strong> — it isn't classified,
-          it doesn't touch the composite score, and nothing on the dashboard reflects it
-          yet. That's intentional: the same staged rollout used for Hyperliquid (collect
-          → classify → blend → surface) is being followed again here, and Base hasn't
-          been promoted past step one yet.
+          As of the "Base B1–B3" phase (2026-09-11), collected Base trades are also
+          classified and blended in — Base is no longer collection-only. It reuses
+          mainnet's own generic <code>ScoringEngine</code>/<code>ScoringConfig</code> directly
+          (a second, independent instance with its own state), rather than a whole new
+          engine class the way Hyperliquid needed — Base's collected trade shape already
+          matches the generic <code>Trade</code> dataclass exactly, so no adapter layer was
+          necessary:
         </p>
+        <div class="table-wrap">
+        <table>
+          <tr><th>Parameter</th><th>Value</th><th>Why</th></tr>
+          <tr><td><code>BASE_WINDOW_BLOCKS</code></td><td>1,800</td><td>3600s / ~2s per block ≈ same ~1h candle cadence as mainnet's 250-block window (250 × ~14.4s)</td></tr>
+          <tr><td><code>BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>302,400</td><td>1,800 × 24 × 7 — same ~7-day reputation window used elsewhere, on Base's own block grid</td></tr>
+          <tr><td><code>BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>20</td><td>Maturity gate before <code>composite_base</code> counts for anything — identical default to Hyperliquid's own threshold</td></tr>
+          <tr><td><code>BASE_SPOT_WEIGHT</code></td><td>0.5</td><td>Base's weight in <code>composite_spot_combined</code> — same 50/50 starting point as the mainnet/perp blend</td></tr>
+        </table>
+        </div>
+        <p>
+          Below that maturity threshold, <code>composite_base</code> is simply <code>None</code>
+          and the spot blend degrades to mainnet alone — exactly the same graceful
+          fallback Hyperliquid uses for <code>composite_perp</code> (see
+          <a href="#composite">Composite score</a>). Wallets are tracked, classified, and
+          shown on the <a href="#frontend">Wallets card</a> the whole time regardless of
+          maturity — the gate only controls whether <code>composite_base</code> is allowed
+          to move the blended signal, not whether Base activity is visible at all.
+        </p>
+        <div class="callout">
+          <span class="label">A deliberate one-run lag</span>
+          <p>
+            Base's RPC-fetching step has to stay at the very end of <code>main()</code> (see
+            the incident below), which means Base's newly-computed
+            <code>composite_base</code> can't be blended into the <em>same</em> run's own
+            candles — by the time Base finishes scoring, the site has already been
+            generated. Instead, each run reads whatever <code>composite_base</code> the
+            <em>previous</em> run computed and persisted, and blends that into its own new
+            candles. In practice: Base's contribution to the signal is always
+            approximately one hourly cycle stale relative to Base's own newest data —
+            never zero, but bounded and predictable, and preferred over risking the RPC
+            reordering that caused the incident below.
+          </p>
+        </div>
         <div class="callout bad">
           <span class="label">A real incident worth knowing about</span>
           <p>
@@ -641,11 +685,12 @@
             the shared Alchemy account's throughput budget so badly that it broke the
             <em>mainnet</em> pipeline's own critical call, aborting the entire run with zero
             data saved — even for the parts that had nothing to do with Base. The fix was
-            architectural: the Base collection step was moved to run strictly after the
-            mainnet+Hyperliquid path has already finished and saved its results, so a
-            Base-side problem can now only ever affect Base's own data, never anything
-            that already succeeded. See <a href="#reliability">Reliability lessons</a> below
-            — it's a pattern worth understanding before touching this part of the code.
+            architectural: the Base collection (and, since B1–B3, scoring) step was moved
+            to run strictly after the mainnet+Hyperliquid path has already finished and
+            saved its results, so a Base-side problem can now only ever affect Base's own
+            data, never anything that already succeeded. See
+            <a href="#reliability">Reliability lessons</a> below — it's a pattern worth
+            understanding before touching this part of the code.
           </p>
         </div>
       </section>
@@ -673,6 +718,8 @@
           <tr><td><code>data/wallet_flip_state.json</code></td><td>Per-wallet streak/direction, for flip detection</td></tr>
           <tr><td><code>data/hyperliquid_scoring_state.json</code></td><td>Hyperliquid classification + <code>composite_perp</code> EMA</td></tr>
           <tr><td><code>data/base_collector_state.json</code></td><td>Base L2 block cursor</td></tr>
+          <tr><td><code>data/base_scoring_state.json</code></td><td>Base classification + <code>composite_base</code> EMA, plus the last computed snapshot read by the <em>next</em> run's blend (see <a href="#base">Data source: Base L2</a>)</td></tr>
+          <tr><td><code>data/base_wallets_seen.txt</code></td><td>Cumulative set of every Base wallet address ever tracked</td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
         </table>
@@ -726,7 +773,13 @@
           A new, less-proven data source is always positioned in the code to run
           <em>after</em> the established, trusted path has already completed and saved its
           results — never before it. That way, even a catastrophic failure in the new
-          part can only ever harm itself.
+          part can only ever harm itself. This has a real, accepted cost when that
+          source's output feeds back into the blend: Base's scoring step runs at the very
+          end of <code>main()</code>, so by the time it computes a fresh
+          <code>composite_base</code>, this run's own candles are already generated — the
+          value only reaches the blend on the <em>next</em> run (see
+          <a href="#base">Data source: Base L2</a>). A deliberate one-run lag was judged
+          preferable to reordering the script and reintroducing this exact incident.
         </p>
         <h4>Partial failure is silent by design — and that's a trade-off</h4>
         <p>
@@ -787,22 +840,30 @@
         <ul>
           <li><strong>Hero</strong> — current signal (LONG/SHORT/HOLD), price, and when
             the active signal entered and at what price (fixed until the signal
-            closes). When Uniswap alone would show a different signal than the final,
-            blended one, a banner names Hyperliquid as the deciding factor.</li>
+            closes). When Uniswap mainnet alone would show a different signal than the
+            final, blended one, a banner says so — since the "Base B1–B3" phase, the
+            blended value can diverge from mainnet-alone because of Base, Hyperliquid,
+            or both together (plus the final signal's own hysteresis/confirmation
+            delay), so the banner names the blend generically rather than pinning it on
+            one source it can't actually isolate.</li>
           <li><strong>Composite meters</strong> — three plain-language gauges (blended,
-            Uniswap spot, Hyperliquid perp), each a one- or two-word read of direction
+            spot, Hyperliquid perp), each a one- or two-word read of direction
             and strength (e.g. "Wyraźnie niedźwiedzi") plus a centered bar, instead of a
-            raw signed number. The <code>(i)</code> on each carries the underlying score
-            and extra context — the Uniswap tile's scoring-pool size, the Hyperliquid
-            tile's classification maturity and the PnL-methodology caveat that used to
-            live in a separate ETH-PERP card.</li>
+            raw signed number. Since "Base B1–B3", the "Spot" tile shows
+            <code>composite_spot_combined</code> (mainnet blended with Base, not mainnet
+            alone) — its <code>(i)</code> carries the mainnet scoring-pool size <em>and</em>
+            Base's own classification maturity/threshold, mirroring the Hyperliquid
+            tile's maturity caveat that used to live in a separate ETH-PERP card.</li>
           <li><strong>Wallets card</strong> — GOOD and BAD wallet buy/sell counts combined
-            across Uniswap + Hyperliquid into one number per side (what most viewers
-            actually came to check), with the per-source split underneath in small
-            print as a two-column mini-table (Kupuje/Sprzedaje headers, one row per
-            source) rather than a slash-separated pair — an inline "5 / 1" format
-            was tried first and dropped for being ambiguous about which number was
-            which. Tracked/active wallet counts are shown the same way, top-right of
+            across all three sources (Uniswap, Base, Hyperliquid) into one number per
+            side (what most viewers actually came to check), with the per-source split
+            underneath in small print as a three-row mini-table (Kupuje/Sprzedaje
+            headers, one row per source) rather than a slash-separated pair — an inline
+            "5 / 1" format was tried first and dropped for being ambiguous about which
+            number was which. This breakdown is independent of any source's maturity
+            gate — a still-immature Base contributes nothing to the blended signal yet,
+            but its classified wallets and their buy/sell activity are already visible
+            here. Tracked/active wallet counts are shown the same way, top-right of
             the card.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Unchanged from the
@@ -913,7 +974,7 @@ data/                      pipeline state (mostly auto-generated, committed to g
 site/                      generated dashboard output, served by GitHub Pages
 tests/                     pytest suite, one file per module/feature
 .github/workflows/
-  update.yml                  hourly: mainnet + Hyperliquid blend + Base collection
+  update.yml                  hourly: mainnet + Hyperliquid blend + Base collection/scoring
   hyperliquid-update.yml       long-running Hyperliquid WebSocket listener</code></pre>
       </section>
 
@@ -978,7 +1039,11 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_BACKFILL_BLOCKS</code></td><td>No</td><td>Mainnet backfill depth on a cold start</td></tr>
           <tr><td><code>HYDRA_BASE_BACKFILL_BLOCKS</code></td><td>No</td><td>Base backfill depth on a cold start (default ~10,000 blocks, ~5.5h)</td></tr>
           <tr><td><code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code></td><td>No</td><td>Caps how many Base blocks one run will attempt to catch up, to bound RPC usage (default 1,000)</td></tr>
-          <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default ~43,200 blocks, ~1 day)</td></tr>
+          <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default 310,000 blocks, ~7 days + margin — raised from the earlier ~1-day/43,200-block default once Base's B1–B3 classification needed a full 7-day reputation window to read from)</td></tr>
+          <tr><td><code>HYDRA_BASE_WINDOW_BLOCKS</code></td><td>No</td><td>Base's own candle window size in blocks (default 1,800, ≈1h at Base's ~2s block time)</td></tr>
+          <tr><td><code>HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for classifying Base wallets (default 302,400 blocks, ~7 days)</td></tr>
+          <tr><td><code>HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>No</td><td>Minimum classified Base wallets before <code>composite_base</code> counts toward the blend (default 20, same as Hyperliquid's threshold)</td></tr>
+          <tr><td><code>HYDRA_BASE_SPOT_WEIGHT</code></td><td>No</td><td>Base's weight in the combined spot value (default 0.5, i.e. 50/50 with mainnet)</td></tr>
         </table>
         </div>
         <p>
