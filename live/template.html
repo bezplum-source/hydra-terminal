@@ -1051,9 +1051,12 @@ function renderHero() {
   // scoringu" (Uniswap) i dawna karta ETH-PERP (dojrzałość/próg klasyfikacji
   // Hyperliquid, PnL bez funding payments) - zamiast osobnych, dużych kart
   // na te same dane (patrz komentarz H3 przy pierwotnej karcie ETH-PERP).
-  // Faza Base B1-B3 - dopisujemy analogiczny status dojrzałości Base (patrz
-  // blok Hyperliquid ponizej dla identycznego wzorca trzech przypadkow:
-  // brak danych / niedojrzałe / dojrzałe).
+  // Faza "wspólna pula SPOT" (2026-09-11) - ZASTĄPIŁA opis "waga 50/50"
+  // (Faza Base B1-B3): Uniswap i Base są teraz w JEDNEJ wspólnej puli
+  // liczników (patrz `SpotPoolEngine` w hydra_signals/scoring.py) - wpływ
+  // Base jest proporcjonalny do jego rzeczywistej aktywności w oknie, nie
+  // sztywną stałą wagą, więc tooltip już nie podaje liczby, która by na
+  // to wskazywała.
   const spotTip = document.getElementById('compositeTipSpot');
   const spotBaseTip = spotTip.getAttribute('data-tip') + ' Pula scoringu Uniswap (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
   if (latest.baseTracked === undefined) {
@@ -1061,7 +1064,7 @@ function renderHero() {
   } else if (!latest.baseIsMature || latest.compositeBase == null) {
     spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap decyduje bez zmian.');
   } else {
-    spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — realnie wpływa na wartość spot (waga 50/50).');
+    spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — w tej samej, wspólnej puli co Uniswap: wpływ proporcjonalny do liczby aktywnych sklasyfikowanych portfeli w tym oknie, nie sztywną wagą.');
   }
 
   const perpTip = document.getElementById('compositeTipPerp');
