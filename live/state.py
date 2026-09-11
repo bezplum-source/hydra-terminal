@@ -112,6 +112,8 @@ SIGNAL_STATE_PATH = DATA_DIR / "signal_state.json"
 BASE_TRADE_BUFFER_PATH = DATA_DIR / "base_trade_buffer.csv"
 BASE_COLLECTOR_STATE_PATH = DATA_DIR / "base_collector_state.json"
 STATS_RESET_STATE_PATH = DATA_DIR / "stats_reset_state.json"
+BASE_SCORING_STATE_PATH = DATA_DIR / "base_scoring_state.json"
+BASE_WALLETS_SEEN_PATH = DATA_DIR / "base_wallets_seen.txt"
 
 
 def load_scoring_state() -> dict:
@@ -353,6 +355,50 @@ def load_base_collector_state() -> dict:
 def save_base_collector_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BASE_COLLECTOR_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_base_scoring_state() -> dict:
+    """Faza "integracja Base B1-B3" (2026-09-11) — analogiczny do
+    `scoring_state.json` (mainnet)/`hyperliquid_scoring_state.json` (perp):
+    EMA silnika `ScoringEngine` dedykowanego dla transakcji z Base
+    (`good_short`/`good_long`/`bad_short`/`bad_long`/`prev_signal`), własny
+    kursor `last_scored_window_end` (NIE mylić z `last_processed_block` w
+    `base_collector_state.json` — ten śledzi, dokąd pobrano surowe bloki,
+    ten tutaj dokąd doliczono ŚWIECE), oraz `last_base_snapshot` — ten sam
+    wzorzec co `last_perp_snapshot` w `hyperliquid_scoring_state.json`:
+    ostatnia policzona wartość `composite_base` (albo `None`, gdy populacja
+    sklasyfikowanych portfeli Base jest jeszcze za mała, patrz
+    `BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY` w `run_incremental.py`) plus
+    liczniki tracked/active/classified/good-bad buyers-sellers do
+    wyświetlenia w karcie "Wallets". Liczony na SAMYM KOŃCU
+    `run_incremental.py` (po zebraniu nowych bloków Base) — CELOWY ~1h lag:
+    wartość zapisana TU jest tą, którą NASTĘPNE uruchomienie zblenduje ze
+    spot (patrz komentarz przy `BASE_SPOT_WEIGHT`/blend_composite w
+    `run_incremental.py`)."""
+    if not BASE_SCORING_STATE_PATH.exists():
+        return {}
+    return json.loads(BASE_SCORING_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_base_scoring_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASE_SCORING_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_base_wallets_seen() -> set[str]:
+    """Faza "integracja Base B1-B3" — analogiczny do `wallets_seen.txt`
+    (mainnet)/`hyperliquid_wallets_seen.txt` (perp): WSZYSTKIE unikalne
+    adresy kiedykolwiek widziane w transakcjach Base, narastające między
+    uruchomieniami (`ScoringEngine.total_tracked`)."""
+    if not BASE_WALLETS_SEEN_PATH.exists():
+        return set()
+    text = BASE_WALLETS_SEEN_PATH.read_text(encoding="utf-8").strip()
+    return set(text.split()) if text else set()
+
+
+def save_base_wallets_seen(wallets: set[str]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASE_WALLETS_SEEN_PATH.write_text("\n".join(sorted(wallets)) + "\n", encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
