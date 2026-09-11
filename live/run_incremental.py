@@ -117,13 +117,61 @@ BASE_BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BASE_BACKFILL_BLOCKS", "10000")
 # co idzie po nim. Do przestrojenia w gore dopiero po potwierdzeniu, ze
 # przy tej wartosci throttling ustal.
 BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "1000"))
-# Okno przycinania bufora `base_trade_buffer.csv` - na etapie B0 (samo
-# zbieranie, BEZ jeszcze klasyfikacji portfeli) to tylko zabezpieczenie
-# przed nieograniczonym wzrostem pliku, nie realne "okno reputacji" (to
-# dopiero Faza B1). Wartosc startowa (~1 dzien przy ~2s/blok) jest
-# JAWNIE prowizoryczna - do przeliczenia na podstawie realnego, obserwowanego
-# rozmiaru pliku, dokladnie ta sama lekcja co przy buforze Hyperliquid.
-BASE_LOOKBACK_BLOCKS = int(os.environ.get("HYDRA_BASE_LOOKBACK_BLOCKS", "43200"))
+# Faza "integracja Base B1-B3" (2026-09-11, zgloszenie uzytkownika: "Tak,
+# wdrozmy Base", po rozmowie o tym, ze portfeli sledzonych po stronie
+# Uniswap mainnet jest duzo mniej niz po stronie Hyperliquid) - Base
+# przestaje byc WYLACZNIE buforowany (Faza B0) i zaczyna WZMACNIAC strone
+# spot (decyzja uzytkownika przez AskUserQuestion: "Base wzmacnia strone
+# spot", NIE osobny trzeci tor) - patrz blend_composite w main() nizej.
+#
+# BASE_WINDOW_BLOCKS: mainnet uzywa window_blocks=250 przy zalozeniu
+# ~14.4s/blok (patrz ScoringConfig - 250*14.4s=3600s=1h dokladnie). Base
+# (OP-stack, publicznie udokumentowany czas bloku ~2s) potrzebuje
+# 3600/2=1800 blokow, zeby "swieca" Base pokrywala ten sam ~1h co swieca
+# mainnetu - dzieki temu obie serie danych rosna w podobnym tempie, mimo ze
+# to formalnie DWA NIEZALEZNE silniki (bloki Base i mainnet nie sa w zaden
+# sposob porownywalne, patrz komentarz przy bloku zbierania Base nizej).
+BASE_WINDOW_BLOCKS = int(os.environ.get("HYDRA_BASE_WINDOW_BLOCKS", "1800"))
+
+# 7-dniowe okno reputacji, tak samo jak mainnet/Hyperliquid od Fazy "okno
+# reputacji 7 dni" (250*24*7 dla mainnetu) - tutaj przeliczone na wlasna
+# siatke blokow Base: 1800*24*7 = 302400 blokow (~7 dni przy zalozeniu
+# ~2s/blok). WARTOSC STARTOWA (jak kazdy inny prog w tym projekcie).
+BASE_CLASSIFICATION_LOOKBACK_BLOCKS = int(
+    os.environ.get("HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS", str(1800 * 24 * 7))
+)
+
+# Bramka dojrzalosci dla composite_base (ANALOGICZNA do
+# HyperliquidScoringConfig.min_classified_wallets_for_maturity=20, ten sam
+# mechanizm "graceful degradation" - composite_base=None dopoki populacja
+# sklasyfikowanych portfeli Base nie urosnie wystarczajaco, blend_composite
+# wtedy zwraca WYLACZNIE mainnet, bez zadnej zmiany zachowania). WARTOSC
+# STARTOWA, taka sama jak dla Hyperliquid - do przestrojenia po obserwacji.
+BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY = int(
+    os.environ.get("HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY", "20")
+)
+
+# Waga composite_base w POLACZONEJ wartosci "spot" (mainnet+Base) - ten sam
+# wzorzec i ta sama wartosc startowa (50/50) co HYPERLIQUID_PERP_WEIGHT
+# nizej, zaakceptowana przez uzytkownika przez AskUserQuestion ("Base
+# wzmacnia strone spot"). composite_spot_combined = blend_composite(
+# composite_spot_mainnet, composite_base, perp_weight=BASE_SPOT_WEIGHT) -
+# ta polaczona wartosc idzie DALEJ do blendu z composite_perp, dokladnie tak
+# jak surowy composite_spot robil to wczesniej (patrz main() nizej).
+BASE_SPOT_WEIGHT = float(os.environ.get("HYDRA_BASE_SPOT_WEIGHT", "0.5"))
+
+# Okno przycinania bufora `base_trade_buffer.csv` - od Fazy "integracja Base
+# B1-B3" to JUZ NIE tylko zabezpieczenie przed nieograniczonym wzrostem
+# pliku (jak w Fazie B0), tylko REALNE okno reputacji - MUSI byc >=
+# BASE_CLASSIFICATION_LOOKBACK_BLOCKS powyzej, inaczej klasyfikacja portfeli
+# nie mialaby z czego czytac historii starszej niz ten bufor. Podniesione z
+# 43200 (~24h, Faza B0) do 310000 (~7 dni + maly zapas). W przeciwienstwie
+# do bufora Hyperliquid (ktory z tego samego powodu MUSIAL wyjsc poza git,
+# patrz Faza "bufor poza git") - transakcje Base sa duzo rzadsze (obecnie
+# ~13000 wierszy/24h), wiec nawet 7-krotnie dluzsze okno to szacunkowo tylko
+# ~7-8MB pliku CSV w repo - bez ryzyka powtorzenia problemu rozmiaru z
+# Hyperliquid.
+BASE_LOOKBACK_BLOCKS = int(os.environ.get("HYDRA_BASE_LOOKBACK_BLOCKS", "310000"))
 
 
 def log(msg: str) -> None:
@@ -153,6 +201,8 @@ def main() -> int:
     wallet_flip_state = st.load_wallet_flip_state()
     hyperliquid_scoring_state = st.load_hyperliquid_scoring_state()
     hyperliquid_wallets_seen = st.load_hyperliquid_wallets_seen()
+    base_scoring_state = st.load_base_scoring_state()
+    base_wallets_seen = st.load_base_wallets_seen()
 
     # --- Faza H2/H3 (brief Hyperliquid) - osobny, rownolegly silnik na danych
     # z Hyperliquid (zbieranych przez OSOBNY workflow/listener, patrz
@@ -244,6 +294,35 @@ def main() -> int:
             }
 
     composite_perp = perp_snapshot["composite"]
+
+    # --- Faza "integracja Base B1-B3" (2026-09-11) - `base_snapshot` niesie
+    # dokladnie to samo co `perp_snapshot` wyzej (composite/tracked/active/
+    # classified/dojrzalosc/buyers-sellers), ale z JEDNA istotna roznica w
+    # tym, KIEDY jest liczony: `hl_score` powyzej moze zostac SWIEZO
+    # przeliczony w TYM samym uruchomieniu (dane Hyperliquid zbiera OSOBNY
+    # workflow, wiec sa juz gotowe na starcie tego skryptu) - `base_snapshot`
+    # NIGDY nie jest liczony tutaj. Scoring Base dzieje sie na SAMYM KONCU
+    # main() (patrz obszerny komentarz przy bloku "Base L2" nizej) - z tego
+    # samego powodu bezpieczenstwa, dla ktorego samo ZBIERANIE danych Base
+    # jest tam umieszczone (throttling Base nie moze zaszkodzic krytycznemu
+    # torowi mainnet+Hyperliquid). Wartosc uzyta TUTAJ do zblendowania
+    # pochodzi wiec z POPRZEDNIEGO uruchomienia - swiadomy, udokumentowany
+    # ~1h lag (patrz `hydrav2-automation.md`), nieszkodliwy: Base WZMACNIA
+    # prozke spot, nie jest jej jedynym zrodlem.
+    base_snapshot = base_scoring_state.get("last_base_snapshot")
+    if base_snapshot is None:
+        base_snapshot = {
+            "composite": None,
+            "is_mature": False,
+            "tracked": len(base_wallets_seen),
+            "active": 0,
+            "classified": 0,
+            "good_buyers": 0,
+            "good_sellers": 0,
+            "bad_buyers": 0,
+            "bad_sellers": 0,
+        }
+    composite_base = base_snapshot["composite"]
 
     # ZNALEZIONY I NAPRAWIONY realny blad (zgloszenie uzytkownika: "realnie
     # nie trwa to do godziny... czesto odswieza po 2h"): to byl JEDYNY
@@ -394,8 +473,24 @@ def main() -> int:
             # uruchomieniu (zwykle jest ich jedna; w rzadkim przypadku
             # nadrabiania zaleglosci - swiadome uproszczenie, jak wiele
             # innych progow/przyblizen w tym projekcie).
+            #
+            # --- Faza "integracja Base B1-B3" - `composite_base` (jak
+            # `composite_perp`, policzone raz PRZED ta petla) NAJPIERW
+            # blenduje sie z `s.composite_score` (mainnet, NIEZMIENIONE) w
+            # JEDNA polaczona wartosc "spot" - decyzja uzytkownika ("Base
+            # wzmacnia strone spot"), zamiast osobnego trzeciego toru. Ta
+            # polaczona wartosc idzie DALEJ do istniejacego blendu z
+            # composite_perp, dokladnie tak jak surowy composite_spot robil
+            # to wczesniej - `blend_composite` sam gracefully degraduje do
+            # WYLACZNIE `s.composite_score`, dopoki `composite_base is None`
+            # (Base niedojrzaly/nieskonfigurowany), wiec ta zmiana jest
+            # ZERO-RYZYKOWNA dla kazdego, kto nie ma jeszcze ustawionego
+            # `ALCHEMY_BASE_RPC_URL`.
+            composite_spot_combined = blend_composite(
+                s.composite_score, composite_base, perp_weight=BASE_SPOT_WEIGHT
+            )
             composite_final = blend_composite(
-                s.composite_score, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
+                composite_spot_combined, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
             )
             # Faza "sygnał z histerezą" - `signal_engine` (maszyna stanów
             # HOLD/LONG/SHORT z histerezą + potwierdzeniem, patrz wyżej)
@@ -433,6 +528,26 @@ def main() -> int:
                 "compositeSpot": round(s.composite_score, 3),
                 "compositePerp": round(composite_perp, 3) if composite_perp is not None else None,
                 "signalSpotOnly": s.signal.value,
+                # --- Faza "integracja Base B1-B3" - `compositeSpot` powyzej
+                # ZOSTAJE nietkniete (wylacznie mainnet, jak przedtem, dla
+                # zgodnosci wstecznej znaczenia tego pola). `compositeBase`/
+                # `compositeSpotCombined` to NOWE pola: surowa wartosc z
+                # Base (albo `null`, dopoki niedojrzaly/nieskonfigurowany) i
+                # polaczona wartosc "spot" (mainnet+Base), ktora FAKTYCZNIE
+                # idzie dalej do `compositeFinal`/`signal` - patrz blend
+                # wyzej. Diagnostyczne pola `base*` nizej - ten sam ksztalt
+                # co `perp*` wyzej (karta "Wallets" w Fazie B3, frontend).
+                "compositeBase": round(composite_base, 3) if composite_base is not None else None,
+                "compositeSpotCombined": round(composite_spot_combined, 3),
+                "baseTracked": base_snapshot["tracked"],
+                "baseActive": base_snapshot["active"],
+                "baseClassified": base_snapshot["classified"],
+                "baseIsMature": base_snapshot["is_mature"],
+                "baseGoodBuyers": base_snapshot["good_buyers"],
+                "baseGoodSellers": base_snapshot["good_sellers"],
+                "baseBadBuyers": base_snapshot["bad_buyers"],
+                "baseBadSellers": base_snapshot["bad_sellers"],
+                "baseMaturityThreshold": BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY,
                 # --- Faza H3 (front-end) - karta diagnostyczna "ETH-PERP -
                 # Hyperliquid" (patrz template.html) - te same wartosci
                 # `perp_snapshot` niezaleznie od tego, czy hl_score jest
@@ -656,6 +771,101 @@ def main() -> int:
                         f"Base L2: bufor po przycieciu: {len(base_trimmed_buffer)} "
                         "transakcji (zapisano data/base_trade_buffer.csv)."
                     )
+
+                    # --- Faza "integracja Base B1-B3" (2026-09-11) - scoring
+                    # tych samych transakcji (juz w formacie Trade - identyczny
+                    # ksztalt co mainnet, patrz BASE_POOLS/decode_swap_log) przez
+                    # DRUGA, niezalezna instancje `ScoringEngine` - TA SAMA klasa
+                    # co mainnet wyzej, zaden nowy silnik nie byl potrzebny (w
+                    # przeciwienstwie do Hyperliquida, ktory mial inny ksztalt
+                    # danych i wymagal wlasnej klasy `HyperliquidScoringEngine`).
+                    # Wlasne okno (`BASE_WINDOW_BLOCKS`) i wlasny stan na dysku -
+                    # bloki Base i mainnet NIE sa porownywalne (patrz obszerny
+                    # komentarz na poczatku tego bloku), wiec silniki musza byc
+                    # calkowicie niezalezne.
+                    #
+                    # CELOWY ~1h LAG: `composite_base` uzyty do zblendowania w
+                    # TYM uruchomieniu (patrz `base_snapshot` na poczatku main())
+                    # pochodzil z POPRZEDNIEGO uruchomienia - dopiero TERAZ (po
+                    # tym, jak krytyczny tor mainnet+Hyperliquid juz bezpiecznie
+                    # skonczyl i zapisal wyniki) liczymy SWIEZY composite_base,
+                    # ktory zostanie uzyty w NASTEPNYM uruchomieniu. Swiadomy
+                    # wybor, z tego samego powodu bezpieczenstwa co samo
+                    # umieszczenie calego bloku Base na koncu main(): scoring nie
+                    # moze poprzedzac ani przeplatac sie z krytycznym torem.
+                    # Lag jest nieszkodliwy - Base WZMACNIA prozke spot, nie
+                    # jest jej jedynym zrodlem (patrz blend_composite wyzej).
+                    base_cfg = ScoringConfig(
+                        window_blocks=BASE_WINDOW_BLOCKS,
+                        classification_lookback_blocks=BASE_CLASSIFICATION_LOOKBACK_BLOCKS,
+                    )
+                    base_has_prior_state = bool(base_scoring_state)
+                    base_engine = ScoringEngine(
+                        base_cfg,
+                        initial_ema=base_scoring_state if base_has_prior_state else None,
+                        initial_total_tracked=base_wallets_seen,
+                    )
+                    base_last_closed_end = (
+                        (base_to_block + 1) // BASE_WINDOW_BLOCKS
+                    ) * BASE_WINDOW_BLOCKS - 1
+                    base_last_scored_end = base_scoring_state.get("last_scored_window_end", -1)
+                    base_scoreable_trades = [
+                        t
+                        for t in base_combined_buffer
+                        if base_last_scored_end < t.block <= base_last_closed_end
+                    ]
+                    base_classification_history = [
+                        t for t in base_combined_buffer if t.block <= base_last_scored_end
+                    ]
+
+                    if not base_scoreable_trades:
+                        log(
+                            "Base L2: brak nowo domknietych okien do przeliczenia "
+                            "w tym uruchomieniu (composite_base bez zmian)."
+                        )
+                    else:
+                        base_price_source = (
+                            base_trimmed_buffer if base_trimmed_buffer else base_new_trades
+                        )
+                        base_price_at_block = st.price_at_block_factory(base_price_source)
+                        base_new_scores = base_engine.run(
+                            base_scoreable_trades,
+                            base_price_at_block,
+                            history_trades=base_classification_history,
+                        )
+                        if base_new_scores:
+                            base_latest = base_new_scores[-1]
+                            base_classified = (
+                                base_latest.total_good_classified + base_latest.total_bad_classified
+                            )
+                            base_is_mature = (
+                                base_classified >= BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY
+                            )
+                            new_base_snapshot = {
+                                "composite": base_latest.composite_score if base_is_mature else None,
+                                "is_mature": base_is_mature,
+                                "tracked": base_latest.total_wallets_tracked,
+                                "active": base_latest.active_wallets,
+                                "classified": base_classified,
+                                "good_buyers": base_latest.good_buyers,
+                                "good_sellers": base_latest.good_sellers,
+                                "bad_buyers": base_latest.bad_buyers,
+                                "bad_sellers": base_latest.bad_sellers,
+                            }
+                            new_base_state = base_engine.export_state()
+                            new_base_state["last_scored_window_end"] = base_latest.window_end_block
+                            new_base_state["last_base_snapshot"] = new_base_snapshot
+                            new_base_state["updated_at_utc"] = datetime.datetime.now(
+                                datetime.timezone.utc
+                            ).isoformat()
+                            st.save_base_scoring_state(new_base_state)
+                            st.save_base_wallets_seen(base_engine.total_tracked)
+                            log(
+                                f"Base L2: {base_classified} sklasyfikowanych portfeli, "
+                                f"{base_latest.total_wallets_tracked} sledzonych lacznie "
+                                f"({'dojrzale' if base_is_mature else 'jeszcze NIEDOJRZALE - composite_base=None'}) "
+                                "- wynik zostanie zblendowany ze spot w NASTEPNYM uruchomieniu."
+                            )
         except Exception as exc:  # noqa: BLE001
             # Faza B0 jest swiadomie IZOLOWANA od reszty pipeline'u - blad po
             # stronie Base (throttling, zmiana API, przejsciowy problem
