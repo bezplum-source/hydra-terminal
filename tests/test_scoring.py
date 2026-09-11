@@ -168,6 +168,55 @@ def test_good_bad_pressure_divergence_breadth_are_volume_based_and_independent_o
     assert s.signal in (Signal.LONG, Signal.SHORT, Signal.HOLD)
 
 
+def test_total_good_bad_classified_reports_whole_cohort_not_just_active_window():
+    # Faza "Base L2, integracja B1-B3" - `total_good_classified`/
+    # `total_bad_classified` musza liczyc CALA sklasyfikowana populacje
+    # kohorty (z historii/lookback), NIE tylko portfele aktywne (net BUY/
+    # SELL) w tym konkretnym oknie - potrzebne do bramki dojrzalosci Base
+    # (analogicznej do `HyperliquidScoringConfig.min_classified_wallets_
+    # for_maturity`). Uzywamy tego samego scenariusza co test wyzej (4
+    # sklasyfikowane portfele w historii: g1/g2 -> GOOD, b1/b2 -> BAD), ale
+    # w oknie testowym aktywny jest TYLKO b2 (reszta milczy) - jesli pola
+    # liczylyby tylko "aktywnych", wyszloby 0/1 zamiast 2/2.
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),  # zysk -> GOOD
+        make_trade("g2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 20.0),  # zysk -> GOOD
+        make_trade("b1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b1", 2, Side.SELL, 75.0, 20.0),  # strata -> BAD
+        make_trade("b2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b2", 2, Side.SELL, 70.0, 20.0),  # strata -> BAD
+    ]
+    # w oknie testowym trada TYLKO b2 - g1/g2/b1 sa nieaktywni w tym oknie,
+    # ale nadal nalezy do sklasyfikowanej (historycznej) populacji.
+    window_trades = [
+        make_trade("b2", 150, Side.SELL, 150.0, 20.0),
+    ]
+
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        good_pct=0.5,
+        bad_pct=0.5,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 150.0, history_trades=history)
+
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.total_good_classified == 2  # g1 + g2
+    assert s.total_bad_classified == 2  # b1 + b2
+    # `pool_size` (aktywni w TYM oknie z kohorty GOOD - patrz ScoringEngine.
+    # run) to co innego niz total_good_classified: tylko b2 (BAD) handlowal
+    # w oknie testowym, wiec pool_size=0, mimo ze sklasyfikowana populacja
+    # GOOD/BAD (total_*_classified) to nadal pelne 2+2 z historii.
+    assert s.pool_size == 0
+    assert s.bad_sellers == 1
+    assert s.good_buyers == 0 and s.good_sellers == 0
+
+
 # =====================================================================
 # Faza H2 (brief hydrav2-hyperliquid-brief.md) - blend composite_spot/perp
 # =====================================================================
