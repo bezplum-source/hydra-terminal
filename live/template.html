@@ -317,8 +317,22 @@
     overflow: hidden;
     display: flex;
   }
-  .tow-bull { height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--regime-bull) 65%, transparent), var(--regime-bull-glow)); }
-  .tow-bear { height: 100%; background: linear-gradient(90deg, var(--regime-bear-glow), color-mix(in srgb, var(--regime-bear) 65%, transparent)); }
+  /* Faza "poprawka kolorow/kolejnosci paska Spadki/Wzrosty" (zgloszenie
+     uzytkownika: fioletowy odcinek niedzwiedzi ciagnal sie w strone etykiety
+     "Wzrosty", a pomaranczowy byczy siedzial pod "Spadki" - odwrotnie niz
+     reszta strony, gdzie lewo=sprzedaz/spadek, prawo=kupno/wzrost, patrz
+     .composite-meter-fill.up/.down). Naprawione dwojako: (1) kolejnosc divow
+     w HTML nizej zamieniona, zeby tow-bear renderowal sie pierwszy/po lewej
+     pod "Spadki", a tow-bull drugi/po prawej pod "Wzrosty"; (2) na wyrazna
+     prosbe uzytkownika, paleta regime-bull/regime-bear (pomaranczowy/fiolet,
+     celowo odrebna od --good/--bad - patrz komentarz przy definicji zmiennych
+     w :root) zastapiona tu --good/--bad, tak jak reszta strony (byk=zielony,
+     niedzwiedz=czerwony). Ikony mood-icon-wrap/event-icon-wrap ponizej w tej
+     samej karcie dostaly te sama zmiane kolorow dla spojnosci. Wstazka
+     regime na wykresie ceny (regime-band-bull/bear, marker-start-bull/bear,
+     marker-special-bull/bear) NIE zostala tu ruszona - patrz docs.html. */
+  .tow-bull { height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--good) 65%, transparent), var(--good-glow)); }
+  .tow-bear { height: 100%; background: linear-gradient(90deg, var(--bad-glow), color-mix(in srgb, var(--bad) 65%, transparent)); }
   .tow-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); margin-top: 7px; }
   .tow-labels strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
@@ -689,16 +703,16 @@
   .mood-row { display: flex; align-items: center; gap: 14px; }
   .mood-icon-wrap { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; flex: none; }
   .mood-icon-wrap.neutral { background: rgba(255,255,255,0.04); color: var(--text-secondary); border: 1px solid var(--border); }
-  .mood-icon-wrap.bull { background: var(--regime-bull-soft); color: var(--regime-bull-glow); border: 1px solid color-mix(in srgb, var(--regime-bull) 55%, transparent); }
-  .mood-icon-wrap.bear { background: var(--regime-bear-soft); color: var(--regime-bear-glow); border: 1px solid color-mix(in srgb, var(--regime-bear) 55%, transparent); }
+  .mood-icon-wrap.bull { background: var(--good-soft); color: var(--good-glow); border: 1px solid color-mix(in srgb, var(--good) 55%, transparent); }
+  .mood-icon-wrap.bear { background: var(--bad-soft); color: var(--bad-glow); border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent); }
   .mood-text { display: flex; flex-direction: column; gap: 2px; }
   .mood-label { font-family: var(--font-display); font-size: 19px; letter-spacing: 0.03em; color: var(--text-primary); }
   .mood-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.03em; text-transform: uppercase; }
 
   .event-row { display: flex; align-items: center; gap: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
   .event-icon-wrap { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; flex: none; border: 1px solid var(--border); }
-  .event-icon-wrap.bull { background: var(--regime-bull-soft); color: var(--regime-bull-glow); border-color: color-mix(in srgb, var(--regime-bull) 55%, transparent); }
-  .event-icon-wrap.bear { background: var(--regime-bear-soft); color: var(--regime-bear-glow); border-color: color-mix(in srgb, var(--regime-bear) 55%, transparent); }
+  .event-icon-wrap.bull { background: var(--good-soft); color: var(--good-glow); border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+  .event-icon-wrap.bear { background: var(--bad-soft); color: var(--bad-glow); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
   .event-icon-wrap.muted { background: rgba(255,255,255,0.04); color: var(--text-muted); }
   .event-text { display: flex; flex-direction: column; gap: 2px; }
   .event-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
@@ -872,8 +886,8 @@
 
       <div>
         <div class="tow-track">
-          <div class="tow-bull" id="towBull" style="width:50%"></div>
           <div class="tow-bear" id="towBear" style="width:50%"></div>
+          <div class="tow-bull" id="towBull" style="width:50%"></div>
         </div>
         <div class="tow-labels"><span>Spadki</span><span>Wzrosty</span></div>
       </div>
