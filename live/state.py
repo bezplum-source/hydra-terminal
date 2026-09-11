@@ -114,6 +114,7 @@ BASE_COLLECTOR_STATE_PATH = DATA_DIR / "base_collector_state.json"
 STATS_RESET_STATE_PATH = DATA_DIR / "stats_reset_state.json"
 BASE_SCORING_STATE_PATH = DATA_DIR / "base_scoring_state.json"
 BASE_WALLETS_SEEN_PATH = DATA_DIR / "base_wallets_seen.txt"
+SPOT_POOL_STATE_PATH = DATA_DIR / "spot_pool_state.json"
 
 
 def load_scoring_state() -> dict:
@@ -372,9 +373,13 @@ def load_base_scoring_state() -> dict:
     liczniki tracked/active/classified/good-bad buyers-sellers do
     wyświetlenia w karcie "Wallets". Liczony na SAMYM KOŃCU
     `run_incremental.py` (po zebraniu nowych bloków Base) — CELOWY ~1h lag:
-    wartość zapisana TU jest tą, którą NASTĘPNE uruchomienie zblenduje ze
-    spot (patrz komentarz przy `BASE_SPOT_WEIGHT`/blend_composite w
-    `run_incremental.py`)."""
+    wartość zapisana TU jest tą, którą NASTĘPNE uruchomienie odczyta jako
+    `base_snapshot` (patrz `main()` w `run_incremental.py`). Od Fazy
+    "wspólna pula SPOT" (2026-09-11) to liczniki dobrych/złych kupujących-
+    sprzedających z TEGO słownika (nie `composite_base` samo w sobie) są
+    tym, co faktycznie trafia do wspólnej puli SPOT (`SpotPoolEngine`,
+    patrz `spot_pool_state.json`/`load_spot_pool_state` niżej) —
+    `composite_base` zostaje wyłącznie jako pole diagnostyczne."""
     if not BASE_SCORING_STATE_PATH.exists():
         return {}
     return json.loads(BASE_SCORING_STATE_PATH.read_text(encoding="utf-8"))
@@ -399,6 +404,36 @@ def load_base_wallets_seen() -> set[str]:
 def save_base_wallets_seen(wallets: set[str]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BASE_WALLETS_SEEN_PATH.write_text("\n".join(sorted(wallets)) + "\n", encoding="utf-8")
+
+
+def load_spot_pool_state() -> dict:
+    """Faza "wspólna pula SPOT" (2026-09-11, zgłoszenie użytkownika: "Base i
+    Uniswap powinny być w tej samej puli decyzyjnej") — ZASTĘPUJE poprzedni
+    mechanizm ("policz `composite_spot`/`composite_base` OSOBNO, zblenduj
+    stałą wagą `BASE_SPOT_WEIGHT`") wspólną pulą liczników Uniswap+Base,
+    patrz `hydra_signals.scoring.SpotPoolEngine`.
+
+    Mały, jak `scoring_state.json`/`base_scoring_state.json`: tylko cztery
+    liczby EMA (`good_short`/`good_long`/`bad_short`/`bad_long`) — POZWALA
+    `SpotPoolEngine` wznowić się dokładnie tam, gdzie skończył poprzedni
+    proces, tym samym wzorcem co pozostałe silniki EMA w tym projekcie.
+
+    **Migracja (pierwsze uruchomienie po wdrożeniu tej fazy)**: gdy ten
+    plik jeszcze nie istnieje, `run_incremental.py` NIE zaczyna z EMA=None
+    ("na zimno") — zamiast tego dziedziczy JUŻ ROZGRZANE EMA z bieżącego
+    (w tym momencie jeszcze mainnet-only) `scoring_state.json`. Dzięki temu,
+    dopóki Base nie wnosi żadnych transakcji do puli (niedojrzały/
+    nieskonfigurowany — dokładnie jak wcześniej), połączona wartość "spot"
+    zostaje BAJT W BAJT identyczna z samym Uniswapem, bez sztucznego okresu
+    rozgrzewania EMA od zera — patrz komentarz w `main()`."""
+    if not SPOT_POOL_STATE_PATH.exists():
+        return {}
+    return json.loads(SPOT_POOL_STATE_PATH.read_text(encoding="utf-8"))
+
+
+def save_spot_pool_state(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SPOT_POOL_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
