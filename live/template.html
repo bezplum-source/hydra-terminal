@@ -757,7 +757,7 @@
 
         <div class="composite-tile">
           <div class="composite-head">
-            <span class="composite-name">Uniswap (spot)<span class="info-tip" tabindex="0" id="compositeTipSpot" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na Uniswap.">ⓘ</span></span>
+            <span class="composite-name">Spot (Uniswap+Base)<span class="info-tip" tabindex="0" id="compositeTipSpot" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.">ⓘ</span></span>
             <span class="composite-word" id="compositeWordSpot">-</span>
           </div>
           <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillSpot"></div></div>
@@ -813,6 +813,7 @@
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
             <tr><td>Uniswap</td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
+            <tr><td>Base</td><td class="buy" id="walletGoodBaseBuy">-</td><td class="sell" id="walletGoodBaseSell">-</td></tr>
             <tr><td>Hyperliquid</td><td class="buy" id="walletGoodHlBuy">-</td><td class="sell" id="walletGoodHlSell">-</td></tr>
           </tbody>
         </table>
@@ -837,6 +838,7 @@
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
             <tr><td>Uniswap</td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
+            <tr><td>Base</td><td class="buy" id="walletBadBaseBuy">-</td><td class="sell" id="walletBadBaseSell">-</td></tr>
             <tr><td>Hyperliquid</td><td class="buy" id="walletBadHlBuy">-</td><td class="sell" id="walletBadHlSell">-</td></tr>
           </tbody>
         </table>
@@ -1033,15 +1035,34 @@ function renderHero() {
   // jedno miejsce prawdy), co dawny statScoreBreakdown/karta ETH-PERP. ---
   const threshold = latest.signalThreshold != null ? latest.signalThreshold : 0;
   renderCompositeMeter('All', latest.composite, threshold);
-  renderCompositeMeter('Spot', latest.compositeSpot !== undefined ? latest.compositeSpot : null, threshold);
+  // Faza "Base L2, integracja B1-B3" - kafelek "Spot" pokazuje teraz
+  // `compositeSpotCombined` (Uniswap+Base zblendowane, patrz
+  // `blend_composite` w run_incremental.py), nie sam mainnet - decyzja z
+  // AskUserQuestion "Base wzmacnia stronę spot". `compositeSpot` (fallback
+  // dla bardzo starych świec sprzed tej fazy, kiedy pola *Combined jeszcze
+  // nie istniało) pozostaje czysto mainnetowe.
+  const spotCombinedValue = latest.compositeSpotCombined !== undefined
+    ? latest.compositeSpotCombined
+    : (latest.compositeSpot !== undefined ? latest.compositeSpot : null);
+  renderCompositeMeter('Spot', spotCombinedValue, threshold);
   renderCompositeMeter('Perp', latest.compositePerp != null ? latest.compositePerp : null, threshold);
 
   // Dodatkowy kontekst dopisywany do (i) przy licznikach - dawna "Pula
   // scoringu" (Uniswap) i dawna karta ETH-PERP (dojrzałość/próg klasyfikacji
   // Hyperliquid, PnL bez funding payments) - zamiast osobnych, dużych kart
   // na te same dane (patrz komentarz H3 przy pierwotnej karcie ETH-PERP).
+  // Faza Base B1-B3 - dopisujemy analogiczny status dojrzałości Base (patrz
+  // blok Hyperliquid ponizej dla identycznego wzorca trzech przypadkow:
+  // brak danych / niedojrzałe / dojrzałe).
   const spotTip = document.getElementById('compositeTipSpot');
-  spotTip.setAttribute('data-tip', spotTip.getAttribute('data-tip') + ' Pula scoringu (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.');
+  const spotBaseTip = spotTip.getAttribute('data-tip') + ' Pula scoringu Uniswap (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
+  if (latest.baseTracked === undefined) {
+    spotTip.setAttribute('data-tip', spotBaseTip + ' Dane z Base jeszcze się nie pojawiły w tej historii świec.');
+  } else if (!latest.baseIsMature || latest.compositeBase == null) {
+    spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap decyduje bez zmian.');
+  } else {
+    spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — realnie wpływa na wartość spot (waga 50/50).');
+  }
 
   const perpTip = document.getElementById('compositeTipPerp');
   const perpBaseTip = 'Presja kupna/sprzedaży wśród portfeli handlujących kontraktami perpetual ETH na Hyperliquid.';
@@ -1053,44 +1074,76 @@ function renderHero() {
     perpTip.setAttribute('data-tip', perpBaseTip + ' Dojrzałe (' + latest.perpClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.perpMaturityThreshold + ') — realnie wpływa na zblendowany sygnał (waga 50/50). PnL liczony bez funding payments i bez ważenia dźwignią (uproszczenie).');
   }
 
-  // --- Wallets: GOOD/BAD kupuje/sprzedaje połączone z obu źródeł (Uniswap +
-  // Hyperliquid) w jedną liczbę, z rozbiciem źródeł małym drukiem - patrz
-  // zgłoszenie użytkownika "najbardziej interesuje mnie good/bad portfele,
-  // bez różnicy czy to uniswap czy hyperliquid". ---
+  // --- Wallets: GOOD/BAD kupuje/sprzedaje połączone z WSZYSTKICH źródeł
+  // (Uniswap + Base + Hyperliquid) w jedną liczbę, z rozbiciem źródeł małym
+  // drukiem - patrz zgłoszenie użytkownika "najbardziej interesuje mnie
+  // good/bad portfele, bez różnicy czy to uniswap czy hyperliquid". Faza
+  // Base B1-B3 dokłada tu trzecie źródło (AskUserQuestion "Tak, rozbij w
+  // karcie Wallets") - te liczby (klasyfikacja/aktywność w oknie) są celowo
+  // NIEZALEŻNE od bramki dojrzałości Base (`baseIsMature` wpływa tylko na
+  // to, czy `compositeBase` wpływa na wartość spot/sygnał - identycznie jak
+  // już wcześniej dla Hyperliquid/`perpIsMature` powyżej). ---
   const hlAvailable = latest.perpTracked !== undefined;
   const perpGoodBuyers = latest.perpGoodBuyers || 0, perpGoodSellers = latest.perpGoodSellers || 0;
   const perpBadBuyers = latest.perpBadBuyers || 0, perpBadSellers = latest.perpBadSellers || 0;
 
-  document.getElementById('walletGoodBuy').textContent = latest.goodBuyers + perpGoodBuyers;
-  document.getElementById('walletGoodSell').textContent = latest.goodSellers + perpGoodSellers;
-  document.getElementById('walletBadBuy').textContent = latest.badBuyers + perpBadBuyers;
-  document.getElementById('walletBadSell').textContent = latest.badSellers + perpBadSellers;
+  const baseAvailable = latest.baseTracked !== undefined;
+  const baseGoodBuyers = latest.baseGoodBuyers || 0, baseGoodSellers = latest.baseGoodSellers || 0;
+  const baseBadBuyers = latest.baseBadBuyers || 0, baseBadSellers = latest.baseBadSellers || 0;
+
+  document.getElementById('walletGoodBuy').textContent = latest.goodBuyers + baseGoodBuyers + perpGoodBuyers;
+  document.getElementById('walletGoodSell').textContent = latest.goodSellers + baseGoodSellers + perpGoodSellers;
+  document.getElementById('walletBadBuy').textContent = latest.badBuyers + baseBadBuyers + perpBadBuyers;
+  document.getElementById('walletBadSell').textContent = latest.badSellers + baseBadSellers + perpBadSellers;
 
   document.getElementById('walletGoodUniBuy').textContent = latest.goodBuyers;
   document.getElementById('walletGoodUniSell').textContent = latest.goodSellers;
   document.getElementById('walletBadUniBuy').textContent = latest.badBuyers;
   document.getElementById('walletBadUniSell').textContent = latest.badSellers;
+  document.getElementById('walletGoodBaseBuy').textContent = baseAvailable ? baseGoodBuyers : '–';
+  document.getElementById('walletGoodBaseSell').textContent = baseAvailable ? baseGoodSellers : '–';
+  document.getElementById('walletBadBaseBuy').textContent = baseAvailable ? baseBadBuyers : '–';
+  document.getElementById('walletBadBaseSell').textContent = baseAvailable ? baseBadSellers : '–';
   document.getElementById('walletGoodHlBuy').textContent = hlAvailable ? perpGoodBuyers : '–';
   document.getElementById('walletGoodHlSell').textContent = hlAvailable ? perpGoodSellers : '–';
   document.getElementById('walletBadHlBuy').textContent = hlAvailable ? perpBadBuyers : '–';
   document.getElementById('walletBadHlSell').textContent = hlAvailable ? perpBadSellers : '–';
 
-  const trackedTotal = latest.tracked + (hlAvailable ? latest.perpTracked : 0);
+  const trackedTotal = latest.tracked + (baseAvailable ? latest.baseTracked : 0) + (hlAvailable ? latest.perpTracked : 0);
   document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
-  document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US') + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
+  document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US')
+    + (baseAvailable ? ' · Base ' + latest.baseTracked.toLocaleString('en-US') : '')
+    + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
 
-  const activeTotal = latest.active + (hlAvailable ? latest.perpActive : 0);
+  const activeTotal = latest.active + (baseAvailable ? latest.baseActive : 0) + (hlAvailable ? latest.perpActive : 0);
   document.getElementById('walletsActiveTotal').textContent = activeTotal.toLocaleString('en-US');
-  document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US') + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
+  document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US')
+    + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
+    + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
 
-  // Uwaga o rozbieznosci: sam spot wskazywalby inny sygnal niz finalny,
-  // zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete do
-  // glownego sygnalu" (decyzja z briefu) nigdy nie bylo niewidoczna zmiana
-  // zachowania.
+  // Uwaga o rozbieznosci: sam spot (Uniswap) wskazywalby inny sygnal niz
+  // finalny, zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete
+  // do glownego sygnalu" (decyzja z briefu Hyperliquid, teraz tez z Base)
+  // nigdy nie bylo niewidoczna zmiana zachowania.
+  //
+  // Faza Base B1-B3 - PROBOWALISMY tu policzyc lokalnie, ktora warstwa
+  // blendu (Base czy Hyperliquid) "zdecydowala" o rozbieznosci, porownujac
+  // prosty prog (`compositeSpotCombined` vs `signalThreshold`) - ALE finalny
+  // `signal` NIE jest prostym progiem: to `SignalEngine.process()`
+  // (hydra_signals/scoring.py) - stanowa histereza z osobnymi progami
+  // wejscia/wyjscia i wymaganym ciagiem potwierdzajacych świec
+  // (`min_confirmation_periods`), liczona WYLACZNIE na `composite_final`
+  // (PO obu blendach) - nie istnieje żaden odrębny, historyczny tor
+  // histerezy dla "samego spot+Base, bez perp", więc nie da się tu uczciwie
+  // odtworzyć, co dokladnie przewazylo. Zweryfikowane empirycznie (Playwright,
+  // scenariusz z dojrzalym Base i NULL/niedojrzalym perp) - naiwny prog dawal
+  // WIDOCZNIE bledna odpowiedz (np. "Hyperliquid" mimo compositePerp=None).
+  // Zamiast zgadywac, nazywamy WPROST obie mozliwe przyczyny (blend, nie
+  // pojedyncza swieca) - uczciwe i wciaz uzyteczne, bez falszywej precyzji.
   const divNote = document.getElementById('heroDivergenceNote');
   if (latest.signalSpotOnly !== undefined && latest.signalSpotOnly !== latest.signal) {
     divNote.style.display = 'block';
-    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował Hyperliquid.';
+    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował zblendowany wpływ Base i/lub Hyperliquid (uwzględniający historię potwierdzeń, nie tylko bieżącą świecę).';
   } else {
     divNote.style.display = 'none';
   }
