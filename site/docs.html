@@ -660,6 +660,10 @@
           picks up exactly where the last successful run left off, tracked through a set
           of small state files committed alongside the code (or, for the larger
           Hyperliquid buffer, cached rather than committed — see above).
+          <code>update.yml</code> also runs a second way: immediately after every
+          <code>hyperliquid-update.yml</code> completion (a <code>workflow_run</code>
+          trigger, added 2026-09-11 — see "The two update workflows can race" below),
+          on top of its own hourly cron.
         </p>
         <div class="table-wrap">
         <table>
@@ -740,6 +744,28 @@
           check it against an independent, real source — Etherscan/Basescan's own event
           logs, DexScreener's volume figures — rather than guessing whether it's a code
           bug or genuine market behavior.
+        </p>
+        <h4>The two update workflows can race (fixed 2026-09-11)</h4>
+        <p>
+          <code>update.yml</code> reads Hyperliquid's trade buffer from a GitHub Actions
+          cache entry that <code>hyperliquid-update.yml</code> only writes once its
+          ~50-minute WebSocket listen finishes. The two crons were offset (minute 7 vs.
+          minute 20) purely so the jobs wouldn't compete for runners in the same minute —
+          nobody had worked out that 20 + ~50 pushes the listener's finish to around
+          minute 10 of the <em>next</em> hour, a few minutes <em>after</em>
+          <code>update.yml</code>'s own minute-7 run had already read the previous,
+          hour-old cache entry. The result: every hourly refresh used Hyperliquid data
+          that was structurally guaranteed to be almost an hour stale, not just
+          occasionally unlucky. A fixed cron offset can't fully fix this — the listen
+          duration isn't perfectly constant, and GitHub can delay a scheduled run's
+          actual start under load. Instead, <code>update.yml</code> now also triggers via
+          <code>workflow_run</code> immediately after every <code>hyperliquid-update.yml</code>
+          completion (success or failure — the cache-read step already falls back to the
+          latest available entry either way), on top of keeping its own hourly cron as a
+          fallback. In practice the site now often refreshes twice within a few minutes
+          of each other after an hourly cycle: once on schedule (possibly on stale data),
+          then again right after Hyperliquid lands, self-correcting without waiting for
+          the next hour.
         </p>
       </section>
 
