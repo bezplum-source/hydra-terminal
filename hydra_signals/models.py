@@ -121,6 +121,22 @@ class WindowScore:
     bad_trader_bullish_flips: int = 0
     bad_trader_bearish_flips: int = 0
 
+    # --- Populacja sklasyfikowana (Faza "Base L2, integracja B1-B3",
+    # 2026-09-11) ---
+    # `len(good_wallets)`/`len(bad_wallets)` policzone w oknie
+    # `classification_lookback_blocks` — CAŁA sklasyfikowana populacja tej
+    # kohorty w danym momencie, NIE tylko portfele aktywne (net BUY/SELL)
+    # w TYM konkretnym oknie (to już mówią `good_buyers+good_sellers`/
+    # `bad_buyers+bad_sellers` wyżej). Dodane, żeby dało się zbudować
+    # bramkę dojrzałości dla `ScoringEngine` używanego dla Base (analogiczną
+    # do `HyperliquidScoringConfig.min_classified_wallets_for_maturity`/pola
+    # `classified` w `perp_snapshot`) bez duplikowania całej klasy silnika —
+    # przydatne też dla strony mainnet/spot dla symetrii z perp. Domyślne
+    # `0` — wstecznie kompatybilne z już zapisaną historią świec sprzed tej
+    # fazy.
+    total_good_classified: int = 0
+    total_bad_classified: int = 0
+
     def as_debug_line(self) -> str:
         """Renderuje wynik w formacie zbliżonym do wycieku z hydra.trading -
         głównie do wizualnej weryfikacji "czy to wygląda znajomo"."""
