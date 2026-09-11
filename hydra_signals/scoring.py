@@ -601,6 +601,8 @@ class ScoringEngine:
                     good_trader_bearish_flips=good_bearish_flips,
                     bad_trader_bullish_flips=bad_bullish_flips,
                     bad_trader_bearish_flips=bad_bearish_flips,
+                    total_good_classified=len(good_wallets),
+                    total_bad_classified=len(bad_wallets),
                 )
             )
 
