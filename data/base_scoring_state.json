@@ -1,0 +1,20 @@
+{
+  "good_short": 0.5798341836248125,
+  "good_long": 0.45655301988696134,
+  "bad_short": 0.6270623644193014,
+  "bad_long": 0.567734674971726,
+  "prev_signal": "HOLD",
+  "last_scored_window_end": 50984999,
+  "last_base_snapshot": {
+    "composite": -0.10281900833687121,
+    "is_mature": true,
+    "tracked": 616,
+    "active": 51,
+    "classified": 28,
+    "good_buyers": 2,
+    "good_sellers": 0,
+    "bad_buyers": 3,
+    "bad_sellers": 0
+  },
+  "updated_at_utc": "2026-09-11T13:06:35.053595+00:00"
+}
