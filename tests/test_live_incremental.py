@@ -22,6 +22,7 @@ import json
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from hydra_signals.data_sources.pools import BASE_UNISWAP_V3_WETH_USDC_005, UNISWAP_V3_USDC_WETH_005
+from hydra_signals.scoring import blend_composite
 from live import build_site as bs
 from live import run_incremental as ri
 from live import state as st
@@ -215,6 +216,14 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # repo zamiast do tmp_path.
     monkeypatch.setattr(st, "BASE_SCORING_STATE_PATH", tmp_path / "data" / "base_scoring_state.json")
     monkeypatch.setattr(st, "BASE_WALLETS_SEEN_PATH", tmp_path / "data" / "base_wallets_seen.txt")
+    # Faza "wspolna pula SPOT" - dopisane OD RAZU (patrz wszystkie komentarze
+    # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
+    # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
+    # testy ponizej wywolujace ri.main() zapisywalyby PRAWDZIWY plik
+    # data/spot_pool_state.json w tym repo zamiast do tmp_path (dokladnie to
+    # sie stalo przy pierwszym uruchomieniu pytest po dodaniu tej sciezki -
+    # zauwazone i naprawione od razu, przed dostawa).
+    monkeypatch.setattr(st, "SPOT_POOL_STATE_PATH", tmp_path / "data" / "spot_pool_state.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -1070,3 +1079,69 @@ def test_base_maturity_gate_lags_one_run_then_blends_into_spot(tmp_path, monkeyp
     # do domkniecia) - ale nadal poprawnie odczytany/zblendowany.
     base_state_after_2 = st.load_base_scoring_state()
     assert base_state_after_2["last_base_snapshot"] == snapshot_after_1
+
+
+def test_spot_pool_uses_pooled_counts_not_old_fixed_weight_blend(tmp_path, monkeypatch):
+    """Test na CALY sens Fazy "wspolna pula SPOT" (2026-09-11, zgloszenie
+    uzytkownika po zobaczeniu zywych danych: garstka sklasyfikowanych
+    transakcji Base miala DOKLADNIE tyle samo wplywu na `compositeSpot
+    Combined` co znacznie wieksza probka Uniswapa, bo stary mechanizm
+    (`blend_composite` ze stala waga 50/50) nie znal pojecia "rozmiaru
+    proby").
+
+    Ten test uruchamia PRAWDZIWY pipeline (ri.main(), dwa uruchomienia -
+    dokladnie jak `test_base_maturity_gate_lags_one_run_then_blends_into_
+    spot` powyzej) i weryfikuje, ze `compositeSpotCombined` faktycznie
+    produkowany przez pipeline RozNI Sie od tego, co dalby stary,
+    porzucony mechanizm (`blend_composite(compositeSpot, compositeBase,
+    0.5)`) - dowod, ze pooling faktycznie dziala na prawdziwych danych z
+    calego pipeline'u, nie tylko w izolowanym tescie jednostkowym
+    `SpotPoolEngine` (patrz test_scoring.py - TAM sprawdzana jest
+    dokladna, ilosciowa teza "mniejsza proba = proporcjonalnie mniejszy
+    wplyw", na recznie wyliczonych liczbach z prawdziwego zrzutu ekranu
+    uzytkownika - ten test tutaj tylko potwierdza integracje, celowo bez
+    zakladania z gory, KTORY kierunek/wielkosc rozniczy wyjdzie na
+    danym, przypadkowym fixture'ze portfeli Base uzywanym tu tylko do
+    ustawienia dojrzalosci)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    monkeypatch.setattr(ri, "BASE_BACKFILL_BLOCKS", 2000)
+    monkeypatch.setattr(ri, "BASE_MAX_NEW_BLOCKS_PER_RUN", 2000)
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=1000)
+
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    _seed_base_wallets_for_maturity(base_chain)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            return JsonRpcClient(url, transport=base_chain.transport)
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    # --- Uruchomienie 1: Base dojrzewa (composite_spot_combined ==
+    #     compositeSpot, jeszcze nie ma czym zblendowac - patrz test
+    #     wyzej). ---
+    assert ri.main() == 0
+
+    # --- Uruchomienie 2: nowe bloki mainnetu, Base juz dojrzaly i wnosi
+    #     swoj (mala) sklasyfikowana probke do wspolnej puli. ---
+    _seed_wallets(mainnet_chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+
+    candles = st.load_candles_history()
+    mature_candles = [c for c in candles if c["baseIsMature"]]
+    assert len(mature_candles) > 0
+    for c in mature_candles:
+        old_style_blend = blend_composite(c["compositeSpot"], c["compositeBase"], perp_weight=0.5)
+        # Pooling (suma licznikow, jedno wspolne EMA) to inny mechanizm niz
+        # stary, sztywny blend dwoch juz-gotowych composite - musi wiec dac
+        # inna wartosc (dokladna, ilosciowa teza "proporcjonalnie mniejszy
+        # wplyw mniejszej proby" jest sprawdzona precyzyjnie w
+        # test_scoring.py::test_spot_pool_engine_small_venue_gets_
+        # proportional_not_equal_influence, na kontrolowanych liczbach).
+        assert c["compositeSpotCombined"] != old_style_blend
