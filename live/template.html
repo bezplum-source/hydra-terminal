@@ -668,8 +668,21 @@
   .tri--up { border-bottom: 7px solid var(--good-glow); }
   .tri--down { border-top: 7px solid var(--bad-glow); }
 
-  .wallet-breakdown { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); display: flex; gap: 14px; flex-wrap: wrap; }
-  .wallet-breakdown b { color: var(--text-primary); font-weight: 600; }
+  /* Faza "breakdown Uniswap/Hyperliquid nieczytelny" (zgloszenie uzytkownika:
+     "Uniswap 5 / 1" - nie widac ktora liczba to kupno a ktora sprzedaz) -
+     zamiast slasha, mini-tabela z naglowkami kolumn Kupuje/Sprzedaze (kolor +
+     tekst), tak zeby kolumna zawsze mowila co to za liczba, bez polegania na
+     kolejnosci. */
+  .wallet-breakdown-table { font-family: var(--font-mono); font-size: 12px; border-collapse: collapse; width: 100%; margin-top: 2px; }
+  .wallet-breakdown-table th { text-align: right; font-weight: 400; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 6px; white-space: nowrap; }
+  .wallet-breakdown-table th:first-child { text-align: left; color: var(--text-muted); }
+  .wallet-breakdown-table th.buy-h { color: var(--good-glow); }
+  .wallet-breakdown-table th.sell-h { color: var(--bad-glow); }
+  .wallet-breakdown-table td { text-align: right; padding: 3px 0; font-weight: 600; }
+  .wallet-breakdown-table td:first-child { text-align: left; color: var(--text-muted); font-weight: 400; }
+  .wallet-breakdown-table td.buy { color: var(--good-glow); }
+  .wallet-breakdown-table td.sell { color: var(--bad-glow); }
+  .wallet-breakdown-table th:not(:first-child), .wallet-breakdown-table td:not(:first-child) { padding-left: 18px; }
 
   /* ================= plain-language market mood (replaces the old BULL/BEAR regime-pill card) ================= */
   .regime-body { display: flex; flex-direction: column; gap: 16px; }
@@ -782,10 +795,13 @@
             <span class="wallet-num-value" id="walletGoodSell">-</span>
           </div>
         </div>
-        <div class="wallet-breakdown">
-          <span>Uniswap <b id="walletGoodUniBuy">-</b>&nbsp;/&nbsp;<b id="walletGoodUniSell">-</b></span>
-          <span>Hyperliquid <b id="walletGoodHlBuy">-</b>&nbsp;/&nbsp;<b id="walletGoodHlSell">-</b></span>
-        </div>
+        <table class="wallet-breakdown-table">
+          <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
+          <tbody>
+            <tr><td>Uniswap</td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
+            <tr><td>Hyperliquid</td><td class="buy" id="walletGoodHlBuy">-</td><td class="sell" id="walletGoodHlSell">-</td></tr>
+          </tbody>
+        </table>
       </div>
 
       <div class="wallet-col">
@@ -803,10 +819,13 @@
             <span class="wallet-num-value" id="walletBadSell">-</span>
           </div>
         </div>
-        <div class="wallet-breakdown">
-          <span>Uniswap <b id="walletBadUniBuy">-</b>&nbsp;/&nbsp;<b id="walletBadUniSell">-</b></span>
-          <span>Hyperliquid <b id="walletBadHlBuy">-</b>&nbsp;/&nbsp;<b id="walletBadHlSell">-</b></span>
-        </div>
+        <table class="wallet-breakdown-table">
+          <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
+          <tbody>
+            <tr><td>Uniswap</td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
+            <tr><td>Hyperliquid</td><td class="buy" id="walletBadHlBuy">-</td><td class="sell" id="walletBadHlSell">-</td></tr>
+          </tbody>
+        </table>
       </div>
 
     </div>
