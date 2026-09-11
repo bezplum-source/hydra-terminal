@@ -337,7 +337,7 @@
           <tr>
             <td><strong>Base L2</strong><br>Uniswap V3 WETH/USDC 0.05%</td>
             <td><span class="pill long">live · B1–B3 complete</span></td>
-            <td>Independent wallet classification, <code>composite_base</code>, blended 50/50 into the combined "spot" value (mainnet + Base) — one run behind, see <a href="#base">Data source: Base L2</a></td>
+            <td>Independent wallet classification, pooled with mainnet's per-window counts into the combined "spot" value (proportional to actual window activity, not a fixed weight) — one run behind, see <a href="#base">Data source: Base L2</a></td>
           </tr>
         </table>
         </div>
@@ -504,24 +504,41 @@
           the opposite case.
         </p>
         <p>
-          Because three independent sources now feed the pipeline — Uniswap on mainnet,
-          Uniswap on Base, and the ETH-PERP market on Hyperliquid — there are technically
-          three composite scores, blended in two stages:
+          Three independent sources feed the pipeline — Uniswap on mainnet, Uniswap on
+          Base, and the ETH-PERP market on Hyperliquid — organized into two decision
+          pools: <strong>SPOT</strong> (Uniswap mainnet + Base, pooled together) and
+          <strong>PERP</strong> (Hyperliquid, with room to add another perpetuals venue
+          later). The two pools are combined in a single blend stage:
         </p>
-        <pre><code>composite_spot_combined = blend(composite_spot, composite_base, weight=0.5)
+        <pre><code>composite_spot_combined = spot_pool(uniswap_counts + base_counts)
 composite_final         = blend(composite_spot_combined, composite_perp, weight=0.5)</code></pre>
         <p>
-          Both stages use the exact same graceful-fallback blend function: whenever a
-          side doesn't yet have enough classified wallets to be considered statistically
-          mature (see <a href="#base">Data source: Base L2</a> and
-          <a href="#hyperliquid">Data source: Hyperliquid</a> for each source's specific
-          threshold), that stage's blend collapses to just the other side, unchanged —
-          so a slow or immature source never silently corrupts the signal, it just
-          quietly leans more on what's already proven. <code>composite_spot</code> itself
-          stays mainnet-only throughout, purely as a diagnostic baseline (it's what the
-          "sam spot" divergence note on the dashboard compares against) —
-          <code>composite_spot_combined</code> is the value that actually carries Base's
-          contribution forward into the final blend.
+          Uniswap and Base used to be combined the same way as SPOT/PERP above — a fixed
+          50/50 blend of two independently-smoothed composite scores. That changed on
+          2026-09-11: a fixed weight gave Base exactly half the influence over the spot
+          value regardless of how many wallets actually traded on Base that hour, even
+          when Base's classified sample for the window was a handful of wallets against
+          Uniswap's several dozen. Instead, Uniswap's and Base's raw per-window counts
+          (how many GOOD/BAD wallets bought vs. sold) are now summed into one shared pool
+          before computing a single ratio and a single EMA — so each source's influence is
+          proportional to how much it actually traded that window, not a fixed constant.
+          When Base has no classified activity in a window (immature or unconfigured), it
+          contributes zero to the pool and the result reduces to Uniswap alone — the same
+          graceful-degradation guarantee as before, just implemented as "contributes
+          nothing" rather than "gets excluded from a blend."
+        </p>
+        <p>
+          The SPOT ↔ PERP stage above still uses the older graceful-fallback blend
+          function: whenever Hyperliquid doesn't yet have enough classified wallets to be
+          considered statistically mature (see <a href="#hyperliquid">Data source:
+          Hyperliquid</a>), that blend collapses to just <code>composite_spot_combined</code>,
+          unchanged. <code>composite_spot</code> itself stays mainnet-only throughout,
+          purely as a diagnostic baseline (it's what the "sam spot" divergence note on the
+          dashboard compares against) — <code>composite_spot_combined</code> is the pooled
+          SPOT value that actually carries Base's contribution forward into the final
+          blend. <code>composite_base</code> (Base's own, independently-smoothed score) is
+          likewise kept only as a diagnostic field — it no longer feeds the decision
+          directly.
         </p>
       </section>
 
@@ -650,18 +667,20 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><th>Parameter</th><th>Value</th><th>Why</th></tr>
           <tr><td><code>BASE_WINDOW_BLOCKS</code></td><td>1,800</td><td>3600s / ~2s per block ≈ same ~1h candle cadence as mainnet's 250-block window (250 × ~14.4s)</td></tr>
           <tr><td><code>BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>302,400</td><td>1,800 × 24 × 7 — same ~7-day reputation window used elsewhere, on Base's own block grid</td></tr>
-          <tr><td><code>BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>20</td><td>Maturity gate before <code>composite_base</code> counts for anything — identical default to Hyperliquid's own threshold</td></tr>
-          <tr><td><code>BASE_SPOT_WEIGHT</code></td><td>0.5</td><td>Base's weight in <code>composite_spot_combined</code> — same 50/50 starting point as the mainnet/perp blend</td></tr>
+          <tr><td><code>BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>20</td><td>Maturity gate before Base's per-window counts are allowed into the shared SPOT pool — identical default to Hyperliquid's own threshold</td></tr>
         </table>
         </div>
         <p>
-          Below that maturity threshold, <code>composite_base</code> is simply <code>None</code>
-          and the spot blend degrades to mainnet alone — exactly the same graceful
-          fallback Hyperliquid uses for <code>composite_perp</code> (see
-          <a href="#composite">Composite score</a>). Wallets are tracked, classified, and
-          shown on the <a href="#frontend">Wallets card</a> the whole time regardless of
-          maturity — the gate only controls whether <code>composite_base</code> is allowed
-          to move the blended signal, not whether Base activity is visible at all.
+          <code>BASE_SPOT_WEIGHT</code> (a fixed 50/50 blend weight) existed here until
+          2026-09-11's "shared SPOT pool" change — see <a href="#composite">Composite
+          score</a> for why it was removed and what replaced it. Below the maturity
+          threshold, Base's window counts (good/bad buyers-sellers) are treated as zero
+          when building the shared pool, and the pooled value degrades to mainnet alone —
+          exactly the same graceful fallback Hyperliquid uses for <code>composite_perp</code>.
+          Wallets are tracked, classified, and shown on the <a href="#frontend">Wallets
+          card</a> the whole time regardless of maturity — the gate only controls whether
+          Base's counts are allowed to move the pooled SPOT value, not whether Base
+          activity is visible at all.
         </p>
         <div class="callout">
           <span class="label">A deliberate one-run lag</span>
@@ -718,8 +737,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/wallet_flip_state.json</code></td><td>Per-wallet streak/direction, for flip detection</td></tr>
           <tr><td><code>data/hyperliquid_scoring_state.json</code></td><td>Hyperliquid classification + <code>composite_perp</code> EMA</td></tr>
           <tr><td><code>data/base_collector_state.json</code></td><td>Base L2 block cursor</td></tr>
-          <tr><td><code>data/base_scoring_state.json</code></td><td>Base classification + <code>composite_base</code> EMA, plus the last computed snapshot read by the <em>next</em> run's blend (see <a href="#base">Data source: Base L2</a>)</td></tr>
+          <tr><td><code>data/base_scoring_state.json</code></td><td>Base classification + its own (now diagnostic-only) <code>composite_base</code> EMA, plus the last computed snapshot (window counts) read by the <em>next</em> run's shared SPOT pool (see <a href="#base">Data source: Base L2</a>)</td></tr>
           <tr><td><code>data/base_wallets_seen.txt</code></td><td>Cumulative set of every Base wallet address ever tracked</td></tr>
+          <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts) — see <a href="#composite">Composite score</a></td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
         </table>
@@ -1042,9 +1062,15 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default 310,000 blocks, ~7 days + margin — raised from the earlier ~1-day/43,200-block default once Base's B1–B3 classification needed a full 7-day reputation window to read from)</td></tr>
           <tr><td><code>HYDRA_BASE_WINDOW_BLOCKS</code></td><td>No</td><td>Base's own candle window size in blocks (default 1,800, ≈1h at Base's ~2s block time)</td></tr>
           <tr><td><code>HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for classifying Base wallets (default 302,400 blocks, ~7 days)</td></tr>
-          <tr><td><code>HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>No</td><td>Minimum classified Base wallets before <code>composite_base</code> counts toward the blend (default 20, same as Hyperliquid's threshold)</td></tr>
-          <tr><td><code>HYDRA_BASE_SPOT_WEIGHT</code></td><td>No</td><td>Base's weight in the combined spot value (default 0.5, i.e. 50/50 with mainnet)</td></tr>
+          <tr><td><code>HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>No</td><td>Minimum classified Base wallets before Base's window counts are let into the shared SPOT pool (default 20, same as Hyperliquid's threshold)</td></tr>
         </table>
+        <p>
+          <code>HYDRA_BASE_SPOT_WEIGHT</code> existed here until 2026-09-11 (a fixed 50/50
+          blend weight for Base — see <a href="#composite">Composite score</a> for why it
+          was replaced with a shared, activity-proportional pool). If it's still set in
+          your GitHub Actions secrets/variables, it's now harmlessly ignored — nothing
+          reads it anymore.
+        </p>
         </div>
         <p>
           In production, these are configured as GitHub Actions secrets/variables under
