@@ -137,6 +137,20 @@ class WindowScore:
     total_good_classified: int = 0
     total_bad_classified: int = 0
 
+    # --- Wazenie wolumenem SPOT (Faza "wazenie wolumenem SPOT", 2026-09-11) ---
+    # Analogiczne do good_buyers/good_sellers/bad_buyers/bad_sellers wyzej,
+    # ale kazdy portfel wnosi NIE "1" (jeden portfel = jeden glos), tylko
+    # sqrt(min(notional_usd_portfela_w_oknie, ScoringConfig.
+    # volume_weight_cap_notional_usd)) - patrz ScoringEngine.run() po pelny
+    # opis i uzasadnienie (pierwiastek + twardy sufit = ochrona przed
+    # zdominowaniem wyniku przez pojedynczy duzy portfel/"wieloryba").
+    # Domyslne 0.0 - wstecznie kompatybilne z juz zapisana historia swiec
+    # sprzed tej fazy.
+    good_buy_weight: float = 0.0
+    good_sell_weight: float = 0.0
+    bad_buy_weight: float = 0.0
+    bad_sell_weight: float = 0.0
+
     def as_debug_line(self) -> str:
         """Renderuje wynik w formacie zbliżonym do wycieku z hydra.trading -
         głównie do wizualnej weryfikacji "czy to wygląda znajomo"."""
