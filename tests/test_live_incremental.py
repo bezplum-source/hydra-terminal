@@ -1195,3 +1195,42 @@ def test_spot_pool_state_persists_volume_weighted_ema_after_real_run(tmp_path, m
     assert state["good_long_weighted"] is not None
     assert state["bad_short_weighted"] is not None
     assert state["bad_long_weighted"] is not None
+
+
+def test_candle_exposes_spot_pool_composite_counts_and_weighted_fields(tmp_path, monkeypatch):
+    """Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12, zgloszenie
+    uzytkownika "czy gdzies na stronie w UX bede widzial wagi?") -
+    front-end (karta Wallets) pokazuje teraz dwie posrednie skladowe
+    `SpotPoolEngine` osobno (patrz template.html/`walletsVolumeNote`), wiec
+    kazda nowo policzona swieca musi je niesc jako pola
+    `spotPoolCompositeCounts`/`spotPoolCompositeWeighted`. To jest test
+    end-to-end (prawdziwy `ri.main()`), nie tylko jednostkowy odczyt
+    atrybutow `SpotPoolEngine` (patrz test_scoring.py dla tamtej czesci)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    candles = st.load_candles_history()
+    assert candles, "oczekiwano co najmniej jednej nowo policzonej swiecy"
+    latest = candles[-1]
+    assert "spotPoolCompositeCounts" in latest
+    assert "spotPoolCompositeWeighted" in latest
+    assert latest["spotPoolCompositeCounts"] is not None
+    # Realny przebieg z aktywnymi, sklasyfikowanymi portfelami - tor wazony
+    # faktycznie sie aktywowal (dokladnie ten sam dowod aktywacji co
+    # `state["good_short_weighted"] is not None` w tescie wyzej), wiec pole
+    # nie powinno zostac `None`.
+    assert latest["spotPoolCompositeWeighted"] is not None
+    # `compositeSpotCombined` (juz istniejace pole) to blend 50/50 tych
+    # dwoch skladowych - proste sprawdzenie spojnosci, zeby nie rozjechaly
+    # sie cicho w przyszlosci.
+    expected_combined = 0.5 * latest["spotPoolCompositeCounts"] + 0.5 * latest["spotPoolCompositeWeighted"]
+    assert abs(latest["compositeSpotCombined"] - expected_combined) < 1e-3
