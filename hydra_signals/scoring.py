@@ -299,6 +299,22 @@ class SpotPoolEngine:
         self._ema_bad_short_w: float | None = ema.get("bad_short_weighted")
         self._ema_bad_long_w: float | None = ema.get("bad_long_weighted")
 
+        # Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12) - zglosznie
+        # uzytkownika "czy gdzies na stronie w UX bede widzial wagi?" - front-
+        # end (karta Wallets, patrz live/template.html) chce pokazac OBA
+        # skladowe composite OSOBNO, nie tylko juz zblendowany wynik
+        # `update()` zwraca. Zamiast duplikowac logike liczenia EMA/composite
+        # poza ta klase, `update()` zapamietuje tu swoj ostatni wynik
+        # POSREDNI z kazdego z dwoch torow - wywolujacy (`run_incremental.py`)
+        # odczytuje je zaraz PO wywolaniu `update()` i dokleja do rekordu
+        # swiecy. CELOWO nie w `export_state()`/wznawialnym stanie - to czysto
+        # diagnostyczny odczyt "ostatniej wartosci z tego wywolania", nie coś
+        # co trzeba pamietac miedzy uruchomieniami procesu (dokladnie tak jak
+        # `ScoringEngine` tez nie eksportuje kazdego posredniego wyniku, tylko
+        # to, co niezbedne do wznowienia EMA).
+        self.last_composite_counts: float | None = None
+        self.last_composite_weighted: float | None = None
+
     def export_state(self) -> dict:
         return {
             "good_short": self._ema_good_short,
@@ -359,6 +375,7 @@ class SpotPoolEngine:
             - cfg.w_bad_short * (self._ema_bad_short - 0.5)
             - cfg.w_bad_long * (self._ema_bad_long - 0.5)
         )
+        self.last_composite_counts = composite_counts
 
         if (
             good_buy_weight is None
@@ -366,6 +383,10 @@ class SpotPoolEngine:
             and bad_buy_weight is None
             and bad_sell_weight is None
         ):
+            # Tor wazony wolumenem sie nie aktywowal w tym wywolaniu - nie ma
+            # nic diagnostycznego do pokazania z tej strony (patrz front-end,
+            # ktory chowa linie diagnostyczna, gdy to pole jest `None`).
+            self.last_composite_weighted = None
             return composite_counts
 
         gbw = good_buy_weight or 0.0
@@ -389,6 +410,7 @@ class SpotPoolEngine:
             - cfg.w_bad_short * (self._ema_bad_short_w - 0.5)
             - cfg.w_bad_long * (self._ema_bad_long_w - 0.5)
         )
+        self.last_composite_weighted = composite_weighted
 
         return blend_composite(composite_counts, composite_weighted, perp_weight=cfg.volume_weight_blend)
 
