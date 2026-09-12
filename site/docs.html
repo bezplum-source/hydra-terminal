@@ -528,6 +528,36 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           nothing" rather than "gets excluded from a blend."
         </p>
         <p>
+          As of 2026-09-11's "volume weighting" phase, the shared SPOT pool runs a second,
+          parallel track alongside the wallet-count one above: each wallet's net position
+          for the window is additionally weighted by <code>sqrt(min(notional_usd,
+          cap))</code> instead of counting as a flat "1" regardless of trade size. The
+          square root dampens the effect of outsized trades — a $1M trade counts
+          noticeably more than a $1K one, but only about 32×, not 1,000× — and the fixed
+          dollar cap (<code>ScoringConfig.volume_weight_cap_notional_usd</code>, $50,000 by
+          default, applied <em>before</em> the square root) puts a hard ceiling on any
+          single trade's weight. A cap based on a percentile of each window's own volume
+          was considered and rejected: with the small per-window sample sizes this project
+          currently sees (often just a handful of classified wallets), a percentile
+          computed from the window itself would be statistically meaningless — with three
+          trades in a window, the "95th percentile" is just the largest of the three, no
+          real ceiling at all. A fixed dollar figure, tunable later like every other
+          threshold in this project, is more robust to that.
+        </p>
+        <p>
+          This volume-weighted track keeps its own EMA, entirely separate from the
+          wallet-count track, and the two are blended 50/50
+          (<code>ScoringConfig.volume_weight_blend</code>) into the final
+          <code>composite_spot_combined</code>. That blend is a deliberate third layer of
+          protection against a single large wallet ("whale") dominating the result: even if
+          the volume-weighted track were fully skewed by one outsized trade, it can only
+          move half of the final value — the other half always comes from the wallet-count
+          track, which is immune to trade size by design (one wallet, one vote). When a
+          caller doesn't supply any volume data at all (for example, code written before
+          this phase), the pool falls back to the wallet-count track alone, unchanged —
+          the same graceful-degradation pattern used throughout this pipeline.
+        </p>
+        <p>
           The SPOT ↔ PERP stage above still uses the older graceful-fallback blend
           function: whenever Hyperliquid doesn't yet have enough classified wallets to be
           considered statistically mature (see <a href="#hyperliquid">Data source:
@@ -682,6 +712,14 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           Base's counts are allowed to move the pooled SPOT value, not whether Base
           activity is visible at all.
         </p>
+        <p>
+          Because Base's engine reuses the exact same <code>ScoringConfig</code> class as
+          mainnet (see above), it also computes its own <code>sqrt(min(notional_usd,
+          cap))</code>-weighted per-window sums with the same default $50,000 cap — see
+          <a href="#composite">Composite score</a> for the "volume weighting" phase — and
+          those weighted sums are pooled into the shared SPOT value the same way its raw
+          buyer/seller counts are, subject to the same maturity gate above.
+        </p>
         <div class="callout">
           <span class="label">A deliberate one-run lag</span>
           <p>
@@ -739,7 +777,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/base_collector_state.json</code></td><td>Base L2 block cursor</td></tr>
           <tr><td><code>data/base_scoring_state.json</code></td><td>Base classification + its own (now diagnostic-only) <code>composite_base</code> EMA, plus the last computed snapshot (window counts) read by the <em>next</em> run's shared SPOT pool (see <a href="#base">Data source: Base L2</a>)</td></tr>
           <tr><td><code>data/base_wallets_seen.txt</code></td><td>Cumulative set of every Base wallet address ever tracked</td></tr>
-          <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts) — see <a href="#composite">Composite score</a></td></tr>
+          <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts), plus a second, parallel volume-weighted EMA track (added 2026-09-11) — see <a href="#composite">Composite score</a></td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
         </table>
