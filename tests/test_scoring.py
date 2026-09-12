@@ -540,6 +540,25 @@ def test_spot_pool_engine_blends_50_50_with_volume_weighted_path():
     # daje finalnego wyniku (blend faktycznie cos zmienia w obie strony).
     assert composite != pytest.approx(composite_counts)
     assert composite != pytest.approx(composite_weighted)
+    # Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12) - te same dwie
+    # posrednie wartosci musza byc tez odczytywalne z instancji PO wywolaniu
+    # `update()`, zeby `run_incremental.py` mogl je dolozyc do rekordu
+    # swiecy dla front-endu (karta Wallets), bez duplikowania logiki
+    # liczenia poza ta klasa.
+    assert engine.last_composite_counts == pytest.approx(composite_counts)
+    assert engine.last_composite_weighted == pytest.approx(composite_weighted)
+
+
+def test_spot_pool_engine_last_composite_weighted_is_none_when_track_not_activated():
+    # Gdy wywolujacy w ogole nie poda argumentow wagowych (patrz
+    # `test_spot_pool_engine_omitted_weight_args_returns_count_path_unchanged`
+    # wyzej), `last_composite_weighted` musi byc `None` - front-end (karta
+    # Wallets) uzywa dokladnie tego pola do schowania linii diagnostycznej
+    # na historii sprzed Fazy "wazenie wolumenem SPOT".
+    engine = SpotPoolEngine(ScoringConfig())
+    engine.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
+    assert engine.last_composite_weighted is None
+    assert engine.last_composite_counts is not None
 
 
 # =====================================================================
