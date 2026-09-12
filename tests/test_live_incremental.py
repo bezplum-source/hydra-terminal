@@ -1145,3 +1145,53 @@ def test_spot_pool_uses_pooled_counts_not_old_fixed_weight_blend(tmp_path, monke
         # test_scoring.py::test_spot_pool_engine_small_venue_gets_
         # proportional_not_equal_influence, na kontrolowanych liczbach).
         assert c["compositeSpotCombined"] != old_style_blend
+
+
+# =====================================================================
+# Faza "wazenie wolumenem SPOT" (2026-09-11)
+# =====================================================================
+
+
+def test_spot_pool_state_persists_volume_weighted_ema_after_real_run(tmp_path, monkeypatch):
+    """Test na wpiecie Fazy "wazenie wolumenem SPOT" w PRAWDZIWY pipeline
+    (ri.main()), nie tylko w izolowanym tescie jednostkowym SpotPoolEngine
+    (patrz test_scoring.py - TAM sprawdzone sa dokladne, ilosciowe tezy o
+    stlumieniu/sufit/blendzie na kontrolowanych liczbach). Tutaj chodzi
+    wylacznie o potwierdzenie, ze przewodowanie faktycznie dziala na
+    koncu do konca: `data/spot_pool_state.json` po realnym uruchomieniu
+    musi zawierac takze 4 NOWE klucze toru wazonego wolumenem (nie tylko
+    stare 4 z Fazy "wspolna pula SPOT"), i musza byc rzeczywiscie
+    wypelnione (nie None) - dowod, ze `run_incremental.py` faktycznie
+    liczy i przekazuje `good_buy_weight`/itd. do `SpotPoolEngine.update()`,
+    a nie tylko stare argumenty liczba-portfeli."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    state = st.load_spot_pool_state()
+    assert set(state) == {
+        "good_short",
+        "good_long",
+        "bad_short",
+        "bad_long",
+        "good_short_weighted",
+        "good_long_weighted",
+        "bad_short_weighted",
+        "bad_long_weighted",
+    }
+    # Realny przebieg z aktywnymi, sklasyfikowanymi portfelami - tor wazony
+    # faktycznie zebral dane (aktywowal sie), nie zostal "na zimno"/None jak
+    # przy calkowitym braku aktywnosci (patrz test_scoring.py::
+    # test_spot_pool_engine_omitted_weight_args_returns_count_path_unchanged).
+    assert state["good_short_weighted"] is not None
+    assert state["good_long_weighted"] is not None
+    assert state["bad_short_weighted"] is not None
+    assert state["bad_long_weighted"] is not None
