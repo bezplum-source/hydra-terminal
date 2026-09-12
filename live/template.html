@@ -853,8 +853,7 @@
          tej fazy) - ten sam wzorzec graceful degradation co reszta karty
          Wallets. -->
     <div class="card-subnote" id="walletsVolumeNote" style="display:none;">
-      Ważenie wolumenem (√, cap 50 000 USD na transakcję)<span class="info-tip" tabindex="0" data-tip="Composite spot (Uniswap+Base) to blend 50/50 dwóch niezależnych torów: 'liczba portfeli' (każdy portfel = 1 głos, z natury odporny na wieloryby) i 'ważony wolumenem' (waga = pierwiastek z wielkości transakcji, ograniczona twardym sufitem $50k przed pierwiastkowaniem, żeby pojedynczy duży portfel nie zdominował wyniku).">ⓘ</span>:
-      tor liczba-portfeli <b id="volCompositeCounts">-</b> · tor wolumenowy <b id="volCompositeWeighted">-</b> → połączone 50/50 = <b id="volCompositeCombined">-</b>.
+      <span id="volImpactText">-</span><span class="info-tip" tabindex="0" id="volImpactTip" data-tip="Sygnał liczy dwa niezależne tory: ile portfeli kupuje/sprzedaje (każdy portfel = 1 głos, bez względu na wielkość transakcji) i ile waży stojący za tym kapitał (waga = pierwiastek z wielkości transakcji, z twardym sufitem 50 000 USD na jedną transakcję, żeby pojedynczy duży gracz nie zdominował wyniku). Ta linijka pokazuje, czy i jak mocno kapitał zmienia obraz wynikający z samej liczby portfeli.">ⓘ</span>
     </div>
   </section>
   <section class="card reveal reveal-4">
@@ -1135,21 +1134,29 @@ function renderHero() {
     + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
     + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
 
-  // --- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12) - zgloszenie
-  // uzytkownika po Fazie "wazenie wolumenem SPOT": "czy gdzies na stronie w
-  // UX bede widzial wagi?". Pokazuje OBA skladowe torow SpotPoolEngine
-  // (`spotPoolCompositeCounts`/`spotPoolCompositeWeighted`) obok siebie z
-  // ich juz zblendowanym wynikiem (`compositeSpotCombined`, ten sam co w
-  // hero) - zeby bylo widac, jak bardzo tor wazony wolumenem "pociagnal"
-  // wynik wzgledem prostego liczenia portfeli. Chowana calkowicie na
+  // --- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12), druga
+  // iteracja - zgloszenie uzytkownika po pierwszej wersji tej linijki
+  // (ktora pokazywala oba tory i wzor blendu wprost): "trochę słabo jest to
+  // wytłumaczone. Ja nie rozumiem. (...) skupmy się tylko na kapitale tutaj
+  // - czyli jaki wpływ miał na to kapitał". Pierwsza wersja byla poprawna
+  // technicznie, ale nieczytelna dla kogos, kto nie zna rynku. Ta wersja
+  // mowi WPROST jednym zdaniem (funkcja `describeCapitalImpact` nizej), czy
+  // i jak mocno kapital (tor wazony wolumenem) zmienia obraz wzgledem
+  // prostego liczenia portfeli (tor liczba-portfeli) - surowe liczby
+  // zostaja, ale tylko w dymku (i), dla dociekliwych. Chowana calkowicie na
   // historii sprzed tej fazy (pola po prostu `undefined`) - ten sam wzorzec
   // graceful degradation co reszta karty.
   const volNote = document.getElementById('walletsVolumeNote');
   if (latest.spotPoolCompositeCounts !== undefined && latest.spotPoolCompositeWeighted != null) {
     volNote.style.display = 'block';
-    document.getElementById('volCompositeCounts').textContent = fmtSigned(latest.spotPoolCompositeCounts);
-    document.getElementById('volCompositeWeighted').textContent = fmtSigned(latest.spotPoolCompositeWeighted);
-    document.getElementById('volCompositeCombined').textContent = fmtSigned(latest.compositeSpotCombined);
+    const poolCounts = latest.spotPoolCompositeCounts;
+    const poolWeighted = latest.spotPoolCompositeWeighted;
+    const poolThreshold = latest.signalThreshold != null ? latest.signalThreshold : 0;
+    document.getElementById('volImpactText').textContent = describeCapitalImpact(poolCounts, poolWeighted, poolThreshold);
+    document.getElementById('volImpactTip').setAttribute('data-tip',
+      'Sygnał liczy dwa niezależne tory: ile portfeli kupuje/sprzedaje (liczba portfeli: ' + fmtSigned(poolCounts) +
+      ') i ile waży stojący za tym kapitał (pierwiastek z wielkości transakcji, sufit 50 000 USD na transakcję, żeby jeden duży gracz nie zdominował wyniku: ' + fmtSigned(poolWeighted) +
+      '). Ta linijka pokazuje, czy i jak mocno kapitał zmienia obraz wynikający z samej liczby portfeli.');
   } else {
     volNote.style.display = 'none';
   }
@@ -1180,6 +1187,49 @@ function renderHero() {
   } else {
     divNote.style.display = 'none';
   }
+}
+
+// Faza "wplyw kapitalu" (2026-09-12) - jednym zdaniem, po polsku biznesowym,
+// bez zadnego zargonu ani surowych liczb: czy i jak mocno kapital (tor
+// wazony wolumenem w SpotPoolEngine) zmienia obraz wzgledem prostego
+// liczenia portfeli (tor liczba-portfeli). Uzywa dokladnie tego samego progu
+// (`threshold` = signalThreshold) i tej samej skali sily
+// (Wyraznie/Silnie -> tutaj "nieco"/"wyraznie") co `renderCompositeMeter`
+// ponizej - jedno miejsce prawdy, zero nowych magicznych progow.
+function describeCapitalImpact(counts, weighted, threshold) {
+  const diff = weighted - counts;
+  const absDiff = Math.abs(diff);
+  const mid = threshold * 1.7;
+  const countsMeaningful = Math.abs(counts) > threshold;
+  const weightedMeaningful = Math.abs(weighted) > threshold;
+
+  // Najbardziej informacyjny przypadek: kapital i liczba portfeli wskazuja
+  // przeciwne kierunki, obie strony "na powaznie" (powyzej progu neutralnosci,
+  // nie szum kolo zera) - duzi gracze widza rynek inaczej niz reszta.
+  if (countsMeaningful && weightedMeaningful && (weighted >= 0) !== (counts >= 0)) {
+    return weighted >= 0
+      ? 'Duży kapitał w rzeczywistości kupuje, mimo że licząc same portfele przeważają sprzedający — duzi gracze widzą to inaczej niż reszta rynku.'
+      : 'Duży kapitał w rzeczywistości sprzedaje, mimo że licząc same portfele przeważają kupujący — duzi gracze widzą to inaczej niż reszta rynku.';
+  }
+
+  if (absDiff <= threshold) {
+    return 'Duży kapitał nie zmienia obrazu — rozkłada się podobnie do liczby portfeli.';
+  }
+
+  // Ten sam kierunek po obu stronach (albo jedna z nich blisko zera) - nie ma
+  // konfliktu, wiec opisujemy, czy kapital WZMACNIA czy STUDZI ten kierunek
+  // wzgledem samej liczby portfeli. Kierunek bierzemy z tego, co faktycznie
+  // mowi kapital (`weighted`), a gdy kapital sam jest w strefie neutralnej -
+  // z liczby portfeli (kapital "nie ma zdania", ale wciaz cos zmienia
+  // wzgledem tamtego odczytu).
+  const direction = (weightedMeaningful ? weighted : counts) >= 0 ? 'kupna' : 'sprzedaży';
+  const strength = absDiff <= mid ? 'nieco' : 'wyraźnie';
+  const amplifies = Math.abs(weighted) >= Math.abs(counts);
+  if (amplifies) {
+    const tail = absDiff <= mid ? '.' : ' — to głównie on ciągnie ten odczyt.';
+    return 'Duży kapitał pcha ten odczyt w stronę ' + direction + ', ' + strength + ' mocniej niż wskazywałaby sama liczba portfeli' + tail;
+  }
+  return 'Duży kapitał jest ' + strength + ' mniej przekonany co do ' + direction + ' niż wskazywałaby sama liczba portfeli.';
 }
 
 // Composite pokazany jako słowny opis siły/kierunku + miernik wyśrodkowany na
