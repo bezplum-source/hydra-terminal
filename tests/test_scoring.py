@@ -226,6 +226,134 @@ def test_total_good_bad_classified_reports_whole_cohort_not_just_active_window()
 
 
 # =====================================================================
+# Faza "wazenie wolumenem SPOT" (2026-09-11) - wagi sqrt+cap per portfel
+# w ScoringEngine.run() (good_buy_weight/itd. na WindowScore)
+# =====================================================================
+
+
+def test_run_computes_sqrt_of_notional_weight_when_below_cap():
+    # Dwa portfele GOOD, oba net-buyerzy w oknie testowym, z notionalami
+    # WYRAZNIE ponizej domyslnego sufitu ($50 000) - waga powinna byc po
+    # prostu sqrt(notional), bez zadnego capowania.
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),  # zysk -> GOOD
+        make_trade("g2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 20.0),  # zysk -> GOOD
+    ]
+    # notional g1 = 100.0*100.0 = 10 000 -> sqrt = 100.0
+    # notional g2 = 100.0*25.0 = 2 500 -> sqrt = 50.0
+    window_trades = [
+        make_trade("g1", 150, Side.BUY, 100.0, 100.0),
+        make_trade("g2", 150, Side.BUY, 100.0, 25.0),
+    ]
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        # good_pct=1.0/bad_pct=0.0 - klasyfikacja jest RANKINGIEM wzgledem
+        # innych portfeli w oknie lookback, nie prostym testem "czy portfel
+        # byl na plusie" - przy 0.5/0.5 i 2 portfelach zostalby podzielony
+        # 1 GOOD/1 BAD wg rankingu (mimo ze OBA byly zyskowne), co zepsuloby
+        # ten test. 1.0/0.0 gwarantuje, ze OBA portfele lokuja sie w GOOD.
+        good_pct=1.0,
+        bad_pct=0.0,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 100.0, history_trades=history)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.good_buyers == 2
+    assert s.good_sellers == 0
+    assert s.good_buy_weight == pytest.approx(100.0 + 50.0)
+    assert s.good_sell_weight == 0.0
+    assert s.bad_buy_weight == 0.0 and s.bad_sell_weight == 0.0
+
+
+def test_run_caps_notional_before_sqrt_for_whale_trade():
+    # Jeden portfel GOOD, transakcja WYRAZNIE powyzej sufitu - waga MUSI
+    # byc sqrt(sufit), NIE sqrt(surowy notional) - to jest wlasnie ochrona
+    # przed "wielorybem" zdominowanym pojedyncza transakcja.
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),  # zysk -> GOOD
+    ]
+    # notional = 50.0*30.0 = 1500 - powyzej domyslnego filtru dust ($1000,
+    # inaczej transakcja zostalaby CALKOWICIE odsiana na wejsciu do run()),
+    # ale WYRAZNIE powyzej celowo niskiego sufitu wazenia (400.0) uzytego w
+    # tym tescie, zeby capowanie bylo jednoznacznie wymuszone.
+    window_trades = [make_trade("g1", 150, Side.BUY, 50.0, 30.0)]
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=1,
+        good_pct=1.0,
+        bad_pct=0.0,
+        volume_weight_cap_notional_usd=400.0,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 50.0, history_trades=history)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.good_buyers == 1
+    # sqrt(400) = 20.0, NIE sqrt(1500) = ok. 38.7.
+    assert s.good_buy_weight == pytest.approx(400.0**0.5)
+    assert s.good_buy_weight != pytest.approx(1500.0**0.5)
+
+
+def test_run_whale_cannot_dominate_weighted_ratio_thanks_to_sqrt_and_cap():
+    # Adwersarialny scenariusz: JEDEN "wieloryb" GOOD kupuje za $10 000 000
+    # (absurdalnie duzo), obok 5 "zwyklych" GOOD portfeli sprzedajacych po
+    # $10 000 kazdy. Bez stlumienia+sufitu (sam surowy notional jako waga)
+    # wieloryb calkowicie zdominowalby ratio (ponad 99% wagi). Ze
+    # sqrt+cap (domyslny sufit $50 000) - dominacja jest mocno ograniczona,
+    # ratio zostaje NAWET PONIZEJ 0.5 (przewaga wciaz po stronie
+    # sprzedajacych, nie wieloryba).
+    history = [
+        make_trade(f"g{i}", 1, Side.BUY, 100.0, 20.0)
+        for i in range(6)
+    ] + [
+        make_trade(f"g{i}", 2, Side.SELL, 200.0, 20.0)  # zysk -> wszyscy GOOD
+        for i in range(6)
+    ]
+    window_trades = [
+        # wieloryb: notional = 1000.0 * 10000.0 = 10 000 000
+        make_trade("g0", 150, Side.BUY, 1000.0, 10_000.0),
+    ] + [
+        # 5 "zwyklych" portfeli: notional = 100.0*100.0 = 10 000 kazdy
+        make_trade(f"g{i}", 150, Side.SELL, 100.0, 100.0)
+        for i in range(1, 6)
+    ]
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        good_pct=1.0,
+        bad_pct=0.0,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 100.0, history_trades=history)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.good_buyers == 1  # tylko wieloryb net-buyer
+    assert s.good_sellers == 5
+
+    cap = cfg.volume_weight_cap_notional_usd  # domyslnie 50 000.0
+    assert s.good_buy_weight == pytest.approx(cap**0.5)
+    assert s.good_sell_weight == pytest.approx(5 * (10_000.0**0.5))
+
+    ratio_w = s.good_buy_weight / (s.good_buy_weight + s.good_sell_weight)
+    # Gdyby wagi liczyc naiwnie (sam surowy notional, bez sqrt/capa),
+    # wieloryb calkowicie zdominowalby wynik.
+    naive_ratio = 10_000_000.0 / (10_000_000.0 + 5 * 10_000.0)
+    assert naive_ratio > 0.99
+    # Ze stlumieniem+sufitem: wieloryb NIE dominuje - ratio zostaje ponizej
+    # 0.5 (przewaga wciaz po stronie 5 sprzedajacych), zamiast >0.99.
+    assert ratio_w < 0.5
+    assert ratio_w == pytest.approx(0.309, abs=1e-3)
+
+
+# =====================================================================
 # Faza "wspolna pula SPOT" (2026-09-11) - SpotPoolEngine (Uniswap+Base
 # w JEDNEJ puli, zamiast blend_composite ze stala waga BASE_SPOT_WEIGHT)
 # =====================================================================
@@ -315,7 +443,20 @@ def test_spot_pool_engine_resumes_from_exported_state():
     engine = SpotPoolEngine(ScoringConfig())
     engine.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
     state = engine.export_state()
-    assert set(state) == {"good_short", "good_long", "bad_short", "bad_long"}
+    # Faza "wazenie wolumenem SPOT" - export_state() niesie TERAZ takze 4
+    # dodatkowe klucze toru wazonego wolumenem (patrz test ponizej) - ten
+    # test nie uzywal argumentow wagowych, wiec sa `None` (tor sie nie
+    # aktywowal), ale klucze i tak sa obecne w wyeksportowanym slowniku.
+    assert set(state) == {
+        "good_short",
+        "good_long",
+        "bad_short",
+        "bad_long",
+        "good_short_weighted",
+        "good_long_weighted",
+        "bad_short_weighted",
+        "bad_long_weighted",
+    }
 
     resumed = SpotPoolEngine(ScoringConfig(), initial_ema=state)
     # Ta sama kolejna aktualizacja na wznowionym silniku i na oryginalnym
@@ -323,6 +464,82 @@ def test_spot_pool_engine_resumes_from_exported_state():
     expected = engine.update(good_buyers=1, good_sellers=1, bad_buyers=1, bad_sellers=1)
     actual = resumed.update(good_buyers=1, good_sellers=1, bad_buyers=1, bad_sellers=1)
     assert actual == expected
+
+
+# =====================================================================
+# Faza "wazenie wolumenem SPOT" (2026-09-11) - drugi, rownolegly tor EMA
+# w SpotPoolEngine, blendowany 50/50 z torem "liczba portfeli"
+# =====================================================================
+
+
+def test_spot_pool_engine_omitted_weight_args_returns_count_path_unchanged():
+    # Graceful degradation: kompletne pominiecie argumentow wagowych
+    # (wszystkie `None`, domyslnie) -> silnik zachowuje sie DOKLADNIE tak,
+    # jakby ta faza nie istniala - identycznie jak istniejace testy wyzej
+    # (`test_spot_pool_engine_cold_start_matches_single_window_formula`
+    # itd.), pisane PRZED ta faza i celowo nietuszone.
+    engine = SpotPoolEngine(ScoringConfig())
+    composite = engine.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
+    good_ratio = 3 / 4
+    bad_ratio = 1 / 4
+    expected_counts_only = 1.5 * (good_ratio - 0.5) - 1.5 * (bad_ratio - 0.5)
+    assert composite == pytest.approx(expected_counts_only)
+
+
+def test_spot_pool_engine_explicit_zero_weights_differ_from_omitted_weights():
+    # Subtelna, ale zamierzona roznica: pominiecie argumentow (None) znaczy
+    # "wywolujacy nie zna tej fazy" -> tor liczba-portfeli bez zmian.
+    # Podanie jawnego 0.0/0.0/0.0/0.0 znaczy "wywolujacy ZNA ta faze, w tym
+    # oknie po prostu nie bylo zadnej wazonej aktywnosci" -> tor wazony
+    # AKTYWUJE sie (neutralne 0.5/0.5 -> composite_weighted=0.0), wiec
+    # finalny wynik to POLOWA (blend 50/50 z zerem), nie to samo co
+    # pominiecie.
+    omitted = SpotPoolEngine(ScoringConfig())
+    composite_omitted = omitted.update(good_buyers=3, good_sellers=1, bad_buyers=1, bad_sellers=3)
+
+    explicit_zero = SpotPoolEngine(ScoringConfig())
+    composite_explicit = explicit_zero.update(
+        good_buyers=3,
+        good_sellers=1,
+        bad_buyers=1,
+        bad_sellers=3,
+        good_buy_weight=0.0,
+        good_sell_weight=0.0,
+        bad_buy_weight=0.0,
+        bad_sell_weight=0.0,
+    )
+    assert composite_explicit == pytest.approx(composite_omitted * 0.5)
+    assert composite_explicit != pytest.approx(composite_omitted)
+
+
+def test_spot_pool_engine_blends_50_50_with_volume_weighted_path():
+    # Liczby dobrane tak, zeby tor "liczba portfeli" i tor "wazony
+    # wolumenem" dawaly WYRAZNIE rozne wyniki - dowod, ze finalny composite
+    # to faktycznie srednia obu, nie przypadkowa zgodnosc.
+    engine = SpotPoolEngine(ScoringConfig())
+    composite = engine.update(
+        good_buyers=3,
+        good_sellers=1,
+        bad_buyers=1,
+        bad_sellers=3,
+        good_buy_weight=100.0,
+        good_sell_weight=900.0,  # ratio_w_good = 0.1 (odwrotnie niz liczba portfeli: 0.75)
+        bad_buy_weight=800.0,
+        bad_sell_weight=200.0,  # ratio_w_bad = 0.8 (odwrotnie niz liczba portfeli: 0.25)
+    )
+    good_ratio_counts = 3 / 4
+    bad_ratio_counts = 1 / 4
+    composite_counts = 1.5 * (good_ratio_counts - 0.5) - 1.5 * (bad_ratio_counts - 0.5)
+    good_ratio_w = 100.0 / 1000.0
+    bad_ratio_w = 800.0 / 1000.0
+    composite_weighted = 1.5 * (good_ratio_w - 0.5) - 1.5 * (bad_ratio_w - 0.5)
+    expected = 0.5 * composite_counts + 0.5 * composite_weighted
+    assert composite == pytest.approx(expected)
+    assert composite == pytest.approx(-0.15)
+    # I dla kontrastu - ani sam tor liczba-portfeli, ani sam tor wazony nie
+    # daje finalnego wyniku (blend faktycznie cos zmienia w obie strony).
+    assert composite != pytest.approx(composite_counts)
+    assert composite != pytest.approx(composite_weighted)
 
 
 # =====================================================================
