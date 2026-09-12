@@ -91,6 +91,49 @@ class ScoringConfig:
     # analogicznie do progów w `regime.RegimeConfig`.
     min_flip_streak_trades: int = 3
 
+    # =================================================================
+    # Faza "wazenie wolumenem SPOT" (2026-09-11)
+    # =================================================================
+    # Zgloszenie uzytkownika: `SpotPoolEngine` (nizej) wazy KAZDY portfel
+    # identycznie (1 portfel = 1 "glos"), niezaleznie od wielkosci jego
+    # pozycji w oknie. Uzytkownik zapytany o pomysly na dokladniejsze
+    # badanie wskazal wprost wazenie wolumenem, ale zaraz potem trafnie
+    # zauwazyl ryzyko: jeden "wieloryb" moglby w ten sposob zdominowac caly
+    # wynik jedna transakcja. Odpowiedz - DWIE warstwy ochrony na poziomie
+    # pojedynczej transakcji (ponizej), TRZECIA na poziomie `SpotPoolEngine`
+    # (`volume_weight_blend` nizej):
+    #
+    # (1) STLUMIENIE zamiast liniowej wagi - kazdy portfel wnosi
+    #     sqrt(notional_usd), nie sam notional_usd. Transakcja za $1M wazy
+    #     WIECEJ niz za $1000, ale ~32x, nie 1000x.
+    # (2) TWARDY SUFIT na notional PRZED pierwiastkowaniem
+    #     (`volume_weight_cap_notional_usd` nizej) - kazda transakcja
+    #     powyzej tego progu wazy identycznie jak transakcja DOKLADNIE na
+    #     progu.
+    #
+    # SWIADOMA DECYZJA (odejscie od doslownie omawianego w rozmowie pomyslu
+    # "cap na percentylu wolumenu z OKNA"): przy tak malej probce jak u nas
+    # (2-40 sklasyfikowanych portfeli na okno - patrz "okno reputacji 7 dni"
+    # wyzej) percentyl liczony z SAMEGO OKNA bylby statystycznie
+    # bezuzyteczny (przy 3 transakcjach w oknie "95 percentyl" to praktycznie
+    # po prostu najwieksza z tych trzech - zaden realny sufit). Zamiast tego:
+    # STALA dolarowa (jak `min_trade_notional_usd` - filtr dust - wyzej) -
+    # prostsza, odporna na male probki, w tym samym stylu co kazdy inny prog
+    # w projekcie. WARTOSC STARTOWA, nieprzestrojona backtestem.
+    volume_weight_cap_notional_usd: float = 50_000.0
+
+    # Waga toru "wazonego wolumenem" w SpotPoolEngine (patrz nizej) wzgledem
+    # toru "liczba portfeli" (ten z natury odporny na wieloryby - jeden
+    # portfel = jeden glos, niezaleznie od wielkosci jego pozycji). To
+    # TRZECIA warstwa ochrony: nawet gdyby (1) stlumienie pierwiastkiem i
+    # (2) twardy sufit powyzej nie wystarczyly, pojedyncza duza transakcja
+    # moze co najwyzej PRZESUNAC finalny wynik (o co najwyzej ta wage), nigdy
+    # go w pelni PRZEJAC - druga polowa (1-volume_weight_blend) zawsze
+    # pochodzi z toru liczba-portfeli. WARTOSC STARTOWA (50/50), zaakceptowana
+    # wprost przez uzytkownika (2026-09-11) jako punkt startowy do
+    # ewentualnego przestrojenia pozniej.
+    volume_weight_blend: float = 0.5
+
 
 # =====================================================================
 # Faza H2 (brief `hydrav2-hyperliquid-brief.md`) — blend composite_spot/perp
@@ -198,6 +241,29 @@ class SpotPoolEngine:
     Stan (cztery liczby EMA) wznawia się między uruchomieniami dokładnie
     tak samo jak `ScoringEngine`/`RegimeEngine` - patrz `export_state()`
     niżej i `live/state.py` (`load_spot_pool_state`/`save_spot_pool_state`).
+
+    ROZSZERZENIE (Faza "wazenie wolumenem SPOT", 2026-09-11): oprocz toru
+    "liczba portfeli" powyzej (jeden portfel = jeden glos, z natury odporny
+    na wieloryby), silnik liczy TERAZ RÓWNOLEGLE drugi, niezalezny tor -
+    "wazony wolumenem" - na WLASNYM, OSOBNYM zestawie 4 EMA (`_w` w nazwie
+    pol nizej), z tych samych surowych skladnikow co pierwszy tor, ale
+    zamiast liczby portfeli uzywa sum sqrt-capped wag (patrz
+    `ScoringConfig.volume_weight_cap_notional_usd` i `ScoringEngine.run()`).
+    Finalny wynik `update()` to `blend_composite(composite_liczba_portfeli,
+    composite_wazony_wolumenem, perp_weight=cfg.volume_weight_blend)` -
+    TRZECIE uzycie `blend_composite()` w tym module (po Fazie H2 i Fazie
+    "integracja Base B1-B3" - historyczne, juz zastapione przez ta klase),
+    zero nowej logiki blendowania. Domyslnie 50/50 - nawet gdyby tor
+    wazony wolumenem zostal w pelni zdominowany przez jednego "wieloryba",
+    moze on przesunac WYLACZNIE polowe finalnego wyniku, nigdy go w calosci
+    przejac.
+
+    GRACEFUL DEGRADATION (analogiczne do `blend_composite(spot, None)`):
+    jesli wywolujacy w ogole NIE poda argumentow wagowych (`good_buy_weight`
+    itd. pozostaja `None`, patrz `update()` nizej) - np. stary kod sprzed tej
+    fazy, albo dowolny test pisany przed jej wprowadzeniem - silnik zwraca
+    WYLACZNIE tor "liczba portfeli", DOKLADNIE tak jak przed ta faza. Zero
+    ryzyka regresji istniejacych wywolan/testow.
     """
 
     def __init__(
@@ -213,12 +279,36 @@ class SpotPoolEngine:
         self._ema_bad_short: float | None = ema.get("bad_short")
         self._ema_bad_long: float | None = ema.get("bad_long")
 
+        # Tor "wazony wolumenem" (Faza "wazenie wolumenem SPOT") - OSOBNY
+        # zestaw 4 EMA, bo dziala na INNEJ serii wejsciowej (ratio liczone z
+        # wag sqrt-capped, nie z surowych liczb portfeli) - mieszanie ich w
+        # jednym EMA nie mialoby sensu, to dwa rozne sygnaly az do finalnego
+        # blendu w `update()`. Klucze stanu CELOWO inne niz tor liczba-
+        # portfeli (`_weighted` w nazwie) - kazdy juz zapisany
+        # `spot_pool_state.json` sprzed tej fazy (w tym na zywym repo) nie ma
+        # jeszcze tych kluczy, wiec `.get()` zwraca `None` i ten tor startuje
+        # "na zimno" (pierwsza obserwowana wartosc ratio od razu staje sie
+        # EMA) - DOKLADNIE tak samo jak `ScoringEngine`/`SpotPoolEngine` przy
+        # pierwszym uruchomieniu bez wczesniej zapisanego stanu. To bezpieczne
+        # i oczekiwane - nie ma zadnej wczesniejszej historii wolumenowej do
+        # odziedziczenia (w przeciwienstwie do migracji Base w tor liczba-
+        # portfeli wyzej, gdzie celowo chcielismy bajt-w-bajt identycznosc
+        # zachowania sprzed/po wdrozeniu).
+        self._ema_good_short_w: float | None = ema.get("good_short_weighted")
+        self._ema_good_long_w: float | None = ema.get("good_long_weighted")
+        self._ema_bad_short_w: float | None = ema.get("bad_short_weighted")
+        self._ema_bad_long_w: float | None = ema.get("bad_long_weighted")
+
     def export_state(self) -> dict:
         return {
             "good_short": self._ema_good_short,
             "good_long": self._ema_good_long,
             "bad_short": self._ema_bad_short,
             "bad_long": self._ema_bad_long,
+            "good_short_weighted": self._ema_good_short_w,
+            "good_long_weighted": self._ema_good_long_w,
+            "bad_short_weighted": self._ema_bad_short_w,
+            "bad_long_weighted": self._ema_bad_long_w,
         }
 
     def update(
@@ -228,12 +318,27 @@ class SpotPoolEngine:
         good_sellers: int,
         bad_buyers: int,
         bad_sellers: int,
+        good_buy_weight: float | None = None,
+        good_sell_weight: float | None = None,
+        bad_buy_weight: float | None = None,
+        bad_sell_weight: float | None = None,
     ) -> float:
         """Jedno wywołanie na jedną nową świecę (w kolejności czasu!) -
         `good_buyers`/itd. to JUŻ POŁĄCZONE liczniki (Uniswap + Base tego
         okna, patrz wywołanie w `run_incremental.py`), nie surowe transakcje
         - ta klasa nie zna nic o blokach/transakcjach, tylko o gotowych
-        licznikach z ilu portfeli kupowało/sprzedawało w danej kohorcie."""
+        licznikach z ilu portfeli kupowało/sprzedawało w danej kohorcie
+        (`good_buyers`/itd.) i ile "wazonej wolumenem" masy to reprezentuje
+        (`good_buy_weight`/itd., Faza "wazenie wolumenem SPOT" - już
+        POŁĄCZONE sumy sqrt-capped wag Uniswap+Base tego okna, patrz
+        `ScoringEngine.run()`).
+
+        `good_buy_weight`/`good_sell_weight`/`bad_buy_weight`/
+        `bad_sell_weight` pozostawione jako `None` (wszystkie cztery) ->
+        wywołujący NIE dostarcza danych wolumenowych w ogóle (stary kod/test
+        sprzed tej fazy) - silnik zwraca WYŁĄCZNIE tor "liczba portfeli",
+        identycznie jak przed tą fazą (patrz docstring klasy, sekcja
+        "graceful degradation")."""
         cfg = self.cfg
         good_total = good_buyers + good_sellers
         bad_total = bad_buyers + bad_sellers
@@ -248,12 +353,44 @@ class SpotPoolEngine:
         self._ema_bad_short = _ema_step(self._ema_bad_short, bad_ratio_raw, cfg.ema_short_span)
         self._ema_bad_long = _ema_step(self._ema_bad_long, bad_ratio_raw, cfg.ema_long_span)
 
-        return (
+        composite_counts = (
             cfg.w_good_short * (self._ema_good_short - 0.5)
             + cfg.w_good_long * (self._ema_good_long - 0.5)
             - cfg.w_bad_short * (self._ema_bad_short - 0.5)
             - cfg.w_bad_long * (self._ema_bad_long - 0.5)
         )
+
+        if (
+            good_buy_weight is None
+            and good_sell_weight is None
+            and bad_buy_weight is None
+            and bad_sell_weight is None
+        ):
+            return composite_counts
+
+        gbw = good_buy_weight or 0.0
+        gsw = good_sell_weight or 0.0
+        bbw = bad_buy_weight or 0.0
+        bsw = bad_sell_weight or 0.0
+
+        good_total_w = gbw + gsw
+        bad_total_w = bbw + bsw
+        good_ratio_w = gbw / good_total_w if good_total_w > 0 else 0.5
+        bad_ratio_w = bbw / bad_total_w if bad_total_w > 0 else 0.5
+
+        self._ema_good_short_w = _ema_step(self._ema_good_short_w, good_ratio_w, cfg.ema_short_span)
+        self._ema_good_long_w = _ema_step(self._ema_good_long_w, good_ratio_w, cfg.ema_long_span)
+        self._ema_bad_short_w = _ema_step(self._ema_bad_short_w, bad_ratio_w, cfg.ema_short_span)
+        self._ema_bad_long_w = _ema_step(self._ema_bad_long_w, bad_ratio_w, cfg.ema_long_span)
+
+        composite_weighted = (
+            cfg.w_good_short * (self._ema_good_short_w - 0.5)
+            + cfg.w_good_long * (self._ema_good_long_w - 0.5)
+            - cfg.w_bad_short * (self._ema_bad_short_w - 0.5)
+            - cfg.w_bad_long * (self._ema_bad_long_w - 0.5)
+        )
+
+        return blend_composite(composite_counts, composite_weighted, perp_weight=cfg.volume_weight_blend)
 
 
 def decide_signal(composite: float, *, threshold: float) -> Signal:
@@ -546,20 +683,42 @@ class ScoringEngine:
             for t in window_trades:
                 net_direction[t.wallet] += t.size_eth if t.side is Side.BUY else -t.size_eth
 
+            # Notional per portfel w tym oknie (Faza "wazenie wolumenem
+            # SPOT") - suma notional_usd WSZYSTKICH transakcji portfela w
+            # oknie, bez wzgledu na kierunek ("ile kapitalu portfel poruszyl
+            # w tym oknie"). Uzywane WYLACZNIE do zwazenia jego kierunkowego
+            # "glosu" (net_direction powyzej) - to co innego niz
+            # good_trader_pressure/bad_trader_pressure nizej, ktore licza
+            # przewage wolumenu PER KOHORTA, nie per portfel.
+            wallet_notional: dict[str, float] = defaultdict(float)
+            for t in window_trades:
+                wallet_notional[t.wallet] += t.notional_usd
+
             good_buyers = good_sellers = bad_buyers = bad_sellers = 0
+            good_buy_weight = good_sell_weight = 0.0
+            bad_buy_weight = bad_sell_weight = 0.0
             for wallet, net in net_direction.items():
                 if net == 0:
                     continue
+                # Stlumienie + twardy sufit (patrz ScoringConfig.
+                # volume_weight_cap_notional_usd) - cap na notional PRZED
+                # pierwiastkowaniem, zeby pojedyncza ekstremalnie duza
+                # transakcja nie mogla zdominowac wagi.
+                weight = min(wallet_notional[wallet], cfg.volume_weight_cap_notional_usd) ** 0.5
                 if wallet in good_wallets:
                     if net > 0:
                         good_buyers += 1
+                        good_buy_weight += weight
                     else:
                         good_sellers += 1
+                        good_sell_weight += weight
                 elif wallet in bad_wallets:
                     if net > 0:
                         bad_buyers += 1
+                        bad_buy_weight += weight
                     else:
                         bad_sellers += 1
+                        bad_sell_weight += weight
 
             good_total = good_buyers + good_sellers
             bad_total = bad_buyers + bad_sellers
@@ -726,6 +885,10 @@ class ScoringEngine:
                     bad_trader_bearish_flips=bad_bearish_flips,
                     total_good_classified=len(good_wallets),
                     total_bad_classified=len(bad_wallets),
+                    good_buy_weight=good_buy_weight,
+                    good_sell_weight=good_sell_weight,
+                    bad_buy_weight=bad_buy_weight,
+                    bad_sell_weight=bad_sell_weight,
                 )
             )
 
