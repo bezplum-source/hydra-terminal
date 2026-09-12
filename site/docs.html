@@ -570,6 +570,32 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           likewise kept only as a diagnostic field — it no longer feeds the decision
           directly.
         </p>
+        <p>
+          A small addendum, 2026-09-12: after shipping the volume-weighting phase above,
+          the project owner asked whether the split between the wallet-count track and
+          the volume-weighted track would ever be visible anywhere in the UI — it wasn't,
+          on purpose, since both tracks lived only inside <code>SpotPoolEngine</code> and
+          were never exposed past the single blended value. Two new diagnostic-only
+          instance attributes, <code>last_composite_counts</code> and
+          <code>last_composite_weighted</code>, now record each track's own composite as
+          a side effect of every <code>update()</code> call — a snapshot for the calling
+          run to read immediately afterward, not resumable state: they deliberately live
+          outside <code>export_state()</code>, since resuming the EMAs across runs never
+          needed them, only this run's own diagnostic read does.
+          <code>run_incremental.py</code> copies them onto the candle as
+          <code>spotPoolCompositeCounts</code> and <code>spotPoolCompositeWeighted</code>,
+          following the same <code>null</code>-means-"not supported yet" convention as
+          every other optional candle field in this project — a candle produced before
+          this phase, or by any run that never activated the volume-weighted track,
+          carries <code>null</code> for both, and the dashboard treats that as "hide
+          this," not "zero." Only these two composites are exposed, deliberately not the
+          underlying pooled <code>sqrt(min(notional_usd, cap))</code> weight sums
+          themselves (<code>pool_good_buy_weight</code> and its siblings) — those are
+          dampened, capped sums, not literal dollar amounts, and showing them next to a
+          real-dollar candle price would misleadingly suggest otherwise. See
+          <a href="#frontend">Reading the terminal</a> for where this surfaces on the
+          page.
+        </p>
       </section>
 
       <section id="windows">
@@ -922,7 +948,16 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             gate — a still-immature Base contributes nothing to the blended signal yet,
             but its classified wallets and their buy/sell activity are already visible
             here. Tracked/active wallet counts are shown the same way, top-right of
-            the card.</li>
+            the card. Since 2026-09-12, when the latest candle carries the two
+            diagnostic composite fields described in <a href="#composite">Composite
+            score</a>, a one-line subnote appears under the breakdown table naming both
+            the wallet-count and volume-weighted tracks' own composite values and their
+            50/50 blend into <code>composite_spot_combined</code>, with an
+            <code>(i)</code> icon explaining the mechanism (square-root dampening, the
+            $50k per-transaction cap). It stays hidden — the same
+            <code>display:none</code> graceful-degradation pattern as everywhere else on
+            this card — for any candle predating this phase or produced by a run that
+            never activated the volume-weighted track.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Unchanged from the
             previous layout.</li>
