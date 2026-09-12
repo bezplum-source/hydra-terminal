@@ -605,6 +605,28 @@ def main() -> int:
                 # co `perp*` wyzej (karta "Wallets" w Fazie B3, frontend).
                 "compositeBase": round(composite_base, 3) if composite_base is not None else None,
                 "compositeSpotCombined": round(composite_spot_combined, 3),
+                # --- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12,
+                # zgloszenie uzytkownika "czy gdzies na stronie w UX bede
+                # widzial wagi?") - `compositeSpotCombined` powyzej to JUZ
+                # zblendowany wynik (50/50) dwoch torow liczonych wewnatrz
+                # `spot_pool_engine` (patrz SpotPoolEngine w scoring.py);
+                # dwa ponizsze pola ujawniaja OBIE skladowe OSOBNO, zeby
+                # front-end (karta Wallets) mogl pokazac, jak bardzo dany
+                # tor "pociagnal" wynik - `last_composite_*` to zwykle
+                # atrybuty ustawiane PRZEZ TO SAMO wywolanie `.update()`
+                # wyzej, nie osobne przeliczenie. `spotPoolCompositeWeighted`
+                # bedzie `None` tylko gdy caly tor wazony wolumenem nie
+                # aktywowal sie w tym wywolaniu (patrz graceful degradation w
+                # `SpotPoolEngine.update()`) - w praktyce w tym pipelinie
+                # zawsze przekazujemy jawne wagi (choc bywaja zerowe), wiec
+                # to pole powinno byc zawsze wypelnione od momentu wdrozenia
+                # tej fazy.
+                "spotPoolCompositeCounts": round(spot_pool_engine.last_composite_counts, 3)
+                if spot_pool_engine.last_composite_counts is not None
+                else None,
+                "spotPoolCompositeWeighted": round(spot_pool_engine.last_composite_weighted, 3)
+                if spot_pool_engine.last_composite_weighted is not None
+                else None,
                 "baseTracked": base_snapshot["tracked"],
                 "baseActive": base_snapshot["active"],
                 "baseClassified": base_snapshot["classified"],
