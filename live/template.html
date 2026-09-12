@@ -845,6 +845,17 @@
       </div>
 
     </div>
+    <!-- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12) - zgloszenie
+         uzytkownika po Fazie "wazenie wolumenem SPOT": "czy gdzies na
+         stronie w UX bede widzial wagi?". Chowana calkowicie (JS,
+         display:none), gdy dana swieca nie ma jeszcze pol
+         spotPoolCompositeCounts/spotPoolCompositeWeighted (historia sprzed
+         tej fazy) - ten sam wzorzec graceful degradation co reszta karty
+         Wallets. -->
+    <div class="card-subnote" id="walletsVolumeNote" style="display:none;">
+      Ważenie wolumenem (√, cap 50 000 USD na transakcję)<span class="info-tip" tabindex="0" data-tip="Composite spot (Uniswap+Base) to blend 50/50 dwóch niezależnych torów: 'liczba portfeli' (każdy portfel = 1 głos, z natury odporny na wieloryby) i 'ważony wolumenem' (waga = pierwiastek z wielkości transakcji, ograniczona twardym sufitem $50k przed pierwiastkowaniem, żeby pojedynczy duży portfel nie zdominował wyniku).">ⓘ</span>:
+      tor liczba-portfeli <b id="volCompositeCounts">-</b> · tor wolumenowy <b id="volCompositeWeighted">-</b> → połączone 50/50 = <b id="volCompositeCombined">-</b>.
+    </div>
   </section>
   <section class="card reveal reveal-4">
     <div class="card-head">
@@ -1123,6 +1134,25 @@ function renderHero() {
   document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US')
     + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
     + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
+
+  // --- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12) - zgloszenie
+  // uzytkownika po Fazie "wazenie wolumenem SPOT": "czy gdzies na stronie w
+  // UX bede widzial wagi?". Pokazuje OBA skladowe torow SpotPoolEngine
+  // (`spotPoolCompositeCounts`/`spotPoolCompositeWeighted`) obok siebie z
+  // ich juz zblendowanym wynikiem (`compositeSpotCombined`, ten sam co w
+  // hero) - zeby bylo widac, jak bardzo tor wazony wolumenem "pociagnal"
+  // wynik wzgledem prostego liczenia portfeli. Chowana calkowicie na
+  // historii sprzed tej fazy (pola po prostu `undefined`) - ten sam wzorzec
+  // graceful degradation co reszta karty.
+  const volNote = document.getElementById('walletsVolumeNote');
+  if (latest.spotPoolCompositeCounts !== undefined && latest.spotPoolCompositeWeighted != null) {
+    volNote.style.display = 'block';
+    document.getElementById('volCompositeCounts').textContent = fmtSigned(latest.spotPoolCompositeCounts);
+    document.getElementById('volCompositeWeighted').textContent = fmtSigned(latest.spotPoolCompositeWeighted);
+    document.getElementById('volCompositeCombined').textContent = fmtSigned(latest.compositeSpotCombined);
+  } else {
+    volNote.style.display = 'none';
+  }
 
   // Uwaga o rozbieznosci: sam spot (Uniswap) wskazywalby inny sygnal niz
   // finalny, zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete
