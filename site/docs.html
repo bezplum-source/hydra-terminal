@@ -950,14 +950,31 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             here. Tracked/active wallet counts are shown the same way, top-right of
             the card. Since 2026-09-12, when the latest candle carries the two
             diagnostic composite fields described in <a href="#composite">Composite
-            score</a>, a one-line subnote appears under the breakdown table naming both
-            the wallet-count and volume-weighted tracks' own composite values and their
-            50/50 blend into <code>composite_spot_combined</code>, with an
-            <code>(i)</code> icon explaining the mechanism (square-root dampening, the
-            $50k per-transaction cap). It stays hidden — the same
-            <code>display:none</code> graceful-degradation pattern as everywhere else on
-            this card — for any candle predating this phase or produced by a run that
-            never activated the volume-weighted track.</li>
+            score</a>, a one-line subnote appears under the breakdown table naming, in
+            plain language, what large capital is doing relative to the plain wallet
+            count — e.g. "Duży kapitał pcha ten odczyt w stronę kupna, wyraźnie mocniej
+            niż wskazywałaby sama liczba portfeli" (capital amplifying the same
+            direction), "Duży kapitał jest wyraźnie mniej przekonany co do sprzedaży niż
+            wskazywałaby sama liczba portfeli" (capital softening it), or, the most
+            information-dense case, "Duży kapitał w rzeczywistości kupuje, mimo że
+            licząc same portfele przeważają sprzedający" when the two tracks disagree in
+            direction outright. This replaced an earlier version (shipped the same day)
+            that spelled out both raw composite values and the 50/50 blend formula
+            directly in the sentence — technically accurate, but the project owner found
+            it unreadable without already knowing what a composite score is ("trochę
+            słabo jest to wytłumaczone. Ja nie rozumiem."), and specifically asked to
+            focus the line on capital's effect rather than the mechanics. The underlying
+            numbers aren't gone, just demoted to the same <code>(i)</code> tooltip
+            convention used everywhere else on the page — hover or tap it for the two
+            raw composite values plus a one-line refresher on the square-root/cap
+            mechanism. The word choice (same-direction "amplifies"/"softens" vs. opposite-
+            direction disagreement) is decided in <code>describeCapitalImpact()</code>
+            using the same <code>signalThreshold</code> already used to decide
+            "Neutralnie"/"Wyraźnie"/"Silnie" on the composite meters above — one
+            threshold, reused, not a second magic number. The line stays hidden — the
+            same <code>display:none</code> graceful-degradation pattern as everywhere
+            else on this card — for any candle predating this phase or produced by a run
+            that never activated the volume-weighted track.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Unchanged from the
             previous layout.</li>
