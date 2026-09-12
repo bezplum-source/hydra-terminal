@@ -329,6 +329,10 @@ def main() -> int:
             "good_sellers": 0,
             "bad_buyers": 0,
             "bad_sellers": 0,
+            "good_buy_weight": 0.0,
+            "good_sell_weight": 0.0,
+            "bad_buy_weight": 0.0,
+            "bad_sell_weight": 0.0,
         }
     composite_base = base_snapshot["composite"]
 
@@ -520,11 +524,36 @@ def main() -> int:
             pool_good_sellers = s.good_sellers + (base_snapshot["good_sellers"] if base_counts_mature else 0)
             pool_bad_buyers = s.bad_buyers + (base_snapshot["bad_buyers"] if base_counts_mature else 0)
             pool_bad_sellers = s.bad_sellers + (base_snapshot["bad_sellers"] if base_counts_mature else 0)
+            # Faza "wazenie wolumenem SPOT" (2026-09-11) - analogiczne
+            # pulowanie dla wag sqrt-capped (patrz WindowScore/
+            # ScoringEngine.run w hydra_signals/scoring.py). `.get(...,
+            # 0.0)` - stan Base zapisany PRZED ta faze (w tym juz na zywym
+            # repo w momencie jej wdrozenia) nie ma jeszcze tych kluczy;
+            # brakujace = 0.0, co dla takiego "starego" stanu i tak jest
+            # wlasciwa wartoscia startowa (brak wkladu Base do puli
+            # wazonej, dopoki Base nie policzy swiezego snapshotu z tymi
+            # polami - patrz blok "Base L2" na koncu main()).
+            pool_good_buy_weight = s.good_buy_weight + (
+                base_snapshot.get("good_buy_weight", 0.0) if base_counts_mature else 0.0
+            )
+            pool_good_sell_weight = s.good_sell_weight + (
+                base_snapshot.get("good_sell_weight", 0.0) if base_counts_mature else 0.0
+            )
+            pool_bad_buy_weight = s.bad_buy_weight + (
+                base_snapshot.get("bad_buy_weight", 0.0) if base_counts_mature else 0.0
+            )
+            pool_bad_sell_weight = s.bad_sell_weight + (
+                base_snapshot.get("bad_sell_weight", 0.0) if base_counts_mature else 0.0
+            )
             composite_spot_combined = spot_pool_engine.update(
                 good_buyers=pool_good_buyers,
                 good_sellers=pool_good_sellers,
                 bad_buyers=pool_bad_buyers,
                 bad_sellers=pool_bad_sellers,
+                good_buy_weight=pool_good_buy_weight,
+                good_sell_weight=pool_good_sell_weight,
+                bad_buy_weight=pool_bad_buy_weight,
+                bad_sell_weight=pool_bad_sell_weight,
             )
             composite_final = blend_composite(
                 composite_spot_combined, composite_perp, perp_weight=HYPERLIQUID_PERP_WEIGHT
@@ -889,6 +918,17 @@ def main() -> int:
                                 "good_sellers": base_latest.good_sellers,
                                 "bad_buyers": base_latest.bad_buyers,
                                 "bad_sellers": base_latest.bad_sellers,
+                                # Faza "wazenie wolumenem SPOT" - te same 4
+                                # nowe pola WindowScore co mainnet (patrz
+                                # `s.good_buy_weight`/itd. wyzej), pulowane w
+                                # NASTEPNYM uruchomieniu razem z mainnetem
+                                # (ten sam ~1h lag co reszta base_snapshot -
+                                # patrz obszerny komentarz przy jego budowie
+                                # na poczatku main()).
+                                "good_buy_weight": base_latest.good_buy_weight,
+                                "good_sell_weight": base_latest.good_sell_weight,
+                                "bad_buy_weight": base_latest.bad_buy_weight,
+                                "bad_sell_weight": base_latest.bad_sell_weight,
                             }
                             new_base_state = base_engine.export_state()
                             new_base_state["last_scored_window_end"] = base_latest.window_end_block
