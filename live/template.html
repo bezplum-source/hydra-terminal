@@ -1161,10 +1161,10 @@ function renderHero() {
     volNote.style.display = 'none';
   }
 
-  // Uwaga o rozbieznosci: sam spot (Uniswap) wskazywalby inny sygnal niz
-  // finalny, zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete
-  // do glownego sygnalu" (decyzja z briefu Hyperliquid, teraz tez z Base)
-  // nigdy nie bylo niewidoczna zmiana zachowania.
+  // Uwaga o rozbieznosci: sam spot wskazywalby inny sygnal niz finalny,
+  // zblendowany - uzytkownik MUSI to widziec, zeby "od razu wpiete do
+  // glownego sygnalu" (decyzja z briefu Hyperliquid, teraz tez z Base) nigdy
+  // nie bylo niewidoczna zmiana zachowania.
   //
   // Faza Base B1-B3 - PROBOWALISMY tu policzyc lokalnie, ktora warstwa
   // blendu (Base czy Hyperliquid) "zdecydowala" o rozbieznosci, porownujac
@@ -1178,12 +1178,28 @@ function renderHero() {
   // odtworzyć, co dokladnie przewazylo. Zweryfikowane empirycznie (Playwright,
   // scenariusz z dojrzalym Base i NULL/niedojrzalym perp) - naiwny prog dawal
   // WIDOCZNIE bledna odpowiedz (np. "Hyperliquid" mimo compositePerp=None).
-  // Zamiast zgadywac, nazywamy WPROST obie mozliwe przyczyny (blend, nie
-  // pojedyncza swieca) - uczciwe i wciaz uzyteczne, bez falszywej precyzji.
+  //
+  // Faza "poprawka komunikatu o rozbieznosci" (2026-09-13, zgloszenie
+  // uzytkownika): baner uzywal `signalSpotOnly` (WYLACZNIE mainnet) jako
+  // "sam spot", mimo ze Base jest CZESCIA puli spot od Fazy "integracja Base
+  // B1-B3"/"wspolna pula SPOT" - wiec winil "Base i/lub Hyperliquid" za
+  // rozbieznosc, choc Base to juz nie osobna przyczyna OBOK spotu, tylko
+  // czesc samego spotu. Teraz porownujemy z `signalSpotCombinedOnly`
+  // (Uniswap+Base POLACZONE, patrz run_incremental.py) - "Base" znika wiec z
+  // listy possible przyczyn, bo jest juz wliczony w "sam spot". Hedge
+  // "i/lub" NIE znika calkiem - zostaje miedzy Hyperliquid a historia
+  // potwierdzen (zamiast miedzy Base a Hyperliquid), bo powyzszy,
+  // empirycznie zweryfikowany przypadek (Base dojrzaly, perp NULL) wciaz
+  // obowiazuje: gdy `compositePerp` jest `None` tego dnia, Hyperliquid
+  // dosłownie NIC nie wnosi (patrz `blend_composite(spot, None)` -
+  // degraduje do samego spotu), a mimo to sygnal potrafi sie roznic od
+  // naiwnego progu WYLACZNIE przez histereze/potwierdzenie - nazwanie tego
+  // "wplywem Hyperliquid" bez zastrzezenia byloby wtedy po prostu falszem,
+  // nie tylko niescisloscia.
   const divNote = document.getElementById('heroDivergenceNote');
-  if (latest.signalSpotOnly !== undefined && latest.signalSpotOnly !== latest.signal) {
+  if (latest.signalSpotCombinedOnly !== undefined && latest.signalSpotCombinedOnly !== latest.signal) {
     divNote.style.display = 'block';
-    divNote.textContent = 'Uwaga: sam spot (Uniswap) wskazywałby ' + signalLabel(latest.signalSpotOnly) + ' — o finalnym sygnale zadecydował zblendowany wpływ Base i/lub Hyperliquid (uwzględniający historię potwierdzeń, nie tylko bieżącą świecę).';
+    divNote.textContent = 'Uwaga: sam spot (Uniswap+Base) wskazywałby ' + signalLabel(latest.signalSpotCombinedOnly) + ' — o finalnym sygnale zadecydował wpływ Hyperliquid i/lub historia potwierdzeń (nie tylko bieżąca świeca).';
   } else {
     divNote.style.display = 'none';
   }
