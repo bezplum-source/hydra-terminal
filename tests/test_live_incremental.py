@@ -1285,3 +1285,136 @@ def test_candle_exposes_signal_spot_combined_only_matching_decide_signal(tmp_pat
     # `signalSpotCombinedOnly` samo w sobie jest spojne z jego wlasnym,
     # udokumentowanym wzorem.
     assert "signalSpotOnly" in latest
+
+
+def test_wallets_window_time_fields_gracefully_absent_without_base_or_hyperliquid(
+    tmp_path, monkeypatch
+):
+    """Faza "znaczniki czasu w karcie Wallets" (2026-09-13, zgloszenie
+    uzytkownika: "czy moglibysmy dodac... informacje z ktorej godziny sa
+    te dane?"). Gdy Base w ogole nie jest skonfigurowany (brak
+    ALCHEMY_BASE_RPC_URL) i Hyperliquid nie ma zadnego bufora - dokladnie
+    stan juz sprawdzony przez
+    test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it
+    dla compositePerp/compositeBase - nowe pola `baseWindowTime`/
+    `perpWindowTime` musza gracefully zdegradowac do `None` (front-end
+    chowa etykiete), zamiast wywalic KeyError albo pokazac cos mylacego.
+    Uniswap natomiast ZAWSZE ma wlasny znacznik czasu (`time`, dzielony z
+    reszta swiecy) - to pole istnialo juz przed ta faza, wiec tu tylko
+    potwierdzamy, ze wciaz jest sensowna, niepusta wartoscia."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles, "oczekiwano co najmniej jednej nowo policzonej swiecy"
+    for c in candles:
+        assert c["time"] not in (None, "?")
+        assert c["baseWindowTime"] is None
+        assert c["perpWindowTime"] is None
+
+
+def test_wallets_window_time_fields_reflect_real_per_source_block_timestamps(
+    tmp_path, monkeypatch
+):
+    """Sedno tej fazy: Uniswap/Base/Hyperliquid legalnie pochodza z ROZNYCH
+    momentow (Base ma udokumentowany ~1h lag - patrz
+    test_base_maturity_gate_lags_one_run_then_blends_into_spot wyzej;
+    Hyperliquid zalezy od tego, kiedy listener ostatnio skonczyl sluchac).
+    Ten test dowodzi, ze front-end faktycznie dostaje TRZY niezalezne,
+    poprawne znaczniki czasu - nie jeden wspolny, i nie przypadkowo takie
+    same:
+
+    - `perpWindowTime`: Hyperliquid jest "swiezy" w TYM SAMYM uruchomieniu,
+      w ktorym dostarczono nowe transakcje (w przeciwienstwie do Base) -
+      wiec juz w Uruchomieniu 1 musi byc obecny i zgodny z
+      `fmt_warsaw(hl_window_end_ts_ms / 1000)`.
+    - `baseWindowTime`: DOKLADNIE jak `compositeBase`/`baseIsMature` w
+      tescie maturity-gate wyzej - w Uruchomieniu 1 (gdy Base dopiero co
+      policzyl swiezy snapshot NA KONCU tego samego uruchomienia) swiece
+      Z TEGO uruchomienia nadal nie widza go (`None`, celowy ~1h lag).
+      Dopiero swiece z Uruchomienia 2 pokazuja prawdziwy, sformatowany
+      znacznik czasu bloku konczacego okno Base.
+    - `time` (Uniswap): niezmieniony, wlasny znacznik mainnetu, rozny od
+      obu powyzszych (rozne fikcyjne lancuchy/bloki w tym tescie)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    # Patrz komentarz w test_base_maturity_gate_lags_one_run_then_blends_into_spot
+    # o tym, dlaczego stale modulowe trzeba podmienic przez monkeypatch.setattr,
+    # nie setenv.
+    monkeypatch.setattr(ri, "BASE_BACKFILL_BLOCKS", 2000)
+    monkeypatch.setattr(ri, "BASE_MAX_NEW_BLOCKS_PER_RUN", 2000)
+
+    hl_records = []
+    ts = 1_000
+    for i in range(25):
+        wallet = f"hlgood{i}"
+        for _ in range(3):
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 20.0, ts)))
+            ts += 1
+            hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(f"cp{ts}", wallet, 150.0, 20.0, ts)))
+            ts += 1
+    for i in range(25):
+        wallet = f"hlgood{i}"
+        hl_records.append(hl_ws.trade_to_json_record(_make_hl_trade(wallet, f"cp{ts}", 100.0, 20.0, ts)))
+        ts += 1
+    st.save_hyperliquid_trades_buffer(hl_records)
+    expected_hl_window_time = ri.fmt_warsaw(max(r["ts_ms"] for r in hl_records) / 1000)
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=1000)
+
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    _seed_base_wallets_for_maturity(base_chain)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            return JsonRpcClient(url, transport=base_chain.transport)
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    # --- Uruchomienie 1 ---
+    assert ri.main() == 0
+    candles_after_1 = st.load_candles_history()
+    assert len(candles_after_1) > 0
+    for c in candles_after_1:
+        # Hyperliquid: swiezy w tym samym uruchomieniu -> juz obecny.
+        assert c["perpWindowTime"] == expected_hl_window_time
+        # Base: celowy ~1h lag -> jeszcze NIE widoczny w tym uruchomieniu.
+        assert c["baseWindowTime"] is None
+        assert c["time"] not in (None, "?")
+
+    base_state_after_1 = st.load_base_scoring_state()
+    base_window_end_block = base_state_after_1["last_scored_window_end"]
+    expected_base_window_time = ri.fmt_warsaw(1_700_000_000 + base_window_end_block * 12)
+
+    # --- Uruchomienie 2: nowe bloki mainnetu (nowa swieca), Base bez zmian ---
+    _seed_wallets(mainnet_chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+
+    candles_after_2 = st.load_candles_history()
+    assert len(candles_after_2) > len(candles_after_1)
+    new_candles = candles_after_2[len(candles_after_1):]
+    assert len(new_candles) > 0
+    for c in new_candles:
+        # Teraz nareszcie widoczny - dokladnie ten sam znacznik czasu, ktory
+        # faktycznie odpowiada blokowi konczacemu okno Base (nie jakis inny,
+        # przypadkowo podobny format).
+        assert c["baseWindowTime"] == expected_base_window_time
+        # Hyperliquid bez nowych transakcji w tym uruchomieniu - znacznik
+        # czasu z Uruchomienia 1 poprawnie przechodzi dalej (carry-forward
+        # razem z reszta `last_perp_snapshot`), nie znika ani sie nie zeruje.
+        assert c["perpWindowTime"] == expected_hl_window_time
+        # Trzy zrodla, trzy rozne momenty - dowod, ze to NIE jeden wspolny
+        # znacznik czasu przypadkiem sklejony w trzech polach.
+        assert len({c["time"], c["baseWindowTime"], c["perpWindowTime"]}) == 3
