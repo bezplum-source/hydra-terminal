@@ -697,6 +697,18 @@
   .wallet-breakdown-table td.buy { color: var(--good-glow); }
   .wallet-breakdown-table td.sell { color: var(--bad-glow); }
   .wallet-breakdown-table th:not(:first-child), .wallet-breakdown-table td:not(:first-child) { padding-left: 18px; }
+  /* Faza "znaczniki czasu w karcie Wallets" (2026-09-13, zgloszenie
+     uzytkownika: "czy moglibysmy dodac... informacje z ktorej godziny sa
+     te dane?" — dane trzech zrodel (Uniswap/Base/Hyperliquid) legalnie
+     pochodza z ROZNYCH momentow (Base ma celowy ~1h lag, Hyperliquid zalezy
+     od tego kiedy ostatni raz skonczyl sluchac WebSocket) - ta etykieta
+     odpowiada wprost na pytanie "z ktorej godziny sa te dane?" bez zadnego
+     wyrozniania kolorem (uzytkownik: "rob w normalnych kolorach" - to byl
+     tylko jego wlasny, ilustracyjny podkreslacz na screenie, nie docelowy
+     styl). Zwykly, drugorzedny tekst - ten sam odcien co nazwa zrodla w
+     pierwszej kolumnie, tylko mniejszy, zeby nie konkurowal wizualnie z
+     liczbami Kupuje/Sprzedaje. */
+  .wallet-row-time { display: block; font-size: 9.5px; color: var(--text-muted); font-weight: 400; letter-spacing: 0; margin-top: 1px; white-space: nowrap; }
 
   /* ================= plain-language market mood (replaces the old BULL/BEAR regime-pill card) ================= */
   .regime-body { display: flex; flex-direction: column; gap: 16px; }
@@ -812,9 +824,9 @@
         <table class="wallet-breakdown-table">
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
-            <tr><td>Uniswap</td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
-            <tr><td>Base</td><td class="buy" id="walletGoodBaseBuy">-</td><td class="sell" id="walletGoodBaseSell">-</td></tr>
-            <tr><td>Hyperliquid</td><td class="buy" id="walletGoodHlBuy">-</td><td class="sell" id="walletGoodHlSell">-</td></tr>
+            <tr><td>Uniswap<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
+            <tr><td>Base<span class="wallet-row-time" data-wallet-time="base"></span></td><td class="buy" id="walletGoodBaseBuy">-</td><td class="sell" id="walletGoodBaseSell">-</td></tr>
+            <tr><td>Hyperliquid<span class="wallet-row-time" data-wallet-time="hl"></span></td><td class="buy" id="walletGoodHlBuy">-</td><td class="sell" id="walletGoodHlSell">-</td></tr>
           </tbody>
         </table>
       </div>
@@ -837,9 +849,9 @@
         <table class="wallet-breakdown-table">
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
-            <tr><td>Uniswap</td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
-            <tr><td>Base</td><td class="buy" id="walletBadBaseBuy">-</td><td class="sell" id="walletBadBaseSell">-</td></tr>
-            <tr><td>Hyperliquid</td><td class="buy" id="walletBadHlBuy">-</td><td class="sell" id="walletBadHlSell">-</td></tr>
+            <tr><td>Uniswap<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
+            <tr><td>Base<span class="wallet-row-time" data-wallet-time="base"></span></td><td class="buy" id="walletBadBaseBuy">-</td><td class="sell" id="walletBadBaseSell">-</td></tr>
+            <tr><td>Hyperliquid<span class="wallet-row-time" data-wallet-time="hl"></span></td><td class="buy" id="walletBadHlBuy">-</td><td class="sell" id="walletBadHlSell">-</td></tr>
           </tbody>
         </table>
       </div>
@@ -1121,6 +1133,23 @@ function renderHero() {
   document.getElementById('walletGoodHlSell').textContent = hlAvailable ? perpGoodSellers : '–';
   document.getElementById('walletBadHlBuy').textContent = hlAvailable ? perpBadBuyers : '–';
   document.getElementById('walletBadHlSell').textContent = hlAvailable ? perpBadSellers : '–';
+
+  // Faza "znaczniki czasu w karcie Wallets" (2026-09-13, zgłoszenie
+  // użytkownika: "czy moglibyśmy dodać... informacje z której godziny są
+  // te dane?" — patrz też komentarz przy .wallet-row-time w CSS powyżej).
+  // Uniswap dzieli znacznik czasu z główną świecą (ten sam `s`/okno co
+  // `candle["time"]`, patrz run_incremental.py) — Base i Hyperliquid mają
+  // WŁASNE pola, bo ich dane legalnie potrafią pochodzić z innej godziny
+  // (Base: celowy ~1h lag; Hyperliquid: zależy, kiedy ostatnio skończył
+  // słuchać WebSocket). Każde z tych pól może być `null`/nieobecne — świeca
+  // sprzed tej fazy, albo źródło jeszcze bez żadnych danych — wtedy etykieta
+  // zostaje po prostu pusta (graceful degradation, ten sam wzorzec co reszta
+  // karty Wallets), zamiast pokazywać mylące "?" czy podobne.
+  const uniWindowTime = (latest.time && latest.time !== '?') ? latest.time : null;
+  const walletRowTimes = { uni: uniWindowTime, base: latest.baseWindowTime || null, hl: latest.perpWindowTime || null };
+  document.querySelectorAll('[data-wallet-time]').forEach(function (el) {
+    el.textContent = walletRowTimes[el.getAttribute('data-wallet-time')] || '';
+  });
 
   const trackedTotal = latest.tracked + (baseAvailable ? latest.baseTracked : 0) + (hlAvailable ? latest.perpTracked : 0);
   document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
