@@ -1015,7 +1015,27 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             threshold, reused, not a second magic number. The line stays hidden — the
             same <code>display:none</code> graceful-degradation pattern as everywhere
             else on this card — for any candle predating this phase or produced by a run
-            that never activated the volume-weighted track.</li>
+            that never activated the volume-weighted track. Since 2026-09-13, each of the
+            three source rows (Uniswap, Base, Hyperliquid) in the breakdown table also
+            carries a small, muted timestamp of its own — the project owner noticed the
+            three sources can legitimately describe different moments (Base's counts come
+            from the <em>previous</em> pipeline run, a deliberate ~1-hour lag described in
+            <a href="#base">Data source: Base L2</a>; Hyperliquid's depend on when its
+            WebSocket listener last finished a window; only Uniswap's timestamp matches
+            the candle's own) and asked for that to be visible rather than implied.
+            Uniswap reuses the candle's existing <code>time</code> field; Base and
+            Hyperliquid get two new candle fields, <code>baseWindowTime</code> and
+            <code>perpWindowTime</code>, each the same <code>DD.MM.YYYY, HH:MM</code>
+            (Warsaw time) format used everywhere else on the page, computed from that
+            source's own window-closing block (Base: a new <code>eth_getBlockByNumber</code>
+            call mirroring the existing mainnet one; Hyperliquid: its
+            already-computed <code>window_end_ts_ms</code>, simply formatted). Deliberately
+            plain, secondary-colored text — no highlight color — since the point was
+            legibility of the underlying "as of when" fact, not drawing extra attention to
+            it. Either field is <code>null</code> whenever that source has no data yet
+            (unconfigured, immature, or a candle predating this phase), and the label is
+            then omitted entirely rather than showing a confusing placeholder — the same
+            graceful-degradation convention used throughout this card.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Unchanged from the
             previous layout.</li>
