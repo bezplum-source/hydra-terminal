@@ -262,6 +262,15 @@ def main() -> int:
             "good_sellers": hl_score.good_sellers,
             "bad_buyers": hl_score.bad_buyers,
             "bad_sellers": hl_score.bad_sellers,
+            # Faza "znaczniki czasu w karcie Wallets" (2026-09-13, zgloszenie
+            # uzytkownika: "czy moglibysmy dodac... informacje z ktorej
+            # godziny sa te dane?") - Hyperliquid juz i tak liczy koniec
+            # swojego okna jako znacznik czasu w ms (`window_end_ts_ms`,
+            # patrz HyperliquidScoringEngine/hl_engine.run wyzej) - zero
+            # nowego zrodla danych, tylko sformatowanie tego, co juz mielismy,
+            # tym samym `fmt_warsaw()` co reszta strony (ten sam format,
+            # "DD.MM.YYYY, HH:MM", czas polski).
+            "window_time": fmt_warsaw(hl_score.window_end_ts_ms / 1000),
         }
         new_hl_state = hl_engine.export_state()
         new_hl_state["last_processed_ts_ms"] = hl_score.window_end_ts_ms
@@ -299,6 +308,7 @@ def main() -> int:
                 "good_sellers": 0,
                 "bad_buyers": 0,
                 "bad_sellers": 0,
+                "window_time": None,
             }
 
     composite_perp = perp_snapshot["composite"]
@@ -329,6 +339,7 @@ def main() -> int:
             "good_sellers": 0,
             "bad_buyers": 0,
             "bad_sellers": 0,
+            "window_time": None,
             "good_buy_weight": 0.0,
             "good_sell_weight": 0.0,
             "bad_buy_weight": 0.0,
@@ -664,6 +675,14 @@ def main() -> int:
                 "baseBadBuyers": base_snapshot["bad_buyers"],
                 "baseBadSellers": base_snapshot["bad_sellers"],
                 "baseMaturityThreshold": BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY,
+                # Faza "znaczniki czasu w karcie Wallets" (2026-09-13) - kiedy
+                # (czas polski) zakonczylo sie okno, z ktorego pochodza
+                # powyzsze liczby Base. `.get(...)` zamiast `[...]` celowo:
+                # `base_snapshot` wczytany ze starego stanu na dysku (sprzed
+                # tej fazy) nie bedzie mial klucza "window_time" - wtedy
+                # `None`, front-end chowa etykiete (graceful degradation, ten
+                # sam wzorzec co reszta projektu).
+                "baseWindowTime": base_snapshot.get("window_time"),
                 # --- Faza H3 (front-end) - karta diagnostyczna "ETH-PERP -
                 # Hyperliquid" (patrz template.html) - te same wartosci
                 # `perp_snapshot` niezaleznie od tego, czy hl_score jest
@@ -678,6 +697,9 @@ def main() -> int:
                 "perpBadBuyers": perp_snapshot["bad_buyers"],
                 "perpBadSellers": perp_snapshot["bad_sellers"],
                 "perpMaturityThreshold": hl_engine.cfg.min_classified_wallets_for_maturity,
+                # Analogicznie dla Hyperliquid - patrz komentarz przy
+                # "baseWindowTime" wyzej (ten sam wzorzec `.get(...)`).
+                "perpWindowTime": perp_snapshot.get("window_time"),
                 "indGoodShort": round(s.ind_good_short, 3),
                 "indGoodLong": round(s.ind_good_long, 3),
                 "indBadShort": round(s.ind_bad_short, 3),
@@ -958,6 +980,34 @@ def main() -> int:
                             base_is_mature = (
                                 base_classified >= BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY
                             )
+
+                            # Faza "znaczniki czasu w karcie Wallets" (2026-09-13,
+                            # zgloszenie uzytkownika: "czy moglibysmy dodac...
+                            # informacje z ktorej godziny sa te dane?"). Base
+                            # dotad NIGDZIE nie pobieral wlasnego znacznika czasu
+                            # bloku (w odroznieniu od mainnetu, patrz analogiczny
+                            # `eth_getBlockByNumber` przy `new_scores` wyzej) -
+                            # tu dokladnie ten sam wzorzec, tylko przez `base_rpc`
+                            # zamiast `rpc`, dla bloku konczacego okno Base.
+                            # Blad/brak odpowiedzi RPC nie jest krytyczny - Base
+                            # composite i tak sie liczy, po prostu znacznik
+                            # czasu w karcie Wallets bedzie ukryty (graceful
+                            # degradation, patrz "window_time": None nizej).
+                            base_window_time = None
+                            base_ts_results = batch_call_with_retry(
+                                base_rpc,
+                                [("eth_getBlockByNumber", [hex(base_latest.window_end_block), False])],
+                                batch_size=CALLS_PER_BATCH,
+                            )
+                            if base_ts_results and base_ts_results[0] and "timestamp" in base_ts_results[0]:
+                                base_window_time = fmt_warsaw(int(base_ts_results[0]["timestamp"], 16))
+                            else:
+                                log(
+                                    "UWAGA: nie udalo sie pobrac znacznika czasu dla "
+                                    f"bloku Base {base_latest.window_end_block} "
+                                    "(znacznik czasu Base w karcie Wallets bedzie ukryty)."
+                                )
+
                             new_base_snapshot = {
                                 "composite": base_latest.composite_score if base_is_mature else None,
                                 "is_mature": base_is_mature,
@@ -968,6 +1018,7 @@ def main() -> int:
                                 "good_sellers": base_latest.good_sellers,
                                 "bad_buyers": base_latest.bad_buyers,
                                 "bad_sellers": base_latest.bad_sellers,
+                                "window_time": base_window_time,
                                 # Faza "wazenie wolumenem SPOT" - te same 4
                                 # nowe pola WindowScore co mainnet (patrz
                                 # `s.good_buy_weight`/itd. wyzej), pulowane w
