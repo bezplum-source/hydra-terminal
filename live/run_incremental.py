@@ -571,6 +571,33 @@ def main() -> int:
             # (diagnostyczne, celowo BEZ histerezy - patrz scoring.py).
             final_signal = signal_engine.process(composite_final)
 
+            # Faza "poprawka komunikatu o rozbieznosci" (2026-09-13,
+            # zgloszenie uzytkownika po zobaczeniu banera "sam spot (Uniswap)
+            # wskazywalby..." na zywo: `signalSpotOnly` powyzej liczy sie
+            # WYLACZNIE z mainnetu - dokladnie tak jak przed Faza "integracja
+            # Base B1-B3"/"wspolna pula SPOT", ktore od dawna wlaczyly Base DO
+            # puli SPOT (`composite_spot_combined` powyzej). Banner uzywajacy
+            # `signalSpotOnly` do porownania z finalnym sygnalem byl wiec
+            # myslacy: winil "Base i/lub Hyperliquid" za rozbieznosc, mimo ze
+            # Base to od dawna CZESC "spotu", nie osobna przyczyna obok niego.
+            # To nowe pole liczy ten sam naiwny, bezstanowy prog
+            # (`decide_signal()`, jak `signalSpotOnly`), ale na JUZ POLACZONEJ
+            # wartosci `composite_spot_combined` (Uniswap+Base) - i uzywa
+            # TEGO SAMEGO progu wejscia, co prawdziwy sygnal
+            # (`signal_engine.cfg.enter_threshold`), zeby porownanie "czy
+            # zblendowany spot sam przekroczylby ten sam prog" bylo
+            # rzeczywiscie jabłko-do-jabłka, a nie mieszanie starego progu
+            # 0.2 z nowym 0.35. Pozostala niescislosc (SignalEngine ma
+            # histereze/potwierdzenie, ta funkcja nie) jest ta sama, ktora
+            # baner mial od zawsze - stad wciaz zastrzezenie "uwzgledniajac
+            # historie potwierdzen" w jego tresci (patrz template.html).
+            # Stare `signalSpotOnly` NIE jest usuwane (wsteczna zgodnosc pola
+            # w publicznym candles_history.json) - po prostu front-end
+            # przestaje go uzywac do tego konkretnego banera.
+            signal_spot_combined_only = decide_signal(
+                composite_spot_combined, threshold=signal_engine.cfg.enter_threshold
+            )
+
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
@@ -594,6 +621,7 @@ def main() -> int:
                 "compositeSpot": round(s.composite_score, 3),
                 "compositePerp": round(composite_perp, 3) if composite_perp is not None else None,
                 "signalSpotOnly": s.signal.value,
+                "signalSpotCombinedOnly": signal_spot_combined_only.value,
                 # --- Faza "integracja Base B1-B3" - `compositeSpot` powyzej
                 # ZOSTAJE nietkniete (wylacznie mainnet, jak przedtem, dla
                 # zgodnosci wstecznej znaczenia tego pola). `compositeBase`/
