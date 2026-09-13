@@ -22,7 +22,7 @@ import json
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from hydra_signals.data_sources.pools import BASE_UNISWAP_V3_WETH_USDC_005, UNISWAP_V3_USDC_WETH_005
-from hydra_signals.scoring import blend_composite
+from hydra_signals.scoring import blend_composite, decide_signal
 from live import build_site as bs
 from live import run_incremental as ri
 from live import state as st
@@ -1234,3 +1234,54 @@ def test_candle_exposes_spot_pool_composite_counts_and_weighted_fields(tmp_path,
     # sie cicho w przyszlosci.
     expected_combined = 0.5 * latest["spotPoolCompositeCounts"] + 0.5 * latest["spotPoolCompositeWeighted"]
     assert abs(latest["compositeSpotCombined"] - expected_combined) < 1e-3
+
+
+def test_candle_exposes_signal_spot_combined_only_matching_decide_signal(tmp_path, monkeypatch):
+    """Faza "poprawka komunikatu o rozbieznosci" (2026-09-13, zgloszenie
+    uzytkownika): baner "sam spot wskazywalby..." w karcie hero porownywal
+    finalny sygnal z `signalSpotOnly` (WYLACZNIE mainnet Uniswap) - myslace,
+    bo Base jest CZESCIA puli spot od Fazy "integracja Base B1-B3"/"wspolna
+    pula SPOT", nie osobna przyczyna obok niego. Nowe pole
+    `signalSpotCombinedOnly` ma reprezentowac "co powiedzialby sam
+    zblendowany spot (Uniswap+Base), bez perp, bez histerezy" - czyli
+    dokladnie `decide_signal(compositeSpotCombined, threshold=enter_threshold)`,
+    UZYWAJACY TEGO SAMEGO progu wejscia co prawdziwy `SignalEngine`
+    (`signalThreshold` w swiecy), nie starego, wycofanego `signal_threshold`
+    (0.2) uzywanego przez `signalSpotOnly`.
+
+    Test end-to-end (prawdziwy `ri.main()`) - sprawdza spojnosc pola z
+    `decide_signal()` wywolanym bezposrednio na juz zapisanych
+    `compositeSpotCombined`/`signalThreshold`, zeby nie rozjechaly sie cicho
+    w przyszlosci (ten sam wzorzec co test_candle_exposes_spot_pool_
+    composite_counts_and_weighted_fields wyzej dla blendu 50/50)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    candles = st.load_candles_history()
+    assert candles, "oczekiwano co najmniej jednej nowo policzonej swiecy"
+    latest = candles[-1]
+    assert "signalSpotCombinedOnly" in latest
+
+    expected = decide_signal(
+        latest["compositeSpotCombined"], threshold=latest["signalThreshold"]
+    ).value
+    assert latest["signalSpotCombinedOnly"] == expected
+
+    # Pole musi byc niezalezne od starego `signalSpotOnly` (mainnet-only,
+    # stary prog 0.2) - to dwa rozne tory, jak `signalSpotOnly` vs `signal`
+    # juz udokumentowane w tescie
+    # test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it
+    # powyzej. Nie zakladamy tu, ze musza sie roznic (moga bez problemu byc
+    # rowne przy niedojrzalym/nieskonfigurowanym Base) - tylko ze
+    # `signalSpotCombinedOnly` samo w sobie jest spojne z jego wlasnym,
+    # udokumentowanym wzorem.
+    assert "signalSpotOnly" in latest
