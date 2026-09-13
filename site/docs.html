@@ -563,12 +563,13 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           considered statistically mature (see <a href="#hyperliquid">Data source:
           Hyperliquid</a>), that blend collapses to just <code>composite_spot_combined</code>,
           unchanged. <code>composite_spot</code> itself stays mainnet-only throughout,
-          purely as a diagnostic baseline (it's what the "sam spot" divergence note on the
-          dashboard compares against) — <code>composite_spot_combined</code> is the pooled
-          SPOT value that actually carries Base's contribution forward into the final
-          blend. <code>composite_base</code> (Base's own, independently-smoothed score) is
-          likewise kept only as a diagnostic field — it no longer feeds the decision
-          directly.
+          purely as a diagnostic baseline — <code>composite_spot_combined</code> is the
+          pooled SPOT value that actually carries Base's contribution forward into the
+          final blend. <code>composite_base</code> (Base's own, independently-smoothed
+          score) is likewise kept only as a diagnostic field — it no longer feeds the
+          decision directly. (Until 2026-09-13, <code>composite_spot</code> was also what
+          the "sam spot" divergence note on the dashboard compared against — see the
+          addendum below for why that changed.)
         </p>
         <p>
           A small addendum, 2026-09-12: after shipping the volume-weighting phase above,
@@ -595,6 +596,46 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           real-dollar candle price would misleadingly suggest otherwise. See
           <a href="#frontend">Reading the terminal</a> for where this surfaces on the
           page.
+        </p>
+        <p>
+          A second addendum, 2026-09-13: the hero's divergence banner ("Uwaga: sam spot
+          ... wskazywałby ...") used to compare the final signal against
+          <code>signalSpotOnly</code> — a naive, non-hysteresis signal computed from
+          <code>composite_spot</code>, i.e. mainnet Uniswap <em>alone</em>. That predates
+          both "integracja Base B1-B3" and "wspólna pula SPOT" — the project owner
+          noticed, correctly, that the banner's own wording ("sam spot (Uniswap)... o
+          finalnym sygnale zadecydował zblendowany wpływ Base i/lub Hyperliquid") no
+          longer matched reality: Base has been part of the SPOT decision pool for weeks,
+          so blaming it as a cause standing <em>alongside</em> "spot" was stale framing,
+          not a fresh observation. The fix adds a new field, <code>signalSpotCombinedOnly</code>
+          — the same naive <code>decide_signal()</code> check as <code>signalSpotOnly</code>,
+          but run on <code>composite_spot_combined</code> (Uniswap+Base pooled) instead of
+          mainnet alone, and against the <em>same</em> entry threshold the real
+          <code>SignalEngine</code> uses (<code>signal_engine.cfg.enter_threshold</code>,
+          0.35) rather than the older, otherwise-unused <code>ScoringConfig.signal_threshold</code>
+          (0.2) that <code>signalSpotOnly</code> still uses — an apples-to-apples "would
+          spot alone cross the same bar" check. The banner now reads "sam spot
+          (Uniswap+Base) wskazywałby ... — o finalnym sygnale zadecydował wpływ
+          Hyperliquid i/lub historia potwierdzeń", dropping Base from the list of possible
+          causes (it's baked into "spot" now) while keeping an "i/lub" hedge between
+          Hyperliquid and confirmation history rather than committing to "Hyperliquid"
+          outright. That hedge is deliberate, not leftover caution: this exact
+          Base-B1-B3-era comment thread already found, via a Playwright scenario with a
+          mature Base and a <code>None</code> (immature/unconfigured) perp, that a naive
+          threshold comparison can name "Hyperliquid" as the cause even when
+          <code>composite_perp</code> is <code>None</code> that candle — i.e. when
+          Hyperliquid contributed literally nothing and the only real cause was
+          <code>SignalEngine</code>'s hysteresis/confirmation-period state carrying
+          forward a prior decision. Verified with four Playwright scenarios: a normal
+          divergence with Hyperliquid actually contributing, that exact <code>compositePerp
+          = None</code> edge case (banner text stays true in both, precisely because of
+          the hedge), no divergence (banner hidden), and a candle predating this phase
+          entirely, i.e. missing the new field (banner hidden — the same
+          graceful-degradation pattern as every other optional field here).
+          <code>signalSpotOnly</code> itself is untouched and still exported on every
+          candle (a public field of <code>candles_history.json</code> — removing it would
+          be a breaking change for anyone scraping it), it's simply no longer what the
+          banner compares against.
         </p>
       </section>
 
