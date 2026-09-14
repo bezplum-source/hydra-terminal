@@ -170,15 +170,62 @@ BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY = int(
 # Okno przycinania bufora `base_trade_buffer.csv` - od Fazy "integracja Base
 # B1-B3" to JUZ NIE tylko zabezpieczenie przed nieograniczonym wzrostem
 # pliku (jak w Fazie B0), tylko REALNE okno reputacji - MUSI byc >=
-# BASE_CLASSIFICATION_LOOKBACK_BLOCKS powyzej, inaczej klasyfikacja portfeli
-# nie mialaby z czego czytac historii starszej niz ten bufor. Podniesione z
-# 43200 (~24h, Faza B0) do 310000 (~7 dni + maly zapas). W przeciwienstwie
-# do bufora Hyperliquid (ktory z tego samego powodu MUSIAL wyjsc poza git,
-# patrz Faza "bufor poza git") - transakcje Base sa duzo rzadsze (obecnie
-# ~13000 wierszy/24h), wiec nawet 7-krotnie dluzsze okno to szacunkowo tylko
-# ~7-8MB pliku CSV w repo - bez ryzyka powtorzenia problemu rozmiaru z
-# Hyperliquid.
-BASE_LOOKBACK_BLOCKS = int(os.environ.get("HYDRA_BASE_LOOKBACK_BLOCKS", "310000"))
+# max(BASE_CLASSIFICATION_LOOKBACK_BLOCKS, BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS)
+# ponizej, inaczej klasyfikacja portfeli nie mialaby z czego czytac historii
+# starszej niz ten bufor. Podniesione z 43200 (~24h, Faza B0) do 310000
+# (~7 dni + maly zapas), a od Fazy "Long term (30d)" (2026-09-14) DALEJ
+# podniesione do 1330000 (~30 dni + analogiczny maly zapas), zeby ten sam
+# bufor mogl zasilic TAKZE nowy, rownolegly `base_lt_engine` (patrz nizej) -
+# dokladnie ten sam powod, dla ktorego trzeba bylo poszerzyc rowniez
+# `DEFAULT_BUFFER_LOOKBACK_HOURS` w hydra_signals/data_sources/hyperliquid_ws.py.
+# W przeciwienstwie do bufora Hyperliquid (ktory z tego samego powodu MUSIAL
+# wyjsc poza git, patrz Faza "bufor poza git") - transakcje Base sa duzo
+# rzadsze (obecnie ~13000 wierszy/24h), wiec nawet przy oknie 30-dniowym to
+# szacunkowo tylko ~30-35MB pliku CSV w repo - wciaz bezpiecznie ponizej
+# twardego limitu GitHuba (100MB/blob), bez ryzyka powtorzenia problemu
+# rozmiaru z Hyperliquid.
+BASE_LOOKBACK_BLOCKS = int(os.environ.get("HYDRA_BASE_LOOKBACK_BLOCKS", "1330000"))
+
+# --- Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
+# liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d? Na frontendzie
+# zakladka Long term") - DRUGI, w pelni rownolegly tor klasyfikacji/scoringu,
+# obok istniejacego 7-dniowego wyzej. NIE zastepuje 7-dniowego okna reputacji
+# (`cfg.classification_lookback_blocks`/`BASE_CLASSIFICATION_LOOKBACK_BLOCKS`/
+# `HyperliquidScoringConfig.classification_lookback_hours` - wszystkie trzy
+# zostaja BEZ ZMIANY), tylko dostarcza DRUGI wynik liczony na TYCH SAMYCH juz
+# zebranych transakcjach - zero dodatkowych wywolan RPC/Alchemy (patrz
+# rozmowa w projekcie: koszt to WYLACZNIE wieksze bufory/stan na dysku, nie
+# wiecej zapytan do sieci).
+#
+# NAZEWNICTWO "Lt" (nie "30d"!) - CELOWA decyzja, zeby uniknac kolizji z juz
+# istniejacym, CALKOWICIE NIEZWIAZANYM pojeciem "30d" w
+# `hydra_signals/regime.py::HORIZONS_IN_WINDOWS` - tam "30d" to horyzont
+# MOMENTUM (o ile zmieniala sie dana metryka w ciagu ostatnich 30 dni), a
+# tutaj chodzi o "ile historii transakcji portfela bierzemy pod uwage przy
+# klasyfikacji GOOD/BAD" - dwie zupelnie rozne rzeczy, ktore przypadkiem
+# maja ta sama liczbe dni. Wszystkie NOWE stale/pola/pliki stanu tej fazy
+# uzywaja sufiksu "Lt"/"_lt" w kodzie Python i kluczach JSON - user-facing
+# etykieta na stronie moze dalej mowic "Long term (30D)"/"zakladka Long
+# term", to dwie oddzielne warstwy nazewnictwa.
+#
+# WARTOSCI STARTOWE (250*24*30 / 1800*24*30 / 720.0h) - analogiczne do
+# istniejacych 7-dniowych odpowiednikow wyzej, tylko *30 zamiast *7 dni -
+# ten sam wzor, ta sama logika, po prostu dluzsze okno.
+LT_CLASSIFICATION_LOOKBACK_BLOCKS = int(
+    os.environ.get("HYDRA_LT_CLASSIFICATION_LOOKBACK_BLOCKS", str(250 * 24 * 30))
+)
+BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS = int(
+    os.environ.get("HYDRA_BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS", str(1800 * 24 * 30))
+)
+# Uzywana bezposrednio przez HyperliquidScoringConfig przy tworzeniu
+# drugiego (Lt) silnika Hyperliquid nizej w main() - patrz tez odpowiadajaca
+# jej zmiana `DEFAULT_BUFFER_LOOKBACK_HOURS` (168.0 -> 720.0) w
+# hydra_signals/data_sources/hyperliquid_ws.py (bufor musi byc co najmniej
+# tak dlugi jak najdluzsze uzywane okno klasyfikacji, dokladnie z tego
+# samego powodu co BASE_LOOKBACK_BLOCKS wyzej).
+HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS = float(
+    os.environ.get("HYDRA_HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS", "720.0")
+)
 
 
 def log(msg: str) -> None:
@@ -188,6 +235,42 @@ def log(msg: str) -> None:
 def fmt_warsaw(ts: int) -> str:
     dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).astimezone(WARSAW)
     return dt.strftime("%d.%m.%Y, %H:%M")
+
+
+def _synthetic_lt_view(candle: dict) -> dict:
+    """Faza "Long term (30d)" - `hydra_signals/regime.py` (compute_momentum,
+    RegimeEngine.process_candle, detect_special_event) czyta WYLACZNIE
+    stale, niesufiksowane nazwy pol (`goodPressure`/`badPressure`/
+    `divergence`/`breadth`/`momentum_{h}_good`/`goodBullishFlips`/
+    `goodBearishFlips`) - nie wie nic o torze Lt ani o jego sufiksowanych
+    polach (`goodPressureLt` itd.), i CELOWO nie powinien: to ta sama,
+    juz przetestowana logika regime/momentum, ktora ma dzialac IDENTYCZNIE
+    niezaleznie od tego, ktory tor (7d czy Lt) ja karmi.
+
+    Ta funkcja buduje wiec "widok" swiecy, w ktorym pola Lt danej swiecy sa
+    podstawione POD zwykle nazwy - dzieki temu `regime.py` mozna wywolac
+    BEZ ZADNEJ zmiany, a wynik (rowniez pod zwyklymi nazwami) wywolujacy
+    (`main()` nizej) z powrotem PREFIKSUJE sufiksem "Lt" przed dopisaniem do
+    prawdziwego rekordu swiecy. Dziala zarowno dla `candle` (swiezo
+    policzona swieca, jeszcze przed dopisaniem do historii - moze miec
+    tylko goodPressureLt/itd. bez momentum_*), jak i dla kazdego wpisu z
+    `candles_history` (juz kompletny, z wlasnym momentum_*_lt policzonym w
+    swoim czasie).
+
+    Wallet Flip (`goodBullishFlips`/`goodBearishFlips`) NIE ma odpowiednika
+    "Lt" w ogole (patrz obszerny komentarz przy wczytywaniu stanu Lt w
+    main()) - ten sam tor jest lookback-niezalezny, wiec widok Lt po prostu
+    POZYCZA zwykle pola wprost, bez zadnego przemianowania.
+    """
+    return {
+        "block": candle["block"],
+        "goodPressure": candle.get("goodPressureLt", 0.0),
+        "badPressure": candle.get("badPressureLt", 0.0),
+        "divergence": candle.get("divergenceLt", 0.0),
+        "breadth": candle.get("breadthLt", 0.5),
+        "goodBullishFlips": candle.get("goodBullishFlips", 0),
+        "goodBearishFlips": candle.get("goodBearishFlips", 0),
+    }
 
 
 def main() -> int:
@@ -211,6 +294,23 @@ def main() -> int:
     base_scoring_state = st.load_base_scoring_state()
     base_wallets_seen = st.load_base_wallets_seen()
     spot_pool_state = st.load_spot_pool_state()
+
+    # --- Faza "Long term (30d)" - stan DRUGIEGO, rownoleglego toru (patrz
+    # stale LT_* na poczatku pliku). Celowo BRAK odpowiednikow dla
+    # `wallets_seen`/`hyperliquid_wallets_seen`/`base_wallets_seen`/
+    # `wallet_flip_state` powyzej - te cztery sa MATEMATYCZNIE IDENTYCZNE
+    # niezaleznie od dlugosci okna klasyfikacji (zbior "wszystkich
+    # kiedykolwiek widzianych portfeli" i dlugosc biezacego ciagu
+    # kupno/sprzedaz per portfel nie zaleza od tego, ile historii bierzemy
+    # pod uwage przy KLASYFIKACJI GOOD/BAD - patrz rozdzial "Problem Solving"
+    # w dokumentacji projektu) - tor Lt POZYCZA je wprost z toru 7d nizej
+    # (ten sam obiekt `wallets_seen`/itd.), zero duplikowania plikow stanu.
+    scoring_state_lt = st.load_scoring_state_lt()
+    base_scoring_state_lt = st.load_base_scoring_state_lt()
+    hyperliquid_scoring_state_lt = st.load_hyperliquid_scoring_state_lt()
+    spot_pool_state_lt = st.load_spot_pool_state_lt()
+    signal_state_lt = st.load_signal_state_lt()
+    regime_state_lt = st.load_regime_state_lt()
 
     # --- Faza H2/H3 (brief Hyperliquid) - osobny, rownolegly silnik na danych
     # z Hyperliquid (zbieranych przez OSOBNY workflow/listener, patrz
@@ -313,6 +413,71 @@ def main() -> int:
 
     composite_perp = perp_snapshot["composite"]
 
+    # --- Faza "Long term (30d)" - DRUGI, w pelni rownolegly silnik
+    # Hyperliquid (Lt), karmiony DOKLADNIE TYMI SAMYMI transakcjami
+    # (`new_hl_trades`/`history_hl_trades`/`hl_window_end_ts_ms` wyzej) co
+    # silnik 7d - jedyna roznica to dluzsze `classification_lookback_hours`
+    # w konfiguracji (patrz `HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS`
+    # na poczatku pliku). Wlasny stan na dysku
+    # (`hyperliquid_scoring_state_lt.json`), ale BEZ osobnego
+    # `total_tracked`/`hyperliquid_wallets_seen_lt.txt` - `tracked` portfeli
+    # nie zalezy od dlugosci okna klasyfikacji (patrz obszerny komentarz
+    # przy wczytywaniu stanu Lt wyzej), wiec `initial_total_tracked`
+    # POZYCZONE wprost z toru 7d (`hyperliquid_wallets_seen`). Z tego samego
+    # powodu `perp_snapshot_lt` NIE powtarza `tracked`/`active` - front-end
+    # bedzie mogl bez zadnej straty scislosci uzyc zwyklych
+    # `perpTracked`/`perpActive` rowniez dla zakladki Long term.
+    hl_engine_lt = HyperliquidScoringEngine(
+        HyperliquidScoringConfig(
+            classification_lookback_hours=HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS
+        ),
+        initial_ema=hyperliquid_scoring_state_lt,
+        initial_total_tracked=hyperliquid_wallets_seen,
+    )
+    hl_score_lt = None
+    if new_hl_trades:
+        hl_score_lt = hl_engine_lt.run(
+            new_hl_trades, history_trades=history_hl_trades, window_end_ts_ms=hl_window_end_ts_ms
+        )
+
+    if hl_score_lt is not None:
+        perp_snapshot_lt = {
+            "composite": hl_score_lt.composite_score if hl_score_lt.is_mature else None,
+            "is_mature": hl_score_lt.is_mature,
+            "classified": hl_score_lt.n_classified_wallets,
+            "good_buyers": hl_score_lt.good_buyers,
+            "good_sellers": hl_score_lt.good_sellers,
+            "bad_buyers": hl_score_lt.bad_buyers,
+            "bad_sellers": hl_score_lt.bad_sellers,
+        }
+        new_hl_state_lt = hl_engine_lt.export_state()
+        new_hl_state_lt["last_processed_ts_ms"] = hl_score_lt.window_end_ts_ms
+        new_hl_state_lt["last_perp_snapshot_lt"] = perp_snapshot_lt
+        st.save_hyperliquid_scoring_state_lt(new_hl_state_lt)
+        log(
+            f"Hyperliquid (Long term/30d): {hl_score_lt.n_classified_wallets} "
+            "sklasyfikowanych portfeli "
+            f"({'dojrzale' if hl_score_lt.is_mature else 'jeszcze NIEDOJRZALE - compositePerpLt=None'})."
+        )
+    else:
+        # Ta sama logika "brak nowych transakcji - odczytaj ostatni znany
+        # snapshot" co dla toru 7d wyzej - bez zadnej galezi zgodnosci
+        # wstecznej (to NOWY klucz stanu, nie ma starszego formatu do
+        # udzwigniecia).
+        perp_snapshot_lt = hyperliquid_scoring_state_lt.get("last_perp_snapshot_lt")
+        if perp_snapshot_lt is None:
+            perp_snapshot_lt = {
+                "composite": None,
+                "is_mature": False,
+                "classified": 0,
+                "good_buyers": 0,
+                "good_sellers": 0,
+                "bad_buyers": 0,
+                "bad_sellers": 0,
+            }
+
+    composite_perp_lt = perp_snapshot_lt["composite"]
+
     # --- Faza "integracja Base B1-B3" (2026-09-11) - `base_snapshot` niesie
     # dokladnie to samo co `perp_snapshot` wyzej (composite/tracked/active/
     # classified/dojrzalosc/buyers-sellers), ale z JEDNA istotna roznica w
@@ -346,6 +511,30 @@ def main() -> int:
             "bad_sell_weight": 0.0,
         }
     composite_base = base_snapshot["composite"]
+
+    # --- Faza "Long term (30d)" - odpowiednik `base_snapshot` powyzej, ale
+    # dla toru Lt (`base_scoring_state_lt`, wczytany na poczatku main()).
+    # Ten sam ~1h lag (swiezy `new_base_snapshot_lt` liczony na SAMYM KONCU
+    # main() - patrz blok "Base L2" nizej), z tego samego powodu
+    # bezpieczenstwa co `base_snapshot`. Bez `tracked`/`active` - patrz
+    # komentarz przy `perp_snapshot_lt` wyzej (te dwie wartosci sa
+    # lookback-niezalezne, front-end reuzyje `baseTracked`/`baseActive`).
+    base_snapshot_lt = base_scoring_state_lt.get("last_base_snapshot_lt")
+    if base_snapshot_lt is None:
+        base_snapshot_lt = {
+            "composite": None,
+            "is_mature": False,
+            "classified": 0,
+            "good_buyers": 0,
+            "good_sellers": 0,
+            "bad_buyers": 0,
+            "bad_sellers": 0,
+            "good_buy_weight": 0.0,
+            "good_sell_weight": 0.0,
+            "bad_buy_weight": 0.0,
+            "bad_sell_weight": 0.0,
+        }
+    composite_base_lt = base_snapshot_lt["composite"]
 
     # ZNALEZIONY I NAPRAWIONY realny blad (zgloszenie uzytkownika: "realnie
     # nie trwa to do godziny... czesto odswieza po 2h"): to byl JEDYNY
@@ -414,7 +603,15 @@ def main() -> int:
     log(f"Nowych transakcji: {len(new_trades)}")
 
     combined_buffer = trade_buffer + new_trades
-    lookback_start = to_block - cfg.classification_lookback_blocks
+    # Faza "Long term (30d)" - przycinanie MUSI uwzgledniac NAJDLUZSZE z obu
+    # uzywanych okien klasyfikacji (7d i Lt), inaczej surowa historia
+    # transakcji potrzebna nowemu, 30-dniowemu `mainnet_lt_engine` (nizej)
+    # zostalaby odrzucona z bufora ZANIM ten silnik zdazylby jej kiedykolwiek
+    # uzyc. Tor 7d (`cfg.classification_lookback_blocks`) dziala DALEJ bez
+    # zadnej zmiany zachowania - po prostu odfiltrowuje sobie z tego samego,
+    # szerszego bufora tylko wlasne, krotsze okno (patrz
+    # `ScoringEngine.run()`/`lookback_start` wewnatrz hydra_signals/scoring.py).
+    lookback_start = to_block - max(cfg.classification_lookback_blocks, LT_CLASSIFICATION_LOOKBACK_BLOCKS)
     trimmed_buffer = [t for t in combined_buffer if t.block > lookback_start]
 
     # NIE scoruj okna (swiecy), ktore jeszcze sie nie "domknelo" wzgledem
@@ -480,9 +677,44 @@ def main() -> int:
     # regime_engine - patrz `signal_state`/`st.save_signal_state` niżej.
     signal_engine = SignalEngine(initial_state=signal_state)
 
+    # --- Faza "Long term (30d)" - DRUGI, w pelni rownolegly komplet
+    # silnikow (mainnet/spot-pool/signal/regime), kazdy identyczny co do
+    # klasy z odpowiednikiem 7d powyzej, karmiony DOKLADNIE TYMI SAMYMI
+    # `scoreable_trades`/`classification_history`/`price_at_block` -
+    # jedyna roznica to `classification_lookback_blocks` w konfiguracji
+    # (patrz `LT_CLASSIFICATION_LOOKBACK_BLOCKS`). `window_blocks` NIEZMIENIONE
+    # (`cfg.window_blocks` odziedziczone wprost z `cfg` 7d), wiec obie petle
+    # `.run()` licza IDENTYCZNE granice okien - gwarantuje to, ze
+    # `new_scores`/`new_scores_lt` maja te sama dlugosc i pasujace
+    # `window_end_block` na kazdym indeksie (bezpieczne do zipowania w petli
+    # nizej). `initial_total_tracked=wallets_seen` POZYCZONE z toru 7d (patrz
+    # obszerny komentarz przy wczytywaniu stanu Lt na poczatku main()) - BEZ
+    # `initial_wallet_flip_state`: Wallet Flip jest lookback-niezalezny, wiec
+    # `mainnet_lt_engine` w ogole nie musi go liczyc/eksportowac - front-end
+    # bedzie mogl reuzyc zwykle `goodBullishFlips`/itd. rowniez dla zakladki
+    # Long term.
+    lt_cfg = ScoringConfig(classification_lookback_blocks=LT_CLASSIFICATION_LOOKBACK_BLOCKS)
+    has_prior_state_lt = bool(scoring_state_lt)
+    mainnet_lt_engine = ScoringEngine(
+        lt_cfg,
+        initial_ema=scoring_state_lt if has_prior_state_lt else None,
+        initial_prev_signal=Signal(scoring_state_lt.get("prev_signal", "HOLD")),
+        initial_total_tracked=wallets_seen,
+    )
+    spot_pool_engine_lt = SpotPoolEngine(
+        cfg,
+        initial_ema=spot_pool_state_lt if spot_pool_state_lt else scoring_state_lt,
+    )
+    regime_engine_lt = regime.RegimeEngine(initial_state=regime_state_lt)
+    signal_engine_lt = SignalEngine(initial_state=signal_state_lt)
+
     new_scores = []
+    new_scores_lt = []
     if scoreable_trades:
         new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
+        new_scores_lt = mainnet_lt_engine.run(
+            scoreable_trades, price_at_block, history_trades=classification_history
+        )
     log(f"Nowe swiece (okna) w tym uruchomieniu: {len(new_scores)}")
     if new_trades and not scoreable_trades:
         log(
@@ -501,7 +733,13 @@ def main() -> int:
             else:
                 log(f"UWAGA: nie udalo sie pobrac znacznika czasu dla bloku {b}.")
 
-        for s in new_scores:
+        # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
+        # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
+        # kazdym indeksie (oba silniki dostaly te same `scoreable_trades` i
+        # to samo `window_blocks` - patrz komentarz przy `mainnet_lt_engine`
+        # wyzej) - bezpieczne zipowanie, `s_lt` to Lt-odpowiednik `s` dla
+        # TEJ SAMEJ swiecy/okna.
+        for s, s_lt in zip(new_scores, new_scores_lt):
             ts = block_ts.get(s.window_end_block)
 
             # --- Faza H2 (brief Hyperliquid) - to TU nastepuje zlaczenie
@@ -607,6 +845,58 @@ def main() -> int:
             # przestaje go uzywac do tego konkretnego banera.
             signal_spot_combined_only = decide_signal(
                 composite_spot_combined, threshold=signal_engine.cfg.enter_threshold
+            )
+
+            # --- Faza "Long term (30d)" - DOKLADNIE ta sama sekwencja
+            # obliczen co wyzej (pulowanie Uniswap+Base, SpotPoolEngine,
+            # blend z perp, SignalEngine, decide_signal diagnostyczny), ale
+            # na skladowych toru Lt (`s_lt`, `base_snapshot_lt`,
+            # `composite_perp_lt`, `spot_pool_engine_lt`, `signal_engine_lt`).
+            # `base_counts_mature`/gate dojrzalosci Base jest WSPOLNY dla obu
+            # torow (ten sam `BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY` -
+            # patrz `base_snapshot_lt["is_mature"]`, liczone niezaleznie z
+            # WLASNEGO classified count toru Lt w bloku "Base L2" nizej).
+            base_counts_mature_lt = base_snapshot_lt["is_mature"]
+            pool_good_buyers_lt = s_lt.good_buyers + (
+                base_snapshot_lt["good_buyers"] if base_counts_mature_lt else 0
+            )
+            pool_good_sellers_lt = s_lt.good_sellers + (
+                base_snapshot_lt["good_sellers"] if base_counts_mature_lt else 0
+            )
+            pool_bad_buyers_lt = s_lt.bad_buyers + (
+                base_snapshot_lt["bad_buyers"] if base_counts_mature_lt else 0
+            )
+            pool_bad_sellers_lt = s_lt.bad_sellers + (
+                base_snapshot_lt["bad_sellers"] if base_counts_mature_lt else 0
+            )
+            pool_good_buy_weight_lt = s_lt.good_buy_weight + (
+                base_snapshot_lt.get("good_buy_weight", 0.0) if base_counts_mature_lt else 0.0
+            )
+            pool_good_sell_weight_lt = s_lt.good_sell_weight + (
+                base_snapshot_lt.get("good_sell_weight", 0.0) if base_counts_mature_lt else 0.0
+            )
+            pool_bad_buy_weight_lt = s_lt.bad_buy_weight + (
+                base_snapshot_lt.get("bad_buy_weight", 0.0) if base_counts_mature_lt else 0.0
+            )
+            pool_bad_sell_weight_lt = s_lt.bad_sell_weight + (
+                base_snapshot_lt.get("bad_sell_weight", 0.0) if base_counts_mature_lt else 0.0
+            )
+            composite_spot_combined_lt = spot_pool_engine_lt.update(
+                good_buyers=pool_good_buyers_lt,
+                good_sellers=pool_good_sellers_lt,
+                bad_buyers=pool_bad_buyers_lt,
+                bad_sellers=pool_bad_sellers_lt,
+                good_buy_weight=pool_good_buy_weight_lt,
+                good_sell_weight=pool_good_sell_weight_lt,
+                bad_buy_weight=pool_bad_buy_weight_lt,
+                bad_sell_weight=pool_bad_sell_weight_lt,
+            )
+            composite_final_lt = blend_composite(
+                composite_spot_combined_lt, composite_perp_lt, perp_weight=HYPERLIQUID_PERP_WEIGHT
+            )
+            final_signal_lt = signal_engine_lt.process(composite_final_lt)
+            signal_spot_combined_only_lt = decide_signal(
+                composite_spot_combined_lt, threshold=signal_engine_lt.cfg.enter_threshold
             )
 
             candle = {
@@ -733,6 +1023,53 @@ def main() -> int:
                 "goodBearishFlips": s.good_trader_bearish_flips,
                 "badBullishFlips": s.bad_trader_bullish_flips,
                 "badBearishFlips": s.bad_trader_bearish_flips,
+                # --- Faza "Long term (30d)" - odpowiedniki powyzszych pol dla
+                # DRUGIEGO, rownoleglego toru Lt (sufiks "Lt"). CELOWO BRAK
+                # "trackedLt"/"activeLt"/"poolLt"/"baseTrackedLt"/
+                # "baseActiveLt"/"perpTrackedLt"/"perpActiveLt"/
+                # "*BullishFlipsLt"/"*BearishFlipsLt" - wszystkie te wartosci
+                # sa MATEMATYCZNIE IDENTYCZNE niezaleznie od dlugosci okna
+                # klasyfikacji (patrz obszerny komentarz przy wczytywaniu
+                # stanu Lt na poczatku main()) - front-end zakladki Long term
+                # ma po prostu reuzyc zwykle, niesufiksowane pola powyzej.
+                "signalLt": final_signal_lt.value,
+                "compositeLt": round(composite_final_lt, 3),
+                "compositeSpotLt": round(s_lt.composite_score, 3),
+                "compositePerpLt": round(composite_perp_lt, 3) if composite_perp_lt is not None else None,
+                "signalSpotOnlyLt": s_lt.signal.value,
+                "signalSpotCombinedOnlyLt": signal_spot_combined_only_lt.value,
+                "compositeBaseLt": round(composite_base_lt, 3) if composite_base_lt is not None else None,
+                "compositeSpotCombinedLt": round(composite_spot_combined_lt, 3),
+                "spotPoolCompositeCountsLt": round(spot_pool_engine_lt.last_composite_counts, 3)
+                if spot_pool_engine_lt.last_composite_counts is not None
+                else None,
+                "spotPoolCompositeWeightedLt": round(spot_pool_engine_lt.last_composite_weighted, 3)
+                if spot_pool_engine_lt.last_composite_weighted is not None
+                else None,
+                "baseClassifiedLt": base_snapshot_lt["classified"],
+                "baseIsMatureLt": base_snapshot_lt["is_mature"],
+                "baseGoodBuyersLt": base_snapshot_lt["good_buyers"],
+                "baseGoodSellersLt": base_snapshot_lt["good_sellers"],
+                "baseBadBuyersLt": base_snapshot_lt["bad_buyers"],
+                "baseBadSellersLt": base_snapshot_lt["bad_sellers"],
+                "perpClassifiedLt": perp_snapshot_lt["classified"],
+                "perpIsMatureLt": perp_snapshot_lt["is_mature"],
+                "perpGoodBuyersLt": perp_snapshot_lt["good_buyers"],
+                "perpGoodSellersLt": perp_snapshot_lt["good_sellers"],
+                "perpBadBuyersLt": perp_snapshot_lt["bad_buyers"],
+                "perpBadSellersLt": perp_snapshot_lt["bad_sellers"],
+                "indGoodShortLt": round(s_lt.ind_good_short, 3),
+                "indGoodLongLt": round(s_lt.ind_good_long, 3),
+                "indBadShortLt": round(s_lt.ind_bad_short, 3),
+                "indBadLongLt": round(s_lt.ind_bad_long, 3),
+                "goodBuyersLt": s_lt.good_buyers,
+                "goodSellersLt": s_lt.good_sellers,
+                "badBuyersLt": s_lt.bad_buyers,
+                "badSellersLt": s_lt.bad_sellers,
+                "goodPressureLt": round(s_lt.good_trader_pressure, 4),
+                "badPressureLt": round(s_lt.bad_trader_pressure, 4),
+                "divergenceLt": round(s_lt.smart_money_divergence, 4),
+                "breadthLt": round(s_lt.good_trader_breadth, 4),
             }
             # --- Momentum wieloczasowy (Faza 1) - patrz hydra_signals/regime.py.
             # Liczony z JUZ ZAPISANEJ historii (candles_history PRZED
@@ -750,6 +1087,31 @@ def main() -> int:
             # swiecy w tym uruchomieniu - tak, jakby kazda przyszla osobno,
             # w swoim wlasnym godzinowym uruchomieniu.
             candle.update(regime_engine.process_candle(candle))
+
+            # --- Faza "Long term (30d)" - odpowiednik momentum/regime bloku
+            # powyzej, ale dla toru Lt, przez "syntetyczny widok" (patrz
+            # `_synthetic_lt_view` na poczatku pliku) - `compute_momentum`/
+            # `regime_engine_lt.process_candle` wywolywane BEZ ZADNEJ zmiany,
+            # tylko na slownikach z polami Lt podstawionymi pod zwykle nazwy.
+            # Wynik (rowniez pod zwyklymi nazwami, np. "bullScore") jest z
+            # powrotem PREFIKSOWANY sufiksem "Lt" ("bullScoreLt") przed
+            # dopisaniem do prawdziwego rekordu swiecy - momentum_* dostaje
+            # analogicznie sufiks "_lt" (np. "momentum_7d_good_lt"), zeby
+            # pasowac do istniejacej konwencji nazewnictwa tych kluczy
+            # (ze znakami podkreslenia, nie camelCase).
+            synthetic_history_lt = [_synthetic_lt_view(c) for c in candles_history]
+            synthetic_now_lt = _synthetic_lt_view(candle)
+            momentum_lt = regime.compute_momentum(
+                synthetic_history_lt, current=synthetic_now_lt, window_blocks=window_blocks
+            )
+            momentum_lt_json = regime.momentum_to_json(momentum_lt)
+            for key, value in momentum_lt_json.items():
+                candle[f"{key}_lt"] = value
+            synthetic_now_lt.update(momentum_lt_json)
+            regime_out_lt = regime_engine_lt.process_candle(synthetic_now_lt)
+            for key, value in regime_out_lt.items():
+                candle[f"{key}Lt"] = value
+
             candles_history.append(candle)
 
     new_last_scored_end = max((s.window_end_block for s in new_scores), default=last_scored_end)
@@ -770,6 +1132,23 @@ def main() -> int:
     st.save_signal_state(signal_engine.export_state())
     st.save_wallet_flip_state(engine.export_wallet_flip_state())
     st.save_spot_pool_state(spot_pool_engine.export_state())
+
+    # --- Faza "Long term (30d)" - zapis stanu DRUGIEGO, rownoleglego toru.
+    # CELOWO brak odpowiednikow `save_wallets_seen`/`save_wallet_flip_state`
+    # dla toru Lt - oba sa lookback-niezalezne i juz zapisane wyzej przez tor
+    # 7d (patrz obszerny komentarz przy wczytywaniu stanu Lt w main()).
+    # `last_scored_window_end` zapisany tu WYLACZNIE informacyjnie/dla
+    # symetrii ksztaltu pliku z `scoring_state.json` - kursor okien jest w
+    # praktyce WSPOLNY dla obu torow (oba licza z tych samych
+    # `scoreable_trades`, patrz `new_scores_lt = mainnet_lt_engine.run(...)`
+    # wyzej), wiec nic go z powrotem nie odczytuje.
+    new_state_lt = mainnet_lt_engine.export_state()
+    new_state_lt["last_scored_window_end"] = new_last_scored_end
+    new_state_lt["updated_at_utc"] = new_state["updated_at_utc"]
+    st.save_scoring_state_lt(new_state_lt)
+    st.save_regime_state_lt(regime_engine_lt.export_state())
+    st.save_signal_state_lt(signal_engine_lt.export_state())
+    st.save_spot_pool_state_lt(spot_pool_engine_lt.export_state())
 
     # Faza "wiarygodna swiezosc" - `lastRunUtc` to zegar SCIANY (kiedy TEN
     # skrypt faktycznie zakonczyl dzialanie), nie znacznik czasu bloku.
@@ -944,6 +1323,26 @@ def main() -> int:
                         initial_ema=base_scoring_state if base_has_prior_state else None,
                         initial_total_tracked=base_wallets_seen,
                     )
+
+                    # --- Faza "Long term (30d)" - DRUGI, rownolegly silnik
+                    # Base (Lt), analogicznie do `mainnet_lt_engine` wyzej w
+                    # main() - te same `base_scoreable_trades`/
+                    # `base_classification_history` (liczone ponizej, WSPOLNE
+                    # dla obu torow - okno `BASE_WINDOW_BLOCKS` jest takie
+                    # samo), tylko dluzszy
+                    # `BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS`. Bez osobnego
+                    # `base_wallets_seen_lt.txt` z tego samego powodu co
+                    # `mainnet_lt_engine` (tracked/active lookback-niezalezne).
+                    base_lt_cfg = ScoringConfig(
+                        window_blocks=BASE_WINDOW_BLOCKS,
+                        classification_lookback_blocks=BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS,
+                    )
+                    base_has_prior_state_lt = bool(base_scoring_state_lt)
+                    base_lt_engine = ScoringEngine(
+                        base_lt_cfg,
+                        initial_ema=base_scoring_state_lt if base_has_prior_state_lt else None,
+                        initial_total_tracked=base_wallets_seen,
+                    )
                     base_last_closed_end = (
                         (base_to_block + 1) // BASE_WINDOW_BLOCKS
                     ) * BASE_WINDOW_BLOCKS - 1
@@ -968,6 +1367,18 @@ def main() -> int:
                         )
                         base_price_at_block = st.price_at_block_factory(base_price_source)
                         base_new_scores = base_engine.run(
+                            base_scoreable_trades,
+                            base_price_at_block,
+                            history_trades=base_classification_history,
+                        )
+                        # Faza "Long term (30d)" - identyczne wejscie
+                        # (`base_scoreable_trades`/`base_classification_history`/
+                        # `base_price_at_block`), inny silnik/config (patrz
+                        # `base_lt_engine` wyzej) - gwarantowana ta sama
+                        # dlugosc/kolejnosc co `base_new_scores` (ten sam
+                        # powod co `new_scores`/`new_scores_lt` w glownej
+                        # petli mainnetu).
+                        base_new_scores_lt = base_lt_engine.run(
                             base_scoreable_trades,
                             base_price_at_block,
                             history_trades=base_classification_history,
@@ -1045,6 +1456,50 @@ def main() -> int:
                                 f"({'dojrzale' if base_is_mature else 'jeszcze NIEDOJRZALE - composite_base=None'}) "
                                 "- wynik zostanie zblendowany ze spot w NASTEPNYM uruchomieniu."
                             )
+
+                            # --- Faza "Long term (30d)" - odpowiednik bloku
+                            # powyzej dla toru Lt. Bez `tracked`/`active`/
+                            # `window_time` - lookback-niezalezne wzgledem
+                            # 7d (ten sam powod co przy `perp_snapshot_lt`/
+                            # `base_snapshot_lt` wyzej w main()) - front-end
+                            # reuzyje `baseTracked`/`baseActive`/
+                            # `baseWindowTime` rowniez dla zakladki Long term.
+                            if base_new_scores_lt:
+                                base_latest_lt = base_new_scores_lt[-1]
+                                base_classified_lt = (
+                                    base_latest_lt.total_good_classified
+                                    + base_latest_lt.total_bad_classified
+                                )
+                                base_is_mature_lt = (
+                                    base_classified_lt >= BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY
+                                )
+                                new_base_snapshot_lt = {
+                                    "composite": base_latest_lt.composite_score
+                                    if base_is_mature_lt
+                                    else None,
+                                    "is_mature": base_is_mature_lt,
+                                    "classified": base_classified_lt,
+                                    "good_buyers": base_latest_lt.good_buyers,
+                                    "good_sellers": base_latest_lt.good_sellers,
+                                    "bad_buyers": base_latest_lt.bad_buyers,
+                                    "bad_sellers": base_latest_lt.bad_sellers,
+                                    "good_buy_weight": base_latest_lt.good_buy_weight,
+                                    "good_sell_weight": base_latest_lt.good_sell_weight,
+                                    "bad_buy_weight": base_latest_lt.bad_buy_weight,
+                                    "bad_sell_weight": base_latest_lt.bad_sell_weight,
+                                }
+                                new_base_state_lt = base_lt_engine.export_state()
+                                new_base_state_lt["last_scored_window_end"] = (
+                                    base_latest_lt.window_end_block
+                                )
+                                new_base_state_lt["last_base_snapshot_lt"] = new_base_snapshot_lt
+                                new_base_state_lt["updated_at_utc"] = new_base_state["updated_at_utc"]
+                                st.save_base_scoring_state_lt(new_base_state_lt)
+                                log(
+                                    f"Base L2 (Long term/30d): {base_classified_lt} "
+                                    "sklasyfikowanych portfeli "
+                                    f"({'dojrzale' if base_is_mature_lt else 'jeszcze NIEDOJRZALE - compositeBaseLt=None'})."
+                                )
         except Exception as exc:  # noqa: BLE001
             # Faza B0 jest swiadomie IZOLOWANA od reszty pipeline'u - blad po
             # stronie Base (throttling, zmiana API, przejsciowy problem
