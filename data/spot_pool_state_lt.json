@@ -1,10 +1,10 @@
 {
-  "good_short": null,
-  "good_long": null,
-  "bad_short": null,
-  "bad_long": null,
-  "good_short_weighted": null,
-  "good_long_weighted": null,
-  "bad_short_weighted": null,
-  "bad_long_weighted": null
+  "good_short": 0.3333333333333333,
+  "good_long": 0.3333333333333333,
+  "bad_short": 0.56,
+  "bad_long": 0.56,
+  "good_short_weighted": 0.24598401056659075,
+  "good_long_weighted": 0.24598401056659075,
+  "bad_short_weighted": 0.6150912072038308,
+  "bad_long_weighted": 0.6150912072038308
 }
