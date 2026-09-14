@@ -55,7 +55,23 @@ ETH_COIN = "ETH"
 # (patrz .github/workflows/hyperliquid-update.yml), ktory nie ma tego
 # limitu (pojedynczy wpis cache moze wazyc do 10GB). Dzieki temu okno
 # bufora moze wreszcie pokrywac cale okno klasyfikacji.
-DEFAULT_BUFFER_LOOKBACK_HOURS = 168.0
+# Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
+# liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - podniesione z
+# 168.0 (7 dni) do 720.0 (30 dni), zeby TEN SAM bufor mogl zasilic TAKZE
+# nowy, rownolegly `HyperliquidScoringEngine` liczacy klasyfikacje z
+# 30-dniowym oknem reputacji (patrz `run_incremental.py`). Krotszy,
+# 7-dniowy silnik dziala dalej BEZ ZADNEJ zmiany zachowania - po prostu
+# odfiltrowuje sobie z tego samego, szerszego bufora tylko ostatnie 7 dni
+# (patrz `HyperliquidScoringEngine.run`/`lookback_start_ms`), dokladnie tak
+# samo jak mainnetowy `ScoringEngine.run()` juz robi z `history_trades`.
+# SWIADOMY koszt (przedyskutowany i zaakceptowany przez uzytkownika, w tym
+# konkretnie ryzyko throttlingu throughput Alchemy - patrz rozmowa w
+# projekcie): plik w cache'u GitHub Actions urosnie z rzedu ~kilkuset MB do
+# ~1GB - wciaz daleko od limitu 10GB/wpis, ale realnie dluzszy transfer
+# restore/save co godzine (sekundy do kilkudziesieciu sekund WIECEJ, NIE
+# godziny wiecej - sam nasluch WebSocket ma STALY czas trwania,
+# `HYPERLIQUID_LISTEN_SECONDS`, calkowicie niezalezny od rozmiaru bufora).
+DEFAULT_BUFFER_LOOKBACK_HOURS = 720.0
 
 # Jak czesto (w sekundach nasluchu) flushowac zebrane transakcje na dysk w
 # trakcie jednego uruchomienia listenera - zabezpieczenie na wypadek, gdyby
