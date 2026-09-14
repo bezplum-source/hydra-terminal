@@ -157,6 +157,48 @@
 
   .topbar-right { display: flex; align-items: center; gap: 8px; opacity: 0; animation: fadeUp 0.7s ease 0.5s both; }
 
+  /* ---------- Faza 2 (front-end) "Long term (30d)" - przełącznik zakładek
+     Main / Long term. Ten sam wizualny jezyk co .range-btn (pigulki), ale
+     wyrazniejszy (wiekszy padding, grubsza czcionka) - to przelacznik
+     GLOWNEGO widoku calego dashboardu, nie podrzedny filtr wykresu. ---------- */
+  .track-switch { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; opacity: 0; animation: fadeUp 0.7s ease 0.4s both; }
+  .track-btn {
+    font-family: var(--font-display);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    padding: 9px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  }
+  .track-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+  .track-btn.active {
+    color: var(--accent-glow);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
+  .track-btn-sub { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.02em; opacity: 0.7; margin-left: 5px; text-transform: none; }
+
+  /* Baner "mlody tor" - pojawia sie WYLACZNIE na zakladce Long term, gdy
+     ten tor nie ma jeszcze zadnej wlasnej swiecy (patrz getCandles()/
+     trackView() w JS) - ten sam ton co Faza 1 "backend-only" w docs.html,
+     zeby nikt nie pomyslal, ze pusty wykres/karty to blad. */
+  .track-young-note {
+    display: none;
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    margin-bottom: 18px;
+    max-width: 74ch;
+  }
+  .track-young-note b { color: var(--accent-glow); }
+
   /* Link do podstrony /docs.html (statyczny plik obok index.html w site/,
      patrz hydrav2-base-l2-b0.md / dokumentacja dev — nie generowany przez
      build_site.py, więc nie zmienia się przy każdym uruchomieniu). */
@@ -744,6 +786,24 @@
     </div>
   </header>
 
+  <!-- Faza 2 (front-end) "Long term (30d)" - przelacznik Main/Long term.
+       Architektura "shared-DOM": KAZDA sekcja ponizej (hero, Wallets, Nastroj
+       rynku, wykres, Historia sygnalow) zostaje jedna i ta sama - klikniecie
+       zakladki zmienia tylko CURRENT_TRACK i wywoluje ponownie te same
+       funkcje renderujace (patrz JS, setTrack()), ktore czytaja dane przez
+       getCandles()/getStreaks() zamiast wprost z DATA.candles/DATA.streaks. -->
+  <div class="track-switch" id="trackSwitch" role="group" aria-label="Wybór toru sygnału">
+    <button type="button" class="track-btn active" data-track="main">Main<span class="track-btn-sub">7 dni</span></button>
+    <button type="button" class="track-btn" data-track="lt">Long term<span class="track-btn-sub">30 dni</span></button>
+  </div>
+  <div class="track-young-note" id="trackYoungNote">
+    <b>Tor Long term dopiero zbiera historię.</b> Ten sam pipeline co tor Main
+    (identyczne transakcje, zero dodatkowego obciążenia RPC), ale z oknem
+    klasyfikacji portfeli rozciągniętym na 30 dni zamiast 7 — dopóki nie
+    uzbiera się choć jedna świeca z pełną, własną historią tego okna, karty
+    poniżej pokazują to wprost zamiast udawać dane, których jeszcze nie ma.
+    Wraca automatycznie, gdy tylko się pojawią.
+  </div>
 
   <section class="hero reveal reveal-1">
     <div class="hero-signal">
@@ -984,6 +1044,86 @@
 const DATA = __DATA_JSON__;
 const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// =====================================================================
+// Faza 2 (front-end) "Long term (30d)" - infrastruktura "shared-DOM,
+// re-render na zmianę zakładki". Zamiast duplikować całe drzewo HTML/JS
+// dashboardu dla drugiego toru (30-dniowe okno klasyfikacji portfeli,
+// patrz Faza 1 backend / hydra_signals), jeden zestaw funkcji renderujących
+// (renderHero, renderRegimeCard, buildMainChart, buildHistory,
+// renderAggregateStats) jest wywoływany PONOWNIE przy każdej zmianie
+// zakładki - czyta dane przez getCandles()/getStreaks() zamiast wprost
+// przez DATA.candles/DATA.streaks, więc nie musi nic wiedzieć o torach.
+// =====================================================================
+let CURRENT_TRACK = 'main';
+
+// Pola, które backend (run_incremental.py) liczy DWA RAZY - raz pod zwykłą
+// nazwą (tor Main, okno klasyfikacji 7 dni), raz pod tą samą nazwą + sufiks
+// "Lt" (tor Long term, okno 30 dni - patrz Faza 1 backend). CELOWO nie ma tu
+// "tracked"/"active"/"baseTracked"/"baseActive"/"perpTracked"/"perpActive"/
+// "*BullishFlips"/"*BearishFlips"/"baseMaturityThreshold"/
+// "perpMaturityThreshold"/"signalThreshold"/"baseWindowTime"/"perpWindowTime" -
+// te pola są MATEMATYCZNIE IDENTYCZNE niezależnie od okna klasyfikacji (patrz
+// obszerny komentarz w run_incremental.py) - zakładka Long term ma je po
+// prostu reużyć wprost, bez żadnego mapowania.
+const LT_REMAP_FIELDS = [
+  'signal', 'composite', 'compositeSpot', 'compositePerp', 'signalSpotOnly',
+  'signalSpotCombinedOnly', 'compositeBase', 'compositeSpotCombined',
+  'spotPoolCompositeCounts', 'spotPoolCompositeWeighted',
+  'baseClassified', 'baseIsMature', 'baseGoodBuyers', 'baseGoodSellers', 'baseBadBuyers', 'baseBadSellers',
+  'perpClassified', 'perpIsMature', 'perpGoodBuyers', 'perpGoodSellers', 'perpBadBuyers', 'perpBadSellers',
+  'indGoodShort', 'indGoodLong', 'indBadShort', 'indBadLong',
+  'goodBuyers', 'goodSellers', 'badBuyers', 'badSellers',
+  'goodPressure', 'badPressure', 'divergence', 'breadth',
+  'regime', 'regimeEvent', 'regimeConfidence', 'regimeMomentumHorizon', 'bullScore', 'bearScore',
+  'specialEvent', 'specialEventConfidence',
+];
+
+// Klient-side odpowiednik `_synthetic_lt_view()` z run_incremental.py, tylko
+// w drugą stronę: tam surowa świeca dostaje pola Lt podstawione POD zwykłe
+// nazwy, żeby nakarmić nimi regime.py bez żadnej zmiany w tamtym kodzie; tu
+// dokładnie ta sama sztuczka pozwala WSZYSTKIM istniejącym funkcjom
+// renderującym (napisanym wyłącznie dla toru Main) czytać tor Long term bez
+// przepisywania choćby jednej linijki ich logiki.
+function trackView(candle) {
+  if (CURRENT_TRACK !== 'lt') return candle;
+  const v = Object.assign({}, candle);
+  LT_REMAP_FIELDS.forEach((key) => {
+    const ltKey = key + 'Lt';
+    if (candle[ltKey] !== undefined) v[key] = candle[ltKey];
+    else delete v[key];
+  });
+  // "pool" (Pula scoringu Uniswap - portfele GOOD aktywne w oknie, patrz
+  // tooltip kafelka Spot w renderHero()) NIE ma własnego pola "poolLt" w
+  // backendzie - w odróżnieniu od tracked/active/itd. WYŻEJ, `pool_size`
+  // (hydra_signals/scoring.py: `good_total = good_buyers + good_sellers`)
+  // NAPRAWDĘ zależy od okna klasyfikacji (to liczba portfeli sklasyfikowanych
+  // jako GOOD, nie tylko śledzonych) - Faza 1 backendu celowo tego nie
+  // dodała jako osobne pole (patrz komentarz w run_incremental.py), bo da
+  // się je dokładnie wyprowadzić z pól, które już ma: goodBuyersLt + goodSellersLt.
+  if (candle.goodBuyersLt !== undefined && candle.goodSellersLt !== undefined) {
+    v.pool = candle.goodBuyersLt + candle.goodSellersLt;
+  } else {
+    delete v.pool;
+  }
+  return v;
+}
+
+// Świeca ma pole "signalLt" wtedy i tylko wtedy, gdy Faza 1 (backend) już ją
+// przetworzyła - pole jest dopisywane bezwarunkowo, razem z całym resztą
+// pól *Lt (patrz candle w run_incremental.py), więc to wystarczający i
+// jednoznaczny test "czy ta świeca należy do historii toru Long term".
+// Historia świec sprzed wdrożenia Fazy 1 (backend) go nie ma - stąd tor
+// Long term startuje z (na razie) krótszą, świeżo rosnącą historią, mimo że
+// "widzi" te same transakcje od zawsze.
+function getCandles() {
+  if (CURRENT_TRACK !== 'lt') return DATA.candles;
+  return DATA.candles.filter((c) => c.signalLt !== undefined).map(trackView);
+}
+function getStreaks() {
+  if (CURRENT_TRACK !== 'lt') return DATA.streaks;
+  return DATA.streaksLt || [];
+}
+
 const fmtUsd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (v) => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
 // Faza H3 (brief Hyperliquid) - wspolny format dla composite/composite_spot/
@@ -1021,53 +1161,83 @@ function animateNumber(el, target, opts) {
   requestAnimationFrame(tick);
 }
 
+// Faza 2 (front-end) "Long term (30d)" - tekst statyczny z data-tip="..." w
+// HTML kafelka "Spot" (patrz sekcja hero). renderHero() jest teraz wywoływana
+// PONOWNIE przy każdej zmianie zakładki (nie tylko raz przy wczytaniu strony,
+// jak przed tą fazą) - gdyby ten tekst nadal był czytany przez
+// `spotTip.getAttribute('data-tip')` (jak poprzednio), DRUGIE wywołanie
+// odczytałoby już zmutowany, w pełni obliczony tekst z PIERWSZEGO wywołania
+// zamiast neutralnego opisu z HTML, doklejając kolejne zdania bez końca.
+// Stała, wpisana raz, zamiast czytania mutowalnego atrybutu DOM.
+const SPOT_TIP_BASE = 'Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.';
+
 function renderHero() {
-  const candles = DATA.candles;
-  const latest = candles[candles.length - 1];
-  const streak = DATA.streaks[0];
+  // "allCandles"/"latestAny" - cena/czas/blok świecy NIE zależą od toru
+  // (dokładnie ta sama świeca ETH/USD leży u podstaw obu torów, patrz
+  // run_incremental.py) - czytane zawsze z NAJNOWSZEJ świecy w ogóle, nawet
+  // gdy tor Long term nie ma jeszcze ani jednej własnej świecy (getCandles()
+  // zwraca wtedy pustą tablicę - patrz komentarz przy tej funkcji).
+  const allCandles = DATA.candles;
+  const latestAny = allCandles[allCandles.length - 1];
+  const candles = getCandles();
+  const streaks = getStreaks();
+  const latest = candles.length ? candles[candles.length - 1] : null;
+  const streak = streaks.length ? streaks[0] : null;
 
   // Faza "NEUTRAL dead-zone" - trzeci, jawny stan zamiast wymuszania LONG/
   // SHORT, gdy composite jest za slaby, zeby cokolwiek jednoznacznie
   // wskazywac (patrz hydra_signals/scoring.py, ScoringConfig.signal_threshold).
+  // Faza 2 (Long term) dokłada CZWARTY stan - "ZBIERAMY DANE" - dla toru,
+  // który jeszcze nie ma ani jednej własnej świecy (patrz getCandles()).
   const pill = document.getElementById('heroPill');
-  pill.textContent = signalLabel(latest.signal);
-  pill.className = 'pill ' + (latest.signal === 'LONG' ? 'pill--long' : latest.signal === 'SHORT' ? 'pill--short' : 'pill--neutral');
+  if (!latest) {
+    pill.textContent = 'ZBIERAMY DANE';
+    pill.className = 'pill pill--neutral';
+  } else {
+    pill.textContent = signalLabel(latest.signal);
+    pill.className = 'pill ' + (latest.signal === 'LONG' ? 'pill--long' : latest.signal === 'SHORT' ? 'pill--short' : 'pill--neutral');
+  }
 
-  animateNumber(document.getElementById('heroPrice'), latest.price, { duration: 1100, format: fmtUsd });
+  animateNumber(document.getElementById('heroPrice'), latestAny.price, { duration: 1100, format: fmtUsd });
 
   // streak.pct jest `null` dla streakow NEUTRALNYCH (brak aktywnej pozycji -
   // liczenie "wyniku" nie ma sensu, patrz live/build_site.py _build_streaks).
   const delta = document.getElementById('heroDelta');
-  if (streak.pct != null) {
+  if (streak && streak.pct != null) {
     delta.textContent = fmtPct(streak.pct) + ' od początku sygnału';
     delta.style.color = streak.pct >= 0 ? 'var(--good-glow)' : 'var(--bad-glow)';
-  } else {
+  } else if (streak) {
     delta.textContent = 'brak aktywnej pozycji (sygnał neutralny)';
+    delta.style.color = 'var(--text-muted)';
+  } else {
+    delta.textContent = 'zbieramy historię tego toru — jeszcze bez ani jednego zamkniętego okresu sygnału';
     delta.style.color = 'var(--text-muted)';
   }
 
-  document.getElementById('heroStart').textContent = streak.startTime;
-  document.getElementById('heroEntryPrice').textContent = fmtUsd(streak.startPrice);
-  document.getElementById('heroDataTime').textContent = latest.time;
-  document.getElementById('heroBlock').textContent = latest.block.toLocaleString('en-US');
+  document.getElementById('heroStart').textContent = streak ? streak.startTime : '–';
+  document.getElementById('heroEntryPrice').textContent = streak ? fmtUsd(streak.startPrice) : '–';
+  document.getElementById('heroDataTime').textContent = latestAny.time;
+  document.getElementById('heroBlock').textContent = latestAny.block.toLocaleString('en-US');
 
   // --- Composite: pokazany jako słowny opis + miernik (Ogólnie/spot/perp),
   // zamiast surowych liczb - zgłoszenie użytkownika "czym jest composite,
   // nie bardzo to rozumiem". Reużywa dokładnie ten sam próg (`signalThreshold`,
   // jedno miejsce prawdy), co dawny statScoreBreakdown/karta ETH-PERP. ---
-  const threshold = latest.signalThreshold != null ? latest.signalThreshold : 0;
-  renderCompositeMeter('All', latest.composite, threshold);
+  const threshold = latest && latest.signalThreshold != null ? latest.signalThreshold : 0;
+  renderCompositeMeter('All', latest ? latest.composite : null, threshold);
   // Faza "Base L2, integracja B1-B3" - kafelek "Spot" pokazuje teraz
   // `compositeSpotCombined` (Uniswap+Base zblendowane, patrz
   // `blend_composite` w run_incremental.py), nie sam mainnet - decyzja z
   // AskUserQuestion "Base wzmacnia stronę spot". `compositeSpot` (fallback
   // dla bardzo starych świec sprzed tej fazy, kiedy pola *Combined jeszcze
   // nie istniało) pozostaje czysto mainnetowe.
-  const spotCombinedValue = latest.compositeSpotCombined !== undefined
-    ? latest.compositeSpotCombined
-    : (latest.compositeSpot !== undefined ? latest.compositeSpot : null);
+  const spotCombinedValue = latest
+    ? (latest.compositeSpotCombined !== undefined
+      ? latest.compositeSpotCombined
+      : (latest.compositeSpot !== undefined ? latest.compositeSpot : null))
+    : null;
   renderCompositeMeter('Spot', spotCombinedValue, threshold);
-  renderCompositeMeter('Perp', latest.compositePerp != null ? latest.compositePerp : null, threshold);
+  renderCompositeMeter('Perp', latest && latest.compositePerp != null ? latest.compositePerp : null, threshold);
 
   // Dodatkowy kontekst dopisywany do (i) przy licznikach - dawna "Pula
   // scoringu" (Uniswap) i dawna karta ETH-PERP (dojrzałość/próg klasyfikacji
@@ -1080,18 +1250,24 @@ function renderHero() {
   // sztywną stałą wagą, więc tooltip już nie podaje liczby, która by na
   // to wskazywała.
   const spotTip = document.getElementById('compositeTipSpot');
-  const spotBaseTip = spotTip.getAttribute('data-tip') + ' Pula scoringu Uniswap (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
-  if (latest.baseTracked === undefined) {
-    spotTip.setAttribute('data-tip', spotBaseTip + ' Dane z Base jeszcze się nie pojawiły w tej historii świec.');
-  } else if (!latest.baseIsMature || latest.compositeBase == null) {
-    spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap decyduje bez zmian.');
+  if (!latest) {
+    spotTip.setAttribute('data-tip', SPOT_TIP_BASE + ' Zakładka Long term dopiero zbiera własną historię — jeszcze bez ani jednej świecy tego toru.');
   } else {
-    spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — w tej samej, wspólnej puli co Uniswap: wpływ proporcjonalny do liczby aktywnych sklasyfikowanych portfeli w tym oknie, nie sztywną wagą.');
+    const spotBaseTip = SPOT_TIP_BASE + ' Pula scoringu Uniswap (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
+    if (latest.baseTracked === undefined) {
+      spotTip.setAttribute('data-tip', spotBaseTip + ' Dane z Base jeszcze się nie pojawiły w tej historii świec.');
+    } else if (!latest.baseIsMature || latest.compositeBase == null) {
+      spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap decyduje bez zmian.');
+    } else {
+      spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — w tej samej, wspólnej puli co Uniswap: wpływ proporcjonalny do liczby aktywnych sklasyfikowanych portfeli w tym oknie, nie sztywną wagą.');
+    }
   }
 
   const perpTip = document.getElementById('compositeTipPerp');
   const perpBaseTip = 'Presja kupna/sprzedaży wśród portfeli handlujących kontraktami perpetual ETH na Hyperliquid.';
-  if (latest.perpTracked === undefined) {
+  if (!latest) {
+    perpTip.setAttribute('data-tip', perpBaseTip + ' Zakładka Long term dopiero zbiera własną historię — jeszcze bez ani jednej świecy tego toru.');
+  } else if (latest.perpTracked === undefined) {
     perpTip.setAttribute('data-tip', perpBaseTip + ' Dane z Hyperliquid jeszcze się nie pojawiły w tej historii świec.');
   } else if (!latest.perpIsMature || latest.compositePerp == null) {
     perpTip.setAttribute('data-tip', perpBaseTip + ' Jeszcze niedojrzałe: ' + latest.perpClassified.toLocaleString('en-US') + ' / ' + latest.perpMaturityThreshold + ' sklasyfikowanych portfeli w oknie — nie wpływa jeszcze na sygnał, sam spot decyduje bez zmian.');
@@ -1108,23 +1284,23 @@ function renderHero() {
   // NIEZALEŻNE od bramki dojrzałości Base (`baseIsMature` wpływa tylko na
   // to, czy `compositeBase` wpływa na wartość spot/sygnał - identycznie jak
   // już wcześniej dla Hyperliquid/`perpIsMature` powyżej). ---
-  const hlAvailable = latest.perpTracked !== undefined;
-  const perpGoodBuyers = latest.perpGoodBuyers || 0, perpGoodSellers = latest.perpGoodSellers || 0;
-  const perpBadBuyers = latest.perpBadBuyers || 0, perpBadSellers = latest.perpBadSellers || 0;
+  const hlAvailable = !!latest && latest.perpTracked !== undefined;
+  const perpGoodBuyers = (latest && latest.perpGoodBuyers) || 0, perpGoodSellers = (latest && latest.perpGoodSellers) || 0;
+  const perpBadBuyers = (latest && latest.perpBadBuyers) || 0, perpBadSellers = (latest && latest.perpBadSellers) || 0;
 
-  const baseAvailable = latest.baseTracked !== undefined;
-  const baseGoodBuyers = latest.baseGoodBuyers || 0, baseGoodSellers = latest.baseGoodSellers || 0;
-  const baseBadBuyers = latest.baseBadBuyers || 0, baseBadSellers = latest.baseBadSellers || 0;
+  const baseAvailable = !!latest && latest.baseTracked !== undefined;
+  const baseGoodBuyers = (latest && latest.baseGoodBuyers) || 0, baseGoodSellers = (latest && latest.baseGoodSellers) || 0;
+  const baseBadBuyers = (latest && latest.baseBadBuyers) || 0, baseBadSellers = (latest && latest.baseBadSellers) || 0;
 
-  document.getElementById('walletGoodBuy').textContent = latest.goodBuyers + baseGoodBuyers + perpGoodBuyers;
-  document.getElementById('walletGoodSell').textContent = latest.goodSellers + baseGoodSellers + perpGoodSellers;
-  document.getElementById('walletBadBuy').textContent = latest.badBuyers + baseBadBuyers + perpBadBuyers;
-  document.getElementById('walletBadSell').textContent = latest.badSellers + baseBadSellers + perpBadSellers;
+  document.getElementById('walletGoodBuy').textContent = latest ? (latest.goodBuyers + baseGoodBuyers + perpGoodBuyers) : '–';
+  document.getElementById('walletGoodSell').textContent = latest ? (latest.goodSellers + baseGoodSellers + perpGoodSellers) : '–';
+  document.getElementById('walletBadBuy').textContent = latest ? (latest.badBuyers + baseBadBuyers + perpBadBuyers) : '–';
+  document.getElementById('walletBadSell').textContent = latest ? (latest.badSellers + baseBadSellers + perpBadSellers) : '–';
 
-  document.getElementById('walletGoodUniBuy').textContent = latest.goodBuyers;
-  document.getElementById('walletGoodUniSell').textContent = latest.goodSellers;
-  document.getElementById('walletBadUniBuy').textContent = latest.badBuyers;
-  document.getElementById('walletBadUniSell').textContent = latest.badSellers;
+  document.getElementById('walletGoodUniBuy').textContent = latest ? latest.goodBuyers : '–';
+  document.getElementById('walletGoodUniSell').textContent = latest ? latest.goodSellers : '–';
+  document.getElementById('walletBadUniBuy').textContent = latest ? latest.badBuyers : '–';
+  document.getElementById('walletBadUniSell').textContent = latest ? latest.badSellers : '–';
   document.getElementById('walletGoodBaseBuy').textContent = baseAvailable ? baseGoodBuyers : '–';
   document.getElementById('walletGoodBaseSell').textContent = baseAvailable ? baseGoodSellers : '–';
   document.getElementById('walletBadBaseBuy').textContent = baseAvailable ? baseBadBuyers : '–';
@@ -1145,23 +1321,35 @@ function renderHero() {
   // sprzed tej fazy, albo źródło jeszcze bez żadnych danych — wtedy etykieta
   // zostaje po prostu pusta (graceful degradation, ten sam wzorzec co reszta
   // karty Wallets), zamiast pokazywać mylące "?" czy podobne.
-  const uniWindowTime = (latest.time && latest.time !== '?') ? latest.time : null;
-  const walletRowTimes = { uni: uniWindowTime, base: latest.baseWindowTime || null, hl: latest.perpWindowTime || null };
+  const uniWindowTime = (latest && latest.time && latest.time !== '?') ? latest.time : null;
+  const walletRowTimes = { uni: uniWindowTime, base: (latest && latest.baseWindowTime) || null, hl: (latest && latest.perpWindowTime) || null };
   document.querySelectorAll('[data-wallet-time]').forEach(function (el) {
     el.textContent = walletRowTimes[el.getAttribute('data-wallet-time')] || '';
   });
 
-  const trackedTotal = latest.tracked + (baseAvailable ? latest.baseTracked : 0) + (hlAvailable ? latest.perpTracked : 0);
-  document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
-  document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US')
-    + (baseAvailable ? ' · Base ' + latest.baseTracked.toLocaleString('en-US') : '')
-    + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
+  // "tracked"/"active" (i ich odpowiedniki base*/perp*) NIE mają sufiksu
+  // "Lt" - są matematycznie identyczne niezależnie od okna klasyfikacji
+  // (patrz komentarz przy LT_REMAP_FIELDS) - jedyny powód, żeby tu w ogóle
+  // pokazać "–" zamiast liczby, to brak jakiejkolwiek świecy toru Long term
+  // (latest === null), nie brak samego pola.
+  if (latest) {
+    const trackedTotal = latest.tracked + (baseAvailable ? latest.baseTracked : 0) + (hlAvailable ? latest.perpTracked : 0);
+    document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
+    document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US')
+      + (baseAvailable ? ' · Base ' + latest.baseTracked.toLocaleString('en-US') : '')
+      + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
 
-  const activeTotal = latest.active + (baseAvailable ? latest.baseActive : 0) + (hlAvailable ? latest.perpActive : 0);
-  document.getElementById('walletsActiveTotal').textContent = activeTotal.toLocaleString('en-US');
-  document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US')
-    + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
-    + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
+    const activeTotal = latest.active + (baseAvailable ? latest.baseActive : 0) + (hlAvailable ? latest.perpActive : 0);
+    document.getElementById('walletsActiveTotal').textContent = activeTotal.toLocaleString('en-US');
+    document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US')
+      + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
+      + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
+  } else {
+    document.getElementById('walletsTrackedTotal').textContent = '–';
+    document.getElementById('walletsTrackedSplit').textContent = '';
+    document.getElementById('walletsActiveTotal').textContent = '–';
+    document.getElementById('walletsActiveSplit').textContent = '';
+  }
 
   // --- Faza "diagnostyka wazenia wolumenem w UI" (2026-09-12), druga
   // iteracja - zgloszenie uzytkownika po pierwszej wersji tej linijki
@@ -1176,7 +1364,7 @@ function renderHero() {
   // historii sprzed tej fazy (pola po prostu `undefined`) - ten sam wzorzec
   // graceful degradation co reszta karty.
   const volNote = document.getElementById('walletsVolumeNote');
-  if (latest.spotPoolCompositeCounts !== undefined && latest.spotPoolCompositeWeighted != null) {
+  if (latest && latest.spotPoolCompositeCounts !== undefined && latest.spotPoolCompositeWeighted != null) {
     volNote.style.display = 'block';
     const poolCounts = latest.spotPoolCompositeCounts;
     const poolWeighted = latest.spotPoolCompositeWeighted;
@@ -1226,7 +1414,7 @@ function renderHero() {
   // "wplywem Hyperliquid" bez zastrzezenia byloby wtedy po prostu falszem,
   // nie tylko niescisloscia.
   const divNote = document.getElementById('heroDivergenceNote');
-  if (latest.signalSpotCombinedOnly !== undefined && latest.signalSpotCombinedOnly !== latest.signal) {
+  if (latest && latest.signalSpotCombinedOnly !== undefined && latest.signalSpotCombinedOnly !== latest.signal) {
     divNote.style.display = 'block';
     divNote.textContent = 'Uwaga: sam spot (Uniswap+Base) wskazywałby ' + signalLabel(latest.signalSpotCombinedOnly) + ' — o finalnym sygnale zadecydował wpływ Hyperliquid i/lub historia potwierdzeń (nie tylko bieżąca świeca).';
   } else {
@@ -1355,7 +1543,7 @@ const EVENT_WORDS = {
 // "Zdarzenia regime" niżej - usunięta w kolejnej fazie (patrz komentarz
 // przy EVENT_WORDS wyżej), skoro ta karta już podsumowuje najnowszy event.
 function renderRegimeCard() {
-  const candles = DATA.candles;
+  const candles = getCandles();
   // Nie każda świeca ma pola regime (te z przed wdrożenia Fazy 2 nie mają) - szukamy
   // od końca najnowszej świecy, która faktycznie je ma, zamiast ufać ostatniej z listy.
   const withRegime = candles.filter((c) => c.regime !== undefined);
@@ -1464,7 +1652,7 @@ function niceDomain(values) {
 // wykres nigdy nie zniknął z powodu wybrania zbyt krótkiego okna.
 const RANGE_SECONDS = { '24h': 24 * 3600, '7d': 7 * 24 * 3600, '30d': 30 * 24 * 3600 };
 function filterCandlesByRange(range) {
-  const candles = DATA.candles;
+  const candles = getCandles();
   if (range === 'all' || !RANGE_SECONDS[range] || !candles.length) return candles;
   const latestTs = candles[candles.length - 1].ts;
   if (!latestTs) return candles;
@@ -1475,17 +1663,37 @@ function filterCandlesByRange(range) {
 
 // Faza UX/UI 2 - buildMainChart() teraz przyjmuje opcjonalną, już przefiltrowaną
 // listę świec (przełącznik zakresu czasu) - domyślnie (brak argumentu) zachowanie
-// identyczne jak przed tą fazą: cała historia z DATA.candles. Funkcja jest
+// identyczne jak przed tą fazą: cała historia z getCandles(). Funkcja jest
 // wywoływana ponownie przy każdej zmianie zakresu, więc najpierw czyści SVG
 // z poprzedniego renderu (poza <defs> z gradientem ceny - ten zostaje raz na stałe).
+//
+// Faza 2 (Long term) - fallback dla "za mało punktów po filtrze" MUSI wracać
+// do getCandles() (świec BIEŻĄCEGO toru), nie do DATA.candles wprost (jak
+// przed tą fazą) - inaczej zakładka Long term bez własnej historii cicho
+// pokazałaby wykres toru Main, podpisany jako Long term. Gdy nawet cała
+// historia bieżącego toru ma < 2 punkty (tor Long term dopiero startuje,
+// patrz getCandles()), wykres jest pusty - jawny komunikat zamiast tego.
 function buildMainChart(candlesParam) {
   const svg = document.getElementById('mainChart');
   const defs = svg.querySelector('defs');
   while (svg.firstChild) svg.removeChild(svg.firstChild);
   if (defs) svg.appendChild(defs);
 
-  const candles = (candlesParam && candlesParam.length >= 2) ? candlesParam : DATA.candles;
+  const trackCandles = getCandles();
+  const candles = (candlesParam && candlesParam.length >= 2) ? candlesParam : trackCandles;
   const n = candles.length;
+  if (n < 2) {
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', '50%');
+    label.setAttribute('y', '50%');
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', 'var(--text-muted)');
+    label.setAttribute('font-family', 'var(--font-mono)');
+    label.setAttribute('font-size', '13');
+    label.textContent = 'Zbieramy historię tego toru — wykres pojawi się, gdy uzbiera się wystarczająco świec.';
+    svg.appendChild(label);
+    return;
+  }
   // H rozszerzone z 300 do 350 (Faza UX/UI 1), żeby zrobić miejsce na wstążkę regime
   // (RIBBON_H) i rząd markerów eventów (MARK_H) POD wykresem ceny, bez zmiany proporcji
   // samego wykresu bardziej niż konieczne.
@@ -1685,7 +1893,7 @@ const HISTORY_PAGE_SIZE = 15;
 let historyPage = 0;
 
 function buildHistory() {
-  const streaks = DATA.streaks;
+  const streaks = getStreaks();
   const totalPages = Math.max(1, Math.ceil(streaks.length / HISTORY_PAGE_SIZE));
   historyPage = Math.max(0, Math.min(historyPage, totalPages - 1));
   const startIdx = historyPage * HISTORY_PAGE_SIZE;
@@ -1745,7 +1953,7 @@ function renderAggregateStats() {
   const resetFromBlock = (DATA.meta && typeof DATA.meta.statsResetFromBlock === 'number')
     ? DATA.meta.statsResetFromBlock
     : null;
-  const streaks = DATA.streaks.filter((s) => {
+  const streaks = getStreaks().filter((s) => {
     if (s.signal !== 'LONG' && s.signal !== 'SHORT') return false;
     if (resetFromBlock !== null && s.startBlock < resetFromBlock) return false;
     return true;
@@ -1822,6 +2030,36 @@ function setRange(range) {
 }
 document.querySelectorAll('#rangeSwitch .range-btn').forEach((btn) => {
   btn.addEventListener('click', () => setRange(btn.dataset.range));
+});
+
+// Faza 2 (front-end) "Long term (30d)" - przełącznik zakładek Main/Long term.
+// Ponownie wywołuje TE SAME funkcje renderujące co przy starcie strony
+// (architektura "shared-DOM" - patrz komentarz przy CURRENT_TRACK na
+// początku <script>) - żadna z nich nie wie nic o torach, całą logikę
+// wyboru danych niesie CURRENT_TRACK + getCandles()/getStreaks(). Reset
+// `historyPage`/`currentRange` przy każdej zmianie zakładki - inaczej np.
+// strona 3 tabeli historii toru Main mogłaby wylądować poza zakresem dla
+// (na razie) dużo krótszej historii toru Long term.
+function setTrack(track) {
+  if (track === CURRENT_TRACK) return;
+  CURRENT_TRACK = track;
+  document.querySelectorAll('#trackSwitch .track-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.track === track);
+  });
+  document.getElementById('trackYoungNote').style.display = (track === 'lt' && !getCandles().length) ? 'block' : 'none';
+  historyPage = 0;
+  currentRange = 'all';
+  document.querySelectorAll('#rangeSwitch .range-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.range === 'all');
+  });
+  renderHero();
+  renderRegimeCard();
+  buildMainChart(filterCandlesByRange(currentRange));
+  buildHistory();
+  renderAggregateStats();
+}
+document.querySelectorAll('#trackSwitch .track-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setTrack(btn.dataset.track));
 });
 
 document.getElementById('historyPrevBtn').addEventListener('click', () => {
