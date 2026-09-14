@@ -829,7 +829,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
       </section>
 
       <section id="long-term">
-        <h2>Long term (30d) classification track <span class="pill long" style="margin-left:6px;">Phase 1 — backend only</span></h2>
+        <h2>Long term (30d) classification track <span class="pill long" style="margin-left:6px;">Phase 1 + 2 shipped</span></h2>
         <p>
           Every wallet-classification pass described above (mainnet, Base, Hyperliquid)
           uses a <strong>reputation window</strong> — how much of a wallet's own trading
@@ -863,17 +863,36 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           — reusing it here for a completely different kind of "30 days" would have been
           confusing in the code, even though both are shown to a person as "30 days."
         </p>
+        <p>
+          The dashboard exposes this as a <strong>"Long term" tab</strong> next to "Main",
+          above the hero section. Clicking it doesn't load a second copy of the page — the
+          exact same hero, composite meters, Wallets card, market-mood card, price/signal
+          chart and signal-history table simply re-render themselves against the 30-day
+          track's data instead of the 7-day track's (a small client-side <code>trackView()</code>
+          function remaps each <code>Lt</code>-suffixed field back onto its plain name before
+          handing the candle to the same rendering code — a mirror image of the
+          <code>_synthetic_lt_view()</code> technique <code>live/run_incremental.py</code> uses
+          server-side to feed the 30-day candles through the same regime/momentum code as the
+          7-day ones). One field, <code>pool</code> (the Wallets tooltip's "Uniswap scoring
+          pool" count), has no <code>poolLt</code> counterpart in the data at all — unlike the
+          genuinely track-independent fields below, it depends on which reputation window
+          classified the wallets, so it's derived on the fly in the browser as
+          <code>goodBuyersLt + goodSellersLt</code> instead.
+        </p>
         <div class="callout">
-          <span class="label">Backend only, for now</span>
+          <span class="label">A track that starts empty</span>
           <p>
-            This phase deliberately ships the computation first, with no new UI — the
-            dashboard doesn't show any of the <code>Lt</code>-suffixed fields yet. A "Long
-            term" tab mirroring the whole dashboard for the 30-day track is planned as a
-            follow-up phase. Because the 30-day track only started accumulating history
-            from the moment this phase shipped, its classification will only reflect a
-            genuinely deep 30 days of history after running for about that long — until
-            then it behaves correctly, just on a shallower window than its name implies
-            (exactly how the original 7-day track behaved when it first shipped).
+            The 30-day track only started accumulating history from the moment Phase 1
+            shipped, so existing candles from before that point simply don't carry any
+            <code>Lt</code>-suffixed fields at all (not <code>null</code> — absent). The "Long
+            term" tab treats "this candle has a <code>signalLt</code> field" as the test for
+            "belongs to this track's history," so right after launch it can legitimately show
+            an empty chart, dashes in the Wallets card, and a "zbieramy historię tego toru"
+            (gathering history) note in place of the hero pill and mood card — that's the
+            track correctly reporting it has nothing yet, not a bug. It fills in candle by
+            candle as the hourly pipeline runs, and will only reflect a genuinely deep 30 days
+            once it's been running for about that long (exactly how the original 7-day track
+            behaved when it first shipped).
           </p>
         </div>
       </section>
@@ -1035,6 +1054,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           but most of it now lives in small print or behind a hover/tap
           <code>(i)</code> icon instead of competing for attention with the signal
           itself. Its main sections, top to bottom:
+        </p>
+        <p>
+          Since the "Long term (30d)" phase, a <strong>Main / Long term</strong> tab pair
+          sits above the hero and switches every section below between the two
+          classification tracks — see <a href="#long-term">Long term (30d) classification
+          track</a> for how that works and what an empty tab means.
         </p>
         <ul>
           <li><strong>Hero</strong> — current signal (LONG/SHORT/HOLD), price, and when
