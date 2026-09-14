@@ -236,6 +236,7 @@
       <a href="#mainnet">Ethereum mainnet</a>
       <a href="#hyperliquid">Hyperliquid (ETH-PERP)</a>
       <a href="#base">Base L2</a>
+      <a href="#long-term">Long term (30d) track</a>
       <a href="#automation">Automation &amp; state</a>
       <a href="#reliability">Reliability lessons</a>
     </div>
@@ -728,11 +729,13 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           A persistent WebSocket listener subscribes to Hyperliquid's public
           <code>trades</code> channel for the ETH market, which streams every trade with
           both counterparties' addresses. Collected trades are buffered (currently a
-          7-day retention window, to match the reputation window used on the mainnet
-          side) and periodically classified with the same wallet-scoring method as
-          mainnet, entirely independently — Hyperliquid has its own state files, its own
-          classification pass, and its own composite score, which is only combined with
-          the mainnet one at the very last step described above.
+          30-day retention window — raised from 7 days as of the "Long term (30d)" phase,
+          see <a href="#long-term">below</a>, so the same buffer can feed both the
+          original 7-day classification and the new, longer one) and periodically
+          classified with the same wallet-scoring method as mainnet, entirely
+          independently — Hyperliquid has its own state files, its own classification
+          pass, and its own composite score, which is only combined with the mainnet one
+          at the very last step described above.
         </p>
         <p>
           Because the buffer can grow larger than GitHub's 100MB-per-file push limit, it
@@ -767,6 +770,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>20</td><td>Maturity gate before Base's per-window counts are allowed into the shared SPOT pool — identical default to Hyperliquid's own threshold</td></tr>
         </table>
         </div>
+        <p>
+          As of the "Long term (30d)" phase (see <a href="#long-term">below</a>), Base's
+          trade buffer retention was also raised (310,000 → 1,330,000 blocks, ~30 days +
+          margin) so it can feed a second, longer-lookback classification pass alongside
+          this one, without any additional RPC calls.
+        </p>
         <p>
           <code>BASE_SPOT_WEIGHT</code> (a fixed 50/50 blend weight) existed here until
           2026-09-11's "shared SPOT pool" change — see <a href="#composite">Composite
@@ -819,6 +828,56 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
         </div>
       </section>
 
+      <section id="long-term">
+        <h2>Long term (30d) classification track <span class="pill long" style="margin-left:6px;">Phase 1 — backend only</span></h2>
+        <p>
+          Every wallet-classification pass described above (mainnet, Base, Hyperliquid)
+          uses a <strong>reputation window</strong> — how much of a wallet's own trading
+          history is used to judge it GOOD or BAD (see
+          <a href="#classification">Classifying wallets</a>). That window has been 7 days
+          everywhere since the "reputation window 7 days" phase (2026-09-01). As of
+          2026-09-14, a second, fully parallel copy of the <em>entire</em> classification
+          and scoring pipeline now also runs alongside the original on every hourly run —
+          identical in every way except that it classifies wallets using a
+          <strong>30-day</strong> window instead of 7.
+        </p>
+        <p>
+          This is not a new data source and not a replacement for the existing 7-day
+          track — both run side by side, permanently, on exactly the same already-collected
+          trades. It costs <strong>zero additional RPC/Alchemy calls</strong>: the only real
+          cost is retaining more of the raw trade history that was already being fetched
+          (see the widened buffer-retention defaults for Hyperliquid and Base above), and
+          somewhat more state on disk. A few pieces of state that don't actually depend on
+          the length of the reputation window — the set of every wallet ever seen, and each
+          wallet's buy/sell streak used for Wallet Flip detection — are shared between the
+          two tracks rather than duplicated, since they'd be identical either way.
+        </p>
+        <p>
+          Every value the 30-day track produces is written to
+          <code>data/candles_history.json</code> alongside the existing 7-day fields,
+          under the same name with an <code>Lt</code> suffix (for "long term") — e.g.
+          <code>signalLt</code>, <code>compositeLt</code>, <code>regimeLt</code>,
+          <code>bullScoreLt</code>. The name deliberately avoids "30d", which already means
+          something else entirely in this codebase (a momentum look-back horizon — see
+          <a href="#composite">Composite score</a> and <a href="#regime">Market regime</a>)
+          — reusing it here for a completely different kind of "30 days" would have been
+          confusing in the code, even though both are shown to a person as "30 days."
+        </p>
+        <div class="callout">
+          <span class="label">Backend only, for now</span>
+          <p>
+            This phase deliberately ships the computation first, with no new UI — the
+            dashboard doesn't show any of the <code>Lt</code>-suffixed fields yet. A "Long
+            term" tab mirroring the whole dashboard for the 30-day track is planned as a
+            follow-up phase. Because the 30-day track only started accumulating history
+            from the moment this phase shipped, its classification will only reflect a
+            genuinely deep 30 days of history after running for about that long — until
+            then it behaves correctly, just on a shallower window than its name implies
+            (exactly how the original 7-day track behaved when it first shipped).
+          </p>
+        </div>
+      </section>
+
       <section id="automation">
         <h2>Automation &amp; state</h2>
         <p>
@@ -847,8 +906,23 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts), plus a second, parallel volume-weighted EMA track (added 2026-09-11) — see <a href="#composite">Composite score</a></td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
+          <tr><td><code>data/scoring_state_lt.json</code></td><td>Mainnet EMA state, last signal — same as <code>scoring_state.json</code> but for the parallel 30-day track, see <a href="#long-term">Long term (30d) classification track</a></td></tr>
+          <tr><td><code>data/regime_state_lt.json</code></td><td>Regime state machine for the 30-day track</td></tr>
+          <tr><td><code>data/hyperliquid_scoring_state_lt.json</code></td><td>Hyperliquid classification + composite EMA for the 30-day track</td></tr>
+          <tr><td><code>data/base_scoring_state_lt.json</code></td><td>Base classification + composite EMA for the 30-day track, plus its own last-computed snapshot (same one-run lag as <code>base_scoring_state.json</code>)</td></tr>
+          <tr><td><code>data/spot_pool_state_lt.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base) for the 30-day track</td></tr>
+          <tr><td><code>data/signal_state_lt.json</code></td><td>Signal hysteresis state machine for the 30-day track</td></tr>
         </table>
         </div>
+        <p>
+          The 30-day track deliberately does <em>not</em> get its own copies of
+          <code>wallets_seen.txt</code> / <code>base_wallets_seen.txt</code> /
+          <code>hyperliquid_wallets_seen.txt</code> / <code>wallet_flip_state.json</code> —
+          none of those four depend on the length of the reputation window (they're about
+          which wallets have ever been seen, and each wallet's buy/sell streak), so they'd
+          be numerically identical either way. Both tracks read and write the same four
+          files.
+        </p>
         <p>
           On every run, once mainnet and Hyperliquid data are pulled and scored,
           <code>live/build_site.py</code> renders the static <code>site/index.html</code> from
@@ -1210,10 +1284,13 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_BACKFILL_BLOCKS</code></td><td>No</td><td>Mainnet backfill depth on a cold start</td></tr>
           <tr><td><code>HYDRA_BASE_BACKFILL_BLOCKS</code></td><td>No</td><td>Base backfill depth on a cold start (default ~10,000 blocks, ~5.5h)</td></tr>
           <tr><td><code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code></td><td>No</td><td>Caps how many Base blocks one run will attempt to catch up, to bound RPC usage (default 1,000)</td></tr>
-          <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default 310,000 blocks, ~7 days + margin — raised from the earlier ~1-day/43,200-block default once Base's B1–B3 classification needed a full 7-day reputation window to read from)</td></tr>
+          <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default 1,330,000 blocks, ~30 days + margin — raised twice: from the original ~1-day/43,200-block default once Base's B1–B3 classification needed a full 7-day reputation window, then again from 310,000/~7-days once the "Long term (30d)" phase needed a full 30-day window to read from — see <a href="#long-term">Long term (30d) classification track</a>)</td></tr>
           <tr><td><code>HYDRA_BASE_WINDOW_BLOCKS</code></td><td>No</td><td>Base's own candle window size in blocks (default 1,800, ≈1h at Base's ~2s block time)</td></tr>
-          <tr><td><code>HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for classifying Base wallets (default 302,400 blocks, ~7 days)</td></tr>
-          <tr><td><code>HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>No</td><td>Minimum classified Base wallets before Base's window counts are let into the shared SPOT pool (default 20, same as Hyperliquid's threshold)</td></tr>
+          <tr><td><code>HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for classifying Base wallets on the original track (default 302,400 blocks, ~7 days)</td></tr>
+          <tr><td><code>HYDRA_BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY</code></td><td>No</td><td>Minimum classified Base wallets before Base's window counts are let into the shared SPOT pool (default 20, same as Hyperliquid's threshold; used by both the 7-day and 30-day tracks)</td></tr>
+          <tr><td><code>HYDRA_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for the parallel <a href="#long-term">30-day mainnet classification track</a> (default 180,000 blocks, ~30 days)</td></tr>
+          <tr><td><code>HYDRA_BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Same, for the 30-day Base track (default 1,296,000 blocks, ~30 days on Base's own block grid)</td></tr>
+          <tr><td><code>HYDRA_HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS</code></td><td>No</td><td>Same, for the 30-day Hyperliquid track (default 720.0 hours)</td></tr>
         </table>
         <p>
           <code>HYDRA_BASE_SPOT_WEIGHT</code> existed here until 2026-09-11 (a fixed 50/50
