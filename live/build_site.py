@@ -20,16 +20,26 @@ TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
 SITE_DIR = ROOT / "site"
 
 
-def _build_streaks(candles: list[dict]) -> list[dict]:
+def _build_streaks(candles: list[dict], signal_key: str = "signal") -> list[dict]:
     """Grupuje kolejne świece o tym samym sygnale w okresy (streaks),
     najnowszy pierwszy — identyczna logika jak w `build_real_data_v2.py`
-    użytym do ręcznego zbudowania pierwszych wersji dashboardu."""
+    użytym do ręcznego zbudowania pierwszych wersji dashboardu.
+
+    `signal_key` — Faza 2 (front-end) "Long term (30d)": ta sama funkcja
+    wywoływana drugi raz z `signal_key="signalLt"` buduje równoległą listę
+    `streaksLt` dla zakładki Long term (patrz `build_site()` niżej) — bez
+    tego front-end nie mógłby zbudować tabeli "Historia sygnałów"/podsumowania
+    wynik-winrate dla tego toru samą zmianą pól per świeca (grupowanie w
+    okresy to logika, nie pojedyncze odwołanie do pola). `price`/`block`/
+    `time` NIE mają odpowiednika "Lt" (to ta sama cena/blok/czas świecy,
+    niezależnie od tego, który tor klasyfikacji ją czyta) — więc te trzy
+    pola czytane są zawsze pod zwykłą nazwą, tylko `signal_key` się zmienia."""
     streaks: list[dict] = []
     i = 0
     while i < len(candles):
         j = i
-        sig = candles[i]["signal"]
-        while j + 1 < len(candles) and candles[j + 1]["signal"] == sig:
+        sig = candles[i][signal_key]
+        while j + 1 < len(candles) and candles[j + 1][signal_key] == sig:
             j += 1
         start, end = candles[i], candles[j]
         # Wynik WYGRANEJ/PRZEGRANEJ sygnału, nie surowa zmiana kursu: dla LONG
@@ -70,6 +80,20 @@ def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     streaks = _build_streaks(display_candles) if display_candles else []
 
+    # Faza "Long term (30d)" front-end (Faza 2, patrz też trackView()/
+    # getCandles() w live/template.html) — Faza 1 (backend) została wdrożona
+    # PÓŹNIEJ niż istniejąca historia świec, więc starsze świece nie mają w
+    # ogóle pola "signalLt" (nie `null` — po prostu nieobecne). Filtrujemy do
+    # świec, które faktycznie już je mają (świeca ma "signalLt" wtedy i tylko
+    # wtedy, gdy ma KOMPLETNY zestaw pól toru Lt — patrz candle w
+    # run_incremental.py, wszystkie dopisywane razem, bezwarunkowo) — dokładnie
+    # ten sam zbiór, jaki front-end wyznacza samodzielnie w getCandles() dla
+    # track="lt". Zanim ta faza ma za sobą własną historię, `lt_candles`
+    # (a więc i `streaksLt`) będzie po prostu puste — front-end renderuje to
+    # jako czytelny stan "zbieramy historię tego toru", nie jako błąd.
+    lt_candles = [c for c in display_candles if "signalLt" in c]
+    streaks_lt = _build_streaks(lt_candles, signal_key="signalLt") if lt_candles else []
+
     # Faza "wiarygodna swiezosc" (zgloszenie uzytkownika: chip swiezosci na
     # stronie pokazywal np. "30 min temu" zaraz po przerwie ~2h w
     # aktualizacjach) - `meta` to miejsce na fakty o SAMYM PRZEBIEGU
@@ -81,7 +105,12 @@ def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     # faktycznie uruchomil sie workflow). Domyslnie pusty slownik - stary
     # front-end/stare dane bez tego pola nadal dzialaja (graceful fallback
     # w JS na `latest.ts`).
-    data = {"candles": display_candles, "streaks": streaks, "meta": meta or {}}
+    data = {
+        "candles": display_candles,
+        "streaks": streaks,
+        "streaksLt": streaks_lt,
+        "meta": meta or {},
+    }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
