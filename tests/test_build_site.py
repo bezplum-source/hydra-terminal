@@ -213,3 +213,75 @@ def test_build_site_meta_defaults_to_empty_dict_when_not_provided(tmp_path, monk
     end = html.index(";", start)
     data = json.loads(html[start:end])
     assert data["meta"] == {}
+
+
+# =====================================================================
+# Faza 2 (front-end) "Long term (30d)" - `streaksLt`, drugi (równoległy)
+# tor streaków dla zakładki Long term (patrz live/template.html,
+# getStreaks()/trackView()). `_build_streaks(signal_key=...)` jest tą samą
+# funkcją co dla toru Main - tylko parametr się zmienia - więc testy niżej
+# sprawdzają głównie samą parametryzację i graceful degradation dla świec
+# sprzed wdrożenia Fazy 1 (backend), które nie mają w ogóle pola "signalLt".
+# =====================================================================
+
+
+def test_build_streaks_accepts_custom_signal_key():
+    # Ta sama funkcja co dla toru Main, tylko czyta inne pole per świeca -
+    # `signal_key="signalLt"` zamiast domyślnego "signal".
+    candles = [
+        {**_sample_candles()[0], "signalLt": "SHORT", "block": 1},
+        {**_sample_candles()[0], "signalLt": "SHORT", "block": 2},
+        {**_sample_candles()[0], "signalLt": "LONG", "block": 3},
+    ]
+    streaks = bs._build_streaks(candles, signal_key="signalLt")
+    assert len(streaks) == 2
+    assert streaks[0]["signal"] == "LONG"
+    assert streaks[1]["signal"] == "SHORT"
+
+
+def test_build_site_streaks_lt_empty_when_no_candle_has_signal_lt(tmp_path, monkeypatch):
+    # Rzeczywisty stan "dzień 0" Fazy 2: historia świec sprzed wdrożenia Fazy 1
+    # (backend) nie ma w ogóle pola "signalLt" (nie `null` - nieobecne) -
+    # `streaksLt` musi być wtedy pustą listą, nie wywalać się KeyError-em na
+    # `candles[i][signal_key]` (patrz _build_streaks). Front-end renderuje to
+    # jako czytelny stan "zbieramy historię tego toru", nie błąd.
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site(_sample_candles())  # żadna świeca nie ma "signalLt"
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert data["streaksLt"] == []
+
+
+def test_build_site_streaks_lt_only_covers_candles_with_signal_lt(tmp_path, monkeypatch):
+    # Mieszana historia (realistyczny stan tuż po wdrożeniu Fazy 1 backend):
+    # starsze świece bez "signalLt" w ogóle, nowsze już z pełnym zestawem pól
+    # Lt - `streaksLt` musi objąć WYŁĄCZNIE te drugie, dokładnie ten sam zbiór
+    # świec, jaki front-end wyznacza samodzielnie w getCandles() dla track="lt".
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+    candles = [
+        {**_sample_candles()[0]},  # brak "signalLt" - sprzed Fazy 1 backend
+        {**_sample_candles()[1], "signalLt": "LONG"},
+        {**_sample_candles()[2], "signalLt": "LONG"},
+    ]
+
+    bs.build_site(candles)
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert len(data["streaksLt"]) == 1
+    assert data["streaksLt"][0]["signal"] == "LONG"
+    assert data["streaksLt"][0]["startBlock"] == candles[1]["block"]
+    assert data["streaksLt"][0]["endBlock"] == candles[2]["block"]
+    # Tor Main pozostaje niezmieniony (3 świece, jak przed ta faza) - Faza 2
+    # dokłada streaksLt OBOK istniejącego "streaks", nie zamiast niego.
+    assert len(data["streaks"]) == 2
