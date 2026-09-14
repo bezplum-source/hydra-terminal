@@ -116,6 +116,32 @@ BASE_SCORING_STATE_PATH = DATA_DIR / "base_scoring_state.json"
 BASE_WALLETS_SEEN_PATH = DATA_DIR / "base_wallets_seen.txt"
 SPOT_POOL_STATE_PATH = DATA_DIR / "spot_pool_state.json"
 
+# Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
+# liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
+# rownolegly komplet stanu silnika, identyczny architektonicznie do
+# powyzszych szesciu plikow (scoring/base_scoring/hyperliquid_scoring/
+# spot_pool/signal/regime), tylko liczony z DLUZSZYM oknem reputacji
+# portfeli (30 dni zamiast 7). Zero nowej logiki w tym module - to
+# dokladnie ten sam ksztalt/wzorzec co odpowiedniki 7-dniowe wyzej, wiec
+# `run_incremental.py` moze uruchomic dwie NIEZALEZNE instancje kazdego
+# silnika (jedna z konfiguracja 7d, jedna z 30d) na TYCH SAMYCH juz
+# zebranych transakcjach (zero dodatkowych zapytan RPC) i zapisac ich stan
+# do osobnych plikow ponizej. Sufiks "_lt" ("long term") celowo UNIKA
+# literalnego "_30d" w nazwach state - `hydra_signals/regime.py` ma juz
+# WCZESNIEJSZY, ZUPELNIE INNY koncept o tej samej nazwie (`HORIZONS_IN_
+# WINDOWS["30d"]` - "jak zmienil sie composite w ciagu ostatnich 30 dni",
+# momentum w czasie), a to tu to "z jak dlugiej historii transakcji portfela
+# liczymy jego etykiete GOOD/BAD" - dwa zupelnie rozne pojecia, ktore
+# przypadkiem dzieliloby ta sama liczbe "30". `_lt` jednoznacznie odrozniania
+# oba w kodzie/nazwach plikow, mimo ze na stronie beda pokazane jako
+# zakladka "Long term (30D)".
+HYPERLIQUID_SCORING_STATE_LT_PATH = DATA_DIR / "hyperliquid_scoring_state_lt.json"
+BASE_SCORING_STATE_LT_PATH = DATA_DIR / "base_scoring_state_lt.json"
+SPOT_POOL_STATE_LT_PATH = DATA_DIR / "spot_pool_state_lt.json"
+SCORING_STATE_LT_PATH = DATA_DIR / "scoring_state_lt.json"
+SIGNAL_STATE_LT_PATH = DATA_DIR / "signal_state_lt.json"
+REGIME_STATE_LT_PATH = DATA_DIR / "regime_state_lt.json"
+
 
 def load_scoring_state() -> dict:
     if not SCORING_STATE_PATH.exists():
@@ -434,6 +460,79 @@ def load_spot_pool_state() -> dict:
 def save_spot_pool_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SPOT_POOL_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+# --- Faza "Long term (30d)" - sześć nowych plików stanu, patrz komentarz
+# przy stałych ścieżek `*_LT_PATH` wyżej. Każda funkcja to bajt-w-bajt ten
+# sam wzorzec co jej 7-dniowy odpowiednik powyżej — celowo bez żadnej
+# wspólnej abstrakcji/pętli po nazwach plików, żeby zostać spójnym ze
+# stylem reszty tego modułu (jawne, jedna funkcja na plik).
+
+
+def load_scoring_state_lt() -> dict:
+    if not SCORING_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(SCORING_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_scoring_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SCORING_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_base_scoring_state_lt() -> dict:
+    if not BASE_SCORING_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(BASE_SCORING_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_base_scoring_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASE_SCORING_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_hyperliquid_scoring_state_lt() -> dict:
+    if not HYPERLIQUID_SCORING_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(HYPERLIQUID_SCORING_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_hyperliquid_scoring_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    HYPERLIQUID_SCORING_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_spot_pool_state_lt() -> dict:
+    if not SPOT_POOL_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(SPOT_POOL_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_spot_pool_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SPOT_POOL_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_signal_state_lt() -> dict:
+    if not SIGNAL_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(SIGNAL_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_signal_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    SIGNAL_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def load_regime_state_lt() -> dict:
+    if not REGIME_STATE_LT_PATH.exists():
+        return {}
+    return json.loads(REGIME_STATE_LT_PATH.read_text(encoding="utf-8"))
+
+
+def save_regime_state_lt(state: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    REGIME_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def price_at_block_factory(trades: list[Trade]):
