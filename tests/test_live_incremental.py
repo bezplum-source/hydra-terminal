@@ -224,6 +224,21 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # sie stalo przy pierwszym uruchomieniu pytest po dodaniu tej sciezki -
     # zauwazone i naprawione od razu, przed dostawa).
     monkeypatch.setattr(st, "SPOT_POOL_STATE_PATH", tmp_path / "data" / "spot_pool_state.json")
+    # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
+    # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
+    # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
+    # testy ponizej wywolujace ri.main() zapisywalyby PRAWDZIWE pliki
+    # data/*_lt.json w tym repo zamiast do tmp_path (zaobserwowane i
+    # naprawione od razu, przed dostawa - dokladnie tak, jak przewiduje
+    # komentarz przy SPOT_POOL_STATE_PATH powyzej).
+    monkeypatch.setattr(st, "SCORING_STATE_LT_PATH", tmp_path / "data" / "scoring_state_lt.json")
+    monkeypatch.setattr(st, "BASE_SCORING_STATE_LT_PATH", tmp_path / "data" / "base_scoring_state_lt.json")
+    monkeypatch.setattr(
+        st, "HYPERLIQUID_SCORING_STATE_LT_PATH", tmp_path / "data" / "hyperliquid_scoring_state_lt.json"
+    )
+    monkeypatch.setattr(st, "SPOT_POOL_STATE_LT_PATH", tmp_path / "data" / "spot_pool_state_lt.json")
+    monkeypatch.setattr(st, "SIGNAL_STATE_LT_PATH", tmp_path / "data" / "signal_state_lt.json")
+    monkeypatch.setattr(st, "REGIME_STATE_LT_PATH", tmp_path / "data" / "regime_state_lt.json")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -1418,3 +1433,163 @@ def test_wallets_window_time_fields_reflect_real_per_source_block_timestamps(
         # Trzy zrodla, trzy rozne momenty - dowod, ze to NIE jeden wspolny
         # znacznik czasu przypadkiem sklejony w trzech polach.
         assert len({c["time"], c["baseWindowTime"], c["perpWindowTime"]}) == 3
+
+
+# ---------------------------------------------------------------------------
+# Faza "Long term (30d)" - drugi, rownolegly tor klasyfikacji/scoringu (patrz
+# obszerne komentarze w run_incremental.py przy stalych LT_*/`_synthetic_lt_view`
+# i w live/state.py przy *_LT_PATH). Testy ponizej NIE powtarzaja tego, co juz
+# jest przetestowane gdzie indziej (np. ze `classification_lookback_blocks`
+# faktycznie zmienia klasyfikacje - to jest sedno hydra_signals/scoring.py i
+# ma tam wlasne testy), tylko sprawdzaja konkretnie WIRING w run_incremental.py:
+# ze DRUGI silnik faktycznie dostaje INNY config i naprawde dziala niezaleznie
+# (nie jest przypadkowym aliasem pierwszego), ze jego stan poprawnie sie
+# zapisuje/wznawia, i ze przy braku danych Base/Hyperliquid tor Lt degraduje
+# sie tak samo bezpiecznie jak tor 7d.
+# ---------------------------------------------------------------------------
+
+
+def test_long_term_track_diverges_from_7d_when_given_shorter_lookback(tmp_path, monkeypatch):
+    """Dowod, ze `mainnet_lt_engine` w run_incremental.py NAPRAWDE dostaje
+    WLASNY, ODREBNY `ScoringConfig` (nie jest przypadkowym aliasem/kopia
+    silnika 7d) - podmieniamy `LT_CLASSIFICATION_LOOKBACK_BLOCKS` na
+    DRASTYCZNIE krotsze okno (5 blokow) niz domyslne 7-dniowe
+    (`ScoringConfig.classification_lookback_blocks` = 250*24*7 = 42000) i
+    sprawdzamy, ze silnik Lt - majac DOKLADNIE te sama, bogata historie
+    transakcji co silnik 7d (`_seed_wallets` generuje transakcje co 10
+    blokow przez caly zakres) - efektywnie "glodujue" (za malo historii w
+    tak krotkim oknie, zeby jakikolwiek portfel osiagnal
+    `min_trades_for_classification=5`), podczas gdy tor 7d (pelna historia)
+    normalnie klasyfikuje i pokazuje wyrazny sygnal LONG.
+
+    To NIE jest test mechaniki `classification_lookback_blocks` samej w
+    sobie (to juz jest przetestowane w hydra_signals) - to jest test, ze
+    run_incremental.py FAKTYCZNIE przekazuje DWIE ROZNE wartosci do DWOCH
+    NIEZALEZNYCH silnikow, zamiast np. przypadkiem uzyc tego samego `cfg`
+    dla obu."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "3000")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    # Patrz komentarz w test_base_maturity_gate_lags_one_run_then_blends_into_spot
+    # o tym, dlaczego stale modulowe trzeba podmienic przez monkeypatch.setattr,
+    # nie setenv (moduł jest juz zaimportowany na gorze tego pliku testowego).
+    monkeypatch.setattr(ri, "LT_CLASSIFICATION_LOOKBACK_BLOCKS", 5)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=3000)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 1
+    last = candles[-1]
+
+    # Tor 7d: bogata, ciagla historia -> jednoznacznie sklasyfikowani
+    # "good"/"bad", wyrazny sygnal.
+    assert last["goodBuyers"] > 0
+    assert last["compositeSpot"] > 0
+    assert last["signalSpotOnly"] == "LONG"
+
+    # Tor Lt (lookback=5 blokow): za malo historii, zeby ktokolwiek
+    # osiagnal `min_trades_for_classification` -> zero sklasyfikowanych
+    # aktywnych w oknie, neutralny (0.0) composite, HOLD - DOKLADNIE tak,
+    # jak przy calkowitym braku Base/Hyperliquid (graceful degradation), ale
+    # tu wywolane przez celowo za krotkie okno klasyfikacji, nie przez brak
+    # danych.
+    assert last["goodBuyersLt"] == 0
+    assert last["badBuyersLt"] == 0
+    assert last["compositeSpotLt"] == 0.0
+    assert last["signalSpotOnlyLt"] == "HOLD"
+
+    # Bezpieczenstwo: to NIE jest przypadkiem to samo pole odczytane dwa
+    # razy - realnie ROZNE wartosci na TEJ SAMEJ swiecy.
+    assert last["compositeSpot"] != last["compositeSpotLt"]
+    assert last["indGoodShort"] != last["indGoodShortLt"] or last["goodBuyers"] != last["goodBuyersLt"]
+
+
+def test_long_term_state_files_created_and_ema_persists_across_runs(tmp_path, monkeypatch):
+    """Odpowiednik `test_two_consecutive_runs_resume_correctly` powyzej, ale
+    dla wszystkich SZESCIU nowych plikow stanu Lt - musza powstac po
+    pierwszym uruchomieniu i (dokladnie jak ich odpowiedniki 7d) NIE
+    zresetowac EMA do "na zimno" (None) przy wznowieniu w drugim,
+    niezaleznym procesie."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=1000)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    scoring_lt_1 = st.load_scoring_state_lt()
+    regime_lt_1 = st.load_regime_state_lt()
+    signal_lt_1 = st.load_signal_state_lt()
+    spot_pool_lt_1 = st.load_spot_pool_state_lt()
+    # Hyperliquid/Base Lt NIE tworza swoich plikow, dopoki nie dostana
+    # jakichkolwiek danych (dokladnie jak ich odpowiedniki 7d,
+    # `hyperliquid_scoring_state.json`/`base_scoring_state.json`) - w tym
+    # tescie brak ALCHEMY_BASE_RPC_URL i pustego bufora Hyperliquid, wiec
+    # oba NIE powinny istniec.
+    assert st.load_hyperliquid_scoring_state_lt() == {}
+    assert st.load_base_scoring_state_lt() == {}
+
+    assert scoring_lt_1 != {}
+    ema_lt_1 = {k: scoring_lt_1[k] for k in ("good_short", "good_long", "bad_short", "bad_long")}
+    assert all(v is not None for v in ema_lt_1.values())
+    assert regime_lt_1 != {}
+    assert signal_lt_1 != {}
+    assert spot_pool_lt_1 != {}
+
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+
+    scoring_lt_2 = st.load_scoring_state_lt()
+    ema_lt_2 = {k: scoring_lt_2[k] for k in ("good_short", "good_long", "bad_short", "bad_long")}
+    # Wznowienie z dysku - EMA NIE wraca do stanu "na zimno".
+    assert all(v is not None for v in ema_lt_2.values())
+
+    candles = st.load_candles_history()
+    assert len(candles) > 1
+    for c in candles:
+        assert "signalLt" in c and "compositeLt" in c
+        assert "regimeLt" in c and "bullScoreLt" in c and "bearScoreLt" in c
+        assert any(k.startswith("momentum_") and k.endswith("_lt") for k in c)
+
+
+def test_long_term_fields_gracefully_absent_without_base_or_hyperliquid(tmp_path, monkeypatch):
+    """Odpowiednik `test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it`
+    powyzej, ale dla pol Lt - brak sekretu ALCHEMY_BASE_RPC_URL i pustego
+    bufora Hyperliquid musi degradowac tor Lt DOKLADNIE tak samo bezpiecznie
+    jak tor 7d (`compositePerpLt`/`compositeBaseLt` -> `None`,
+    `perpIsMatureLt`/`baseIsMatureLt` -> `False`), zamiast np. rzucic
+    wyjatkiem albo cicho podstawic 0 (co wygladaloby jak realna, neutralna
+    wartosc, nie jak "brak danych")."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    for c in candles:
+        assert c["compositePerpLt"] is None
+        assert c["perpIsMatureLt"] is False
+        assert c["compositeBaseLt"] is None
+        assert c["baseIsMatureLt"] is False
+        # Bez Base/Hyperliquid "spot combined" Lt musi sprowadzic sie do
+        # samego mainnetu Lt - dokladnie ta sama gwarancja graceful
+        # degradation co `compositeSpotCombined == compositeSpot` dla 7d.
+        assert c["compositeSpotCombinedLt"] == c["compositeSpotLt"]
+        assert c["compositeLt"] == c["compositeSpotCombinedLt"]
