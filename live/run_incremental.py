@@ -115,9 +115,26 @@ BASE_BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BASE_BACKFILL_BLOCKS", "10000")
 # CALE uruchomienie, zero commitu). Mniejszy zakres = mniej wywolan RPC =
 # mniejsze ryzyko throttlingu, zarowno dla samego Base jak i (po
 # przeniesieniu bloku Base na koniec main(), patrz nizej) dla wszystkiego,
-# co idzie po nim. Do przestrojenia w gore dopiero po potwierdzeniu, ze
-# przy tej wartosci throttling ustal.
-BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "1000"))
+# co idzie po nim.
+#
+# PODNIESIONE z 1000 do 2500 (2026-09-14, zgloszenie uzytkownika po
+# zauwazeniu na dashboardzie, ze `baseWindowTime` utknal ~4 dni w tyle za
+# realnym czasem) - potwierdzenie w praktyce, o ktore prosil komentarz
+# wyzej: od integracji Base (2026-09-11) throttling przy 1000 sie NIE
+# powtorzyl (w przeciwienstwie do incydentu z 5000 powyzej), ale
+# `last_processed_block`
+# w `data/base_collector_state.json` rosl PRZY KAZDYM uruchomieniu o
+# dokladnie 1000 blokow (bezustannie w limit) - przy czasie bloku Base ~2s
+# to zaledwie ~33 min "czasu Base" na uruchomienie, mniej niz realny odstep
+# miedzy uruchomieniami (~40-60 min, patrz harmonogram w update.yml), wiec
+# zaleglosc TRWALE rosla zamiast sie stabilizowac (potwierdzone: ~4 dni
+# realnego opoznienia w momencie tej poprawki). 2500 daje spory zapas ponad
+# prog oplacalnosci (~1200/uruchomienie przy tym rytmie) - zaleglosc powinna
+# zaczac sie splacac zamiast tylko przestac rosnac - ale swiadomie NIE
+# wraca do 5000 (poziomu, ktory juz raz wywolal throttling) - do dalszego
+# przestrojenia w gore dopiero po obserwacji logow Actions bez throttlingu
+# przy tej wartosci.
+BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "2500"))
 # Faza "integracja Base B1-B3" (2026-09-11, zgloszenie uzytkownika: "Tak,
 # wdrozmy Base", po rozmowie o tym, ze portfeli sledzonych po stronie
 # Uniswap mainnet jest duzo mniej niz po stronie Hyperliquid) - Base
