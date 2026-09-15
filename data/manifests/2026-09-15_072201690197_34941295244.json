@@ -1,0 +1,35 @@
+{
+  "run_id": "34941295244",
+  "trigger": "schedule",
+  "commit_sha": "91d1fda3d2b54413441c4ed3933c69b6d923c456",
+  "started_at_utc": "2026-09-15T07:22:01.690197+00:00",
+  "finished_at_utc": "2026-09-15T07:23:04.988839+00:00",
+  "duration_s": 63.3,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 25981195,
+    "to_block": 25981339,
+    "new_trades": 351,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 51169296,
+    "to_block": 51171795,
+    "new_trades": 50,
+    "capped": true
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 0
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 2500,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5
+  },
+  "warnings": [
+    "base: brak znacznika czasu dla bloku 51170399"
+  ]
+}
