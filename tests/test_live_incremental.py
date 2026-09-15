@@ -25,6 +25,7 @@ from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from hydra_signals.data_sources.pools import BASE_UNISWAP_V3_WETH_USDC_005, UNISWAP_V3_USDC_WETH_005
 from hydra_signals.scoring import blend_composite, decide_signal
 from live import build_site as bs
+from live import lake
 from live import run_incremental as ri
 from live import state as st
 
@@ -1768,3 +1769,78 @@ def test_run_manifest_retention_prunes_oldest_files(tmp_path, monkeypatch):
     # przetrwaly.
     remaining_ids = {json.loads(p.read_text(encoding="utf-8"))["run_id"] for p in remaining}
     assert remaining_ids == {str(i) for i in range(5, total)}
+
+
+# =====================================================================
+# Faza "jezioro danych" (Etap B: R2 + Parquet, 2026-09-15) - integracja
+# `live/lake.py` z `main()`: manifest musi dostac `lake_objects` DOKLADNIE
+# wtedy, gdy archiwizacja realnie sie udala - patrz `tests/test_lake.py`
+# dla testow samego `live/lake.py` w izolacji.
+# =====================================================================
+
+
+class _FakeR2Client:
+    def __init__(self):
+        self.put_calls: list[dict] = []
+
+    def put_object(self, Bucket: str, Key: str, Body: bytes):  # noqa: N803
+        self.put_calls.append({"Bucket": Bucket, "Key": Key, "Body": Body})
+
+
+def test_run_manifest_lake_objects_empty_without_r2_secrets(tmp_path, monkeypatch):
+    """Bez sekretow R2 (stan repo PRZED tym, jak uzytkownik je doda recznie)
+    manifest musi jasno pokazywac `lake_objects: []`, nie milczec na temat
+    tego, ze archiwizacja w ogole nie zostala sprobowana."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    manifest = st.load_latest_run_manifest()
+    assert manifest["lake_objects"] == []
+
+
+def test_run_manifest_lake_objects_records_uploads_when_r2_configured(tmp_path, monkeypatch):
+    """Z podmienionym klientem R2 (patrz `_FakeR2Client` wyzej - symuluje
+    komplet sekretow bez prawdziwej sieci), mainnetowe transakcje z tego
+    uruchomienia musza trafic do "jeziora", a manifest musi to zapisac pod
+    `lake_objects` - klucz partycji + liczba wierszy, dokladnie tyle, ile
+    realnie zarchiwizowano."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.delenv("ALCHEMY_BASE_RPC_URL", raising=False)
+
+    fake_r2 = _FakeR2Client()
+    monkeypatch.setattr(lake, "_r2_client", lambda: fake_r2)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    manifest = st.load_latest_run_manifest()
+    assert len(manifest["lake_objects"]) == 1
+    lake_entry = manifest["lake_objects"][0]
+    assert lake_entry["source"] == "uniswap_mainnet"
+    assert lake_entry["rows"] == manifest["mainnet"]["new_trades"]
+    assert lake_entry["key"].startswith("trades/source=uniswap_mainnet/date=")
+    assert lake_entry["key"].endswith(".parquet")
+
+    # Realnie wyslane do "R2" (tu: fake klienta) - nie tylko zapisane w
+    # manifescie bez odpowiadajacego wywolania.
+    assert len(fake_r2.put_calls) == 1
+    assert fake_r2.put_calls[0]["Key"] == lake_entry["key"]
