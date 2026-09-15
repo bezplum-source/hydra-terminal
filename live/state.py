@@ -93,6 +93,7 @@ from __future__ import annotations
 
 import bisect
 import csv
+import datetime
 import json
 from pathlib import Path
 
@@ -141,6 +142,24 @@ SPOT_POOL_STATE_LT_PATH = DATA_DIR / "spot_pool_state_lt.json"
 SCORING_STATE_LT_PATH = DATA_DIR / "scoring_state_lt.json"
 SIGNAL_STATE_LT_PATH = DATA_DIR / "signal_state_lt.json"
 REGIME_STATE_LT_PATH = DATA_DIR / "regime_state_lt.json"
+
+# Faza "manifesty per-run" (2026-09-15, w odpowiedzi na przeglad
+# infrastruktury zaproponowany przez kolege uzytkownika) - jeden maly plik
+# JSON per uruchomienie `run_incremental.py`, zamiast tego, co dzisiaj:
+# zeby dowiedziec sie co konkretnie zrobilo dane uruchomienie (jaki zakres
+# blokow, ile nowych transakcji, jakie ostrzezenia RPC), trzeba recznie
+# przekopywac `git log`/`git show` po plikach stanu (patrz diagnoza
+# zaleglosci Base z 2026-09-14). Manifest robi to za darmo, bez zadnej
+# nowej infrastruktury.
+RUN_MANIFESTS_DIR = DATA_DIR / "manifests"
+# Ile ostatnich manifestow trzymac w gicie. Jeden manifest to ok. 1-2KB, ale
+# przy 24 uruchomieniach/dobe nieograniczona retencja tylko pogleblialaby
+# rozdecie `.git` (217MB przy 14MB zywych danych - patrz analiza
+# infrastruktury 2026-09-14). Krotka historia w gicie wystarcza do biezacej
+# diagnostyki; pelny, dlugoterminowy zapis ma docelowo przejac jezioro
+# danych (R2 + Parquet, kolejny etap tego samego planu), gdzie miejsce
+# kosztuje ulamki centa.
+MAX_RETAINED_RUN_MANIFESTS = 30
 
 
 def load_scoring_state() -> dict:
@@ -533,6 +552,67 @@ def load_regime_state_lt() -> dict:
 def save_regime_state_lt(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     REGIME_STATE_LT_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def save_run_manifest(manifest: dict) -> None:
+    """Zapisuje manifest jednego uruchomienia jako osobny plik w
+    `data/manifests/` (nazwa = znacznik czasu uruchomienia + `run_id`, wiec
+    pliki sortuja sie chronologicznie same z siebie) i przycina katalog do
+    `MAX_RETAINED_RUN_MANIFESTS` najnowszych (patrz uzasadnienie retencji
+    przy stalej wyzej)."""
+    RUN_MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    started_raw = manifest.get("started_at_utc")
+    started_at = None
+    if started_raw:
+        try:
+            started_at = datetime.datetime.fromisoformat(started_raw)
+        except ValueError:
+            started_at = None
+    if started_at is None:
+        started_at = datetime.datetime.now(datetime.timezone.utc)
+
+    # Mikrosekundy w znaczniku - bez nich dwa uruchomienia w tej samej
+    # sekundzie zegarowej (w praktyce: lokalne uruchomienia bez prawdziwego,
+    # unikalnego GITHUB_RUN_ID) nadpisywalyby ten sam plik zamiast zostawic
+    # oba slady.
+    stamp = started_at.strftime("%Y-%m-%d_%H%M%S%f")
+    run_id = manifest.get("run_id") or "local"
+    path = RUN_MANIFESTS_DIR / f"{stamp}_{run_id}.json"
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    _prune_old_run_manifests()
+
+
+def _prune_old_run_manifests() -> None:
+    files = sorted(RUN_MANIFESTS_DIR.glob("*.json"))
+    excess = len(files) - MAX_RETAINED_RUN_MANIFESTS
+    # UWAGA: `excess` moze byc UJEMNY (mniej plikow niz limit) - bez tego
+    # zabezpieczenia `files[:excess]` z ujemnym indeksem po cichu kasowaloby
+    # NIEWLASCIWY, znacznie wiekszy zakres (Python interpretuje ujemny
+    # koniec wycinka jako "wszystko oprocz ostatnich |excess|"), zamiast nic
+    # nie robic ponizej limitu - realny bug znaleziony i naprawiony przy
+    # pisaniu testu retencji (`test_run_manifest_retention_prunes_oldest_files`).
+    if excess <= 0:
+        return
+    for stale in files[:excess]:
+        stale.unlink()
+
+
+def list_run_manifests() -> list[Path]:
+    """Zwraca sciezki do zapisanych manifestow, od najstarszego do
+    najnowszego (nazwy plikow sortuja sie chronologicznie - patrz
+    `save_run_manifest`)."""
+    if not RUN_MANIFESTS_DIR.exists():
+        return []
+    return sorted(RUN_MANIFESTS_DIR.glob("*.json"))
+
+
+def load_latest_run_manifest() -> dict | None:
+    files = list_run_manifests()
+    if not files:
+        return None
+    return json.loads(files[-1].read_text(encoding="utf-8"))
 
 
 def price_at_block_factory(trades: list[Trade]):
