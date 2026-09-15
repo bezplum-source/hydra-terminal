@@ -254,6 +254,17 @@ def fmt_warsaw(ts: int) -> str:
     return dt.strftime("%d.%m.%Y, %H:%M")
 
 
+def _finalize_and_save_manifest(manifest: dict, started_at: datetime.datetime) -> None:
+    """Domyka manifest tego uruchomienia (czas zakonczenia, czas trwania) i
+    zapisuje go na dysk - wywolywane tuz przed KAZDYM `return` z `main()`
+    (rowniez tym "brak nowych blokow - nic do zrobienia"), zeby kazde
+    uruchomienie zostawilo slad, nie tylko te, ktore realnie cos zrobily."""
+    finished_at = datetime.datetime.now(datetime.timezone.utc)
+    manifest["finished_at_utc"] = finished_at.isoformat()
+    manifest["duration_s"] = round((finished_at - started_at).total_seconds(), 1)
+    st.save_run_manifest(manifest)
+
+
 def _synthetic_lt_view(candle: dict) -> dict:
     """Faza "Long term (30d)" - `hydra_signals/regime.py` (compute_momentum,
     RegimeEngine.process_candle, detect_special_event) czyta WYLACZNIE
@@ -298,6 +309,30 @@ def main() -> int:
 
     rpc = JsonRpcClient(rpc_url)
     cfg = ScoringConfig()
+
+    # Faza "manifesty per-run" - budowany w trakcie calego main() (kazda
+    # sekcja ponizej dopisuje swoj fragment w momencie, gdy zna juz wynik),
+    # zapisywany przez `_finalize_and_save_manifest()` tuz przed KAZDYM
+    # `return` z tej funkcji - patrz definicja tego helpera wyzej.
+    run_started_at = datetime.datetime.now(datetime.timezone.utc)
+    manifest: dict = {
+        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+        "trigger": os.environ.get("GITHUB_EVENT_NAME", "manual"),
+        "commit_sha": os.environ.get("GITHUB_SHA", "unknown"),
+        "started_at_utc": run_started_at.isoformat(),
+        "finished_at_utc": None,
+        "duration_s": None,
+        "mainnet": {"enabled": True},
+        "base": {"enabled": False},
+        "hyperliquid": {"enabled": True},
+        "config_snapshot": {
+            "base_max_new_blocks_per_run": BASE_MAX_NEW_BLOCKS_PER_RUN,
+            "max_new_blocks_per_run": MAX_NEW_BLOCKS_PER_RUN,
+            "backfill_blocks": BACKFILL_BLOCKS,
+            "perp_weight": HYPERLIQUID_PERP_WEIGHT,
+        },
+        "warnings": [],
+    }
 
     scoring_state = st.load_scoring_state()
     trade_buffer = st.load_trade_buffer()
@@ -349,6 +384,8 @@ def main() -> int:
     else:
         new_hl_trades = [t for t in hl_trades if t.ts_ms > last_hl_ts_ms]
         history_hl_trades = [t for t in hl_trades if t.ts_ms <= last_hl_ts_ms]
+
+    manifest["hyperliquid"] = {"enabled": True, "new_trades": len(new_hl_trades)}
 
     hl_engine = HyperliquidScoringEngine(
         HyperliquidScoringConfig(),
@@ -596,6 +633,14 @@ def main() -> int:
     to_block = head
     if from_block > to_block:
         log("Brak nowych blokow od ostatniego uruchomienia - nic do zrobienia.")
+        manifest["mainnet"] = {
+            "enabled": True,
+            "from_block": from_block,
+            "to_block": to_block,
+            "new_trades": 0,
+            "capped": False,
+        }
+        _finalize_and_save_manifest(manifest, run_started_at)
         return 0
 
     if to_block - from_block + 1 > MAX_NEW_BLOCKS_PER_RUN:
@@ -618,6 +663,14 @@ def main() -> int:
         on_progress=log,
     )
     log(f"Nowych transakcji: {len(new_trades)}")
+
+    manifest["mainnet"] = {
+        "enabled": True,
+        "from_block": from_block,
+        "to_block": to_block,
+        "new_trades": len(new_trades),
+        "capped": to_block < head,
+    }
 
     combined_buffer = trade_buffer + new_trades
     # Faza "Long term (30d)" - przycinanie MUSI uwzgledniac NAJDLUZSZE z obu
@@ -749,6 +802,7 @@ def main() -> int:
                 block_ts[b] = int(res["timestamp"], 16)
             else:
                 log(f"UWAGA: nie udalo sie pobrac znacznika czasu dla bloku {b}.")
+                manifest["warnings"].append(f"mainnet: brak znacznika czasu dla bloku {b}")
 
         # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
         # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
@@ -1252,6 +1306,10 @@ def main() -> int:
                     "ponowien - pomijam zbieranie danych z Base w tym "
                     "uruchomieniu (bez zadnego zapisu bufora Base)."
                 )
+                manifest["base"] = {
+                    "enabled": True,
+                    "error": "nie udalo sie pobrac czola lancucha Base",
+                }
             else:
                 base_head = int(base_head_result, 16)
                 base_last_processed = base_collector_state.get("last_processed_block")
@@ -1267,6 +1325,13 @@ def main() -> int:
                 base_to_block = base_head
                 if base_from_block > base_to_block:
                     log("Base L2: brak nowych blokow od ostatniego uruchomienia.")
+                    manifest["base"] = {
+                        "enabled": True,
+                        "from_block": base_from_block,
+                        "to_block": base_to_block,
+                        "new_trades": 0,
+                        "capped": False,
+                    }
                 else:
                     if base_to_block - base_from_block + 1 > BASE_MAX_NEW_BLOCKS_PER_RUN:
                         base_capped_to = base_from_block + BASE_MAX_NEW_BLOCKS_PER_RUN - 1
@@ -1293,6 +1358,14 @@ def main() -> int:
                         on_progress=log,
                     )
                     log(f"Base L2: nowych transakcji: {len(base_new_trades)}")
+
+                    manifest["base"] = {
+                        "enabled": True,
+                        "from_block": base_from_block,
+                        "to_block": base_to_block,
+                        "new_trades": len(base_new_trades),
+                        "capped": base_to_block < base_head,
+                    }
 
                     base_combined_buffer = base_trade_buffer + base_new_trades
                     base_lookback_start = base_to_block - BASE_LOOKBACK_BLOCKS
@@ -1435,6 +1508,10 @@ def main() -> int:
                                     f"bloku Base {base_latest.window_end_block} "
                                     "(znacznik czasu Base w karcie Wallets bedzie ukryty)."
                                 )
+                                manifest["warnings"].append(
+                                    "base: brak znacznika czasu dla bloku "
+                                    f"{base_latest.window_end_block}"
+                                )
 
                             new_base_snapshot = {
                                 "composite": base_latest.composite_score if base_is_mature else None,
@@ -1526,7 +1603,9 @@ def main() -> int:
             # Loggujemy i lecimy dalej - kolejne uruchomienie sprobuje
             # ponownie od tego samego zapisanego `last_processed_block`.
             log(f"Base L2: BLAD podczas zbierania danych ({exc!r}) - pomijam ten krok w tym uruchomieniu.")
+            manifest["base"] = {"enabled": True, "error": repr(exc)}
 
+    _finalize_and_save_manifest(manifest, run_started_at)
     return 0
 
 
