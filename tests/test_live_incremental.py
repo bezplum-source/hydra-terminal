@@ -17,6 +17,7 @@ wznawialnosc ScoringEngine, I/O stanu) sa juz przetestowane osobno.
 
 from __future__ import annotations
 
+import datetime
 import json
 
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
@@ -239,6 +240,12 @@ def _patch_all_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "SPOT_POOL_STATE_LT_PATH", tmp_path / "data" / "spot_pool_state_lt.json")
     monkeypatch.setattr(st, "SIGNAL_STATE_LT_PATH", tmp_path / "data" / "signal_state_lt.json")
     monkeypatch.setattr(st, "REGIME_STATE_LT_PATH", tmp_path / "data" / "regime_state_lt.json")
+    # Faza "manifesty per-run" - dopisane OD RAZU (patrz wszystkie komentarze
+    # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
+    # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
+    # KAZDY test ponizej wywolujacy ri.main() zapisywalby prawdziwy plik w
+    # data/manifests/ w tym repo zamiast do tmp_path.
+    monkeypatch.setattr(st, "RUN_MANIFESTS_DIR", tmp_path / "data" / "manifests")
     monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
 
 
@@ -1593,3 +1600,171 @@ def test_long_term_fields_gracefully_absent_without_base_or_hyperliquid(tmp_path
         # degradation co `compositeSpotCombined == compositeSpot` dla 7d.
         assert c["compositeSpotCombinedLt"] == c["compositeSpotLt"]
         assert c["compositeLt"] == c["compositeSpotCombinedLt"]
+
+
+# =====================================================================
+# Faza "manifesty per-run" (2026-09-15, w odpowiedzi na przeglad
+# infrastruktury zaproponowany przez kolege uzytkownika) - patrz
+# `live/state.py::save_run_manifest` i sekcja "Per-run manifests" w
+# site/docs.html.
+# =====================================================================
+
+
+def test_run_manifest_is_written_after_successful_run(tmp_path, monkeypatch):
+    """Kazde uruchomienie main() musi zostawic dokladnie jeden nowy plik w
+    data/manifests/, ze wszystkimi polami wypelnionymi na podstawie tego,
+    co realnie sie wydarzylo w tym uruchomieniu."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setenv("GITHUB_RUN_ID", "999888777")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setenv("GITHUB_SHA", "deadbeef")
+    monkeypatch.delenv("ALCHEMY_BASE_RPC_URL", raising=False)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+
+    assert len(st.list_run_manifests()) == 1
+
+    manifest = st.load_latest_run_manifest()
+    assert manifest["run_id"] == "999888777"
+    assert manifest["trigger"] == "schedule"
+    assert manifest["commit_sha"] == "deadbeef"
+    assert manifest["started_at_utc"] is not None
+    assert manifest["finished_at_utc"] is not None
+    assert manifest["duration_s"] >= 0
+    assert manifest["mainnet"]["enabled"] is True
+    assert manifest["mainnet"]["new_trades"] > 0
+    assert manifest["mainnet"]["capped"] is False
+    # Bez sekretu Base i bez bufora Hyperliquid w tym tescie - oba tory
+    # musza to odzwierciedlac jednoznacznie, nie milczeniem.
+    assert manifest["base"] == {"enabled": False}
+    assert manifest["hyperliquid"] == {"enabled": True, "new_trades": 0}
+    assert manifest["config_snapshot"]["max_new_blocks_per_run"] == ri.MAX_NEW_BLOCKS_PER_RUN
+    assert manifest["config_snapshot"]["base_max_new_blocks_per_run"] == ri.BASE_MAX_NEW_BLOCKS_PER_RUN
+    assert manifest["warnings"] == []
+
+
+def test_run_manifest_written_even_when_no_new_mainnet_blocks(tmp_path, monkeypatch):
+    """Drugie uruchomienie bez nowych blokow jest bezpiecznym no-opem dla
+    stanu (patrz `test_second_run_with_no_new_blocks_is_a_safe_noop` wyzej),
+    ale MUSI mimo to zostawic wlasny manifest - to jest dokladnie ten
+    przypadek, dla ktorego zapis manifestu jest wpiety w OBIE sciezki
+    `return 0` w main(), nie tylko na samym koncu."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    assert len(st.list_run_manifests()) == 1
+
+    assert ri.main() == 0
+    assert len(st.list_run_manifests()) == 2
+
+    latest = st.load_latest_run_manifest()
+    assert latest["mainnet"] == {
+        "enabled": True,
+        "from_block": chain.head + 1,
+        "to_block": chain.head,
+        "new_trades": 0,
+        "capped": False,
+    }
+
+
+def test_run_manifest_records_base_new_trades_when_enabled(tmp_path, monkeypatch):
+    """Gdy Base jest wlaczone i realnie zbiera transakcje, manifest musi to
+    pokazac osobno od mainnetu - dokladnie te liczby, ktore trafily do
+    `base_trade_buffer.csv` w tym uruchomieniu (patrz test analogiczny,
+    `test_base_l2_collects_into_separate_buffer_and_stays_immature_with_few_wallets`)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setenv("HYDRA_BASE_BACKFILL_BLOCKS", "300")
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    base_chain.add_swap(100, "0xBASETX1", "baseWallet1", amount0=3_000_000_000, amount1=-(10**18))
+    base_chain.add_swap(150, "0xBASETX2", "baseWallet2", amount0=-2_900_000_000, amount1=10**18)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            return JsonRpcClient(url, transport=base_chain.transport)
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    assert ri.main() == 0
+
+    manifest = st.load_latest_run_manifest()
+    assert manifest["base"]["enabled"] is True
+    assert manifest["base"]["new_trades"] == 2
+    assert manifest["base"]["capped"] is False
+
+
+def test_run_manifest_records_base_error_when_base_fails(tmp_path, monkeypatch):
+    """Blad specyficzny dla Base (izolowany przez try/except, patrz
+    `test_base_l2_failure_is_isolated_and_does_not_abort_main_run` wyzej)
+    musi trafic do manifestu jako `base.error` - inaczej jedyny slad tego,
+    ze cos poszlo nie tak, to log GitHub Actions, ktory znika po 90 dniach."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+
+    def fake_client(url):
+        if url == "https://fake-base-rpc.invalid":
+            raise ConnectionError("symulowany, trwaly blad sieciowy specyficzny dla Base")
+        return JsonRpcClient(url, transport=mainnet_chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    assert ri.main() == 0
+
+    manifest = st.load_latest_run_manifest()
+    assert manifest["base"]["enabled"] is True
+    assert "ConnectionError" in manifest["base"]["error"]
+    # Mainnet i Hyperliquid dokonczyly normalnie mimo bledu Base - manifest
+    # to potwierdza wprost, nie tylko kod zwrotny main().
+    assert manifest["mainnet"]["new_trades"] > 0
+
+
+def test_run_manifest_retention_prunes_oldest_files(tmp_path, monkeypatch):
+    """`save_run_manifest` musi trzymac co najwyzej MAX_RETAINED_RUN_MANIFESTS
+    najnowszych plikow - bez tego 24 uruchomienia/dobe pogleblialyby i tak
+    juz odczuwalne rozdecie `.git` w nieskonczonosc (patrz uzasadnienie przy
+    definicji stalej w live/state.py)."""
+    monkeypatch.setattr(st, "RUN_MANIFESTS_DIR", tmp_path / "data" / "manifests")
+
+    total = st.MAX_RETAINED_RUN_MANIFESTS + 5
+    for i in range(total):
+        started = datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(
+            minutes=i
+        )
+        st.save_run_manifest({"run_id": str(i), "started_at_utc": started.isoformat()})
+
+    remaining = st.list_run_manifests()
+    assert len(remaining) == st.MAX_RETAINED_RUN_MANIFESTS
+
+    # Nie tylko liczba plikow - sprawdzamy PO run_id zapisanym w kazdym
+    # pliku, ze to konkretnie najstarsze zostaly usuniete, a najnowsze
+    # przetrwaly.
+    remaining_ids = {json.loads(p.read_text(encoding="utf-8"))["run_id"] for p in remaining}
+    assert remaining_ids == {str(i) for i in range(5, total)}
