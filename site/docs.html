@@ -974,8 +974,49 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           Only the most recent 30 manifests are kept — older ones are pruned automatically
           on write. <code>.git</code> in this repo already runs well ahead of the live data
           it tracks (hourly commits, rarely squashed), so unbounded manifest history isn't
-          worth adding to it; a longer-lived record is a natural fit for a separate archive
-          if one is ever added.
+          worth adding to it; the raw trade archive below is the longer-lived record instead.
+        </p>
+
+        <h3 id="data-lake">Raw trade archive (Cloudflare R2 + Parquet)</h3>
+        <p>
+          <code>trade_buffer.csv</code>, <code>base_trade_buffer.csv</code>, and the
+          Hyperliquid buffer are all <strong>rolling</strong> — trimmed to the classification
+          lookback window on every run (see <a href="#automation">above</a>). Nothing keeps
+          the full history of raw transactions permanently: once a trade rolls off one of
+          those buffers, it's gone, and the only way to get it back is to re-fetch it from
+          RPC — slow, and not always possible if a node has pruned that far back.
+        </p>
+        <p>
+          <code>live/lake.py</code> closes that gap. On every run, right after each source's
+          new trades are fetched (and before the buffer is trimmed), it archives exactly that
+          run's delta as one Parquet file in a Cloudflare R2 bucket, partitioned by source and
+          date:
+        </p>
+        <pre><code>trades/
+  source=uniswap_mainnet/date=2026-09-15/part-&lt;run_id&gt;.parquet
+  source=base/date=2026-09-15/part-&lt;run_id&gt;.parquet
+  source=hyperliquid/date=2026-09-15/part-&lt;run_id&gt;.parquet</code></pre>
+        <p>
+          This is entirely optional and additive — it requires three GitHub secrets
+          (<code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>,
+          <code>R2_SECRET_ACCESS_KEY</code>) pointing at a Cloudflare R2 bucket with an API
+          token scoped to it. Exactly like <code>ALCHEMY_BASE_RPC_URL</code> for Base, if any
+          of the three secrets is missing, <code>live/lake.py</code> detects that and silently
+          skips archiving — the rest of the pipeline, including the live dashboard, is
+          unaffected either way. Any error during the upload itself (network, bad
+          credentials, R2 outage) is caught inside <code>upload_trades()</code> and logged,
+          never allowed to interrupt scoring — the mainnet path in particular has no
+          surrounding <code>try</code>/<code>except</code> of its own (see
+          <a href="#reliability">Reliability lessons</a>), so this function is written to
+          never raise. The bucket name itself isn't secret — it defaults to
+          <code>hydra-terminal-lake</code>, overridable with the (non-secret)
+          <code>HYDRA_R2_BUCKET</code> environment variable.
+        </p>
+        <p>
+          Every successful upload is also recorded in that run's manifest (see above) under
+          <code>lake_objects</code> — the exact key written and row count for each source —
+          so a manifest doubles as a pointer into the archive: "what Parquet file backs this
+          run's numbers" is a direct lookup, not a guess.
         </p>
 
         <h3 id="stats-reset">Resetting the win-rate counter</h3>
@@ -1345,6 +1386,8 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for the parallel <a href="#long-term">30-day mainnet classification track</a> (default 180,000 blocks, ~30 days)</td></tr>
           <tr><td><code>HYDRA_BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Same, for the 30-day Base track (default 1,296,000 blocks, ~30 days on Base's own block grid)</td></tr>
           <tr><td><code>HYDRA_HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS</code></td><td>No</td><td>Same, for the 30-day Hyperliquid track (default 720.0 hours)</td></tr>
+          <tr><td><code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code></td><td>No</td><td>Cloudflare R2 credentials for the <a href="#data-lake">raw trade archive</a>. Any one missing → archiving is safely skipped, logged, and everything else runs normally — same pattern as <code>ALCHEMY_BASE_RPC_URL</code> above.</td></tr>
+          <tr><td><code>HYDRA_R2_BUCKET</code></td><td>No</td><td>R2 bucket name for the raw trade archive (default <code>hydra-terminal-lake</code>). Not secret — safe to set as a plain workflow variable rather than a GitHub secret.</td></tr>
         </table>
         <p>
           <code>HYDRA_BASE_SPOT_WEIGHT</code> existed here until 2026-09-11 (a fixed 50/50
