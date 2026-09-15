@@ -949,6 +949,35 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           dashboard.
         </p>
 
+        <h3 id="run-manifests">Per-run manifests</h3>
+        <p>
+          Each run of <code>run_incremental.py</code> writes one small JSON file to
+          <code>data/manifests/</code>, named by timestamp and GitHub Actions run ID
+          (<code>2026-09-15_070203_18234561234.json</code>) — a self-contained record of
+          what that specific run actually did, independent of reading the generated
+          dashboard or digging through <code>git log</code> on the state files. It exists
+          because diagnosing a real production issue (Base L2's growing backlog, traced in
+          September 2026) required exactly that kind of archaeology — a manifest would
+          have shown the block range and the count against the per-run cap directly.
+        </p>
+        <div class="table-wrap">
+        <table>
+          <tr><th>Field</th><th>Meaning</th></tr>
+          <tr><td><code>run_id</code>, <code>trigger</code>, <code>commit_sha</code></td><td>GitHub Actions run ID, what triggered it (<code>schedule</code> / <code>workflow_run</code> / <code>workflow_dispatch</code>), and the commit it ran against</td></tr>
+          <tr><td><code>started_at_utc</code>, <code>finished_at_utc</code>, <code>duration_s</code></td><td>Wall-clock span of the run</td></tr>
+          <tr><td><code>mainnet</code>, <code>base</code>, <code>hyperliquid</code></td><td>Per-source block range (where applicable), new-trade count, whether the source's per-run block cap was hit (<code>capped</code>), and any error that stopped that source specifically — each source fails independently, see <a href="#reliability">Reliability lessons</a></td></tr>
+          <tr><td><code>config_snapshot</code></td><td>The tunable constants in effect for this run (<code>base_max_new_blocks_per_run</code> and similar) — so a later question like "what was the Base cap when this backlog started?" has a direct answer instead of a git-blame</td></tr>
+          <tr><td><code>warnings</code></td><td>Non-fatal issues noticed during the run — today, exclusively the rare case where a block's timestamp couldn't be fetched (see <a href="#reliability">Reliability lessons</a>)</td></tr>
+        </table>
+        </div>
+        <p>
+          Only the most recent 30 manifests are kept — older ones are pruned automatically
+          on write. <code>.git</code> in this repo already runs well ahead of the live data
+          it tracks (hourly commits, rarely squashed), so unbounded manifest history isn't
+          worth adding to it; a longer-lived record is a natural fit for a separate archive
+          if one is ever added.
+        </p>
+
         <h3 id="stats-reset">Resetting the win-rate counter</h3>
         <p>
           The "Signal history" card's compounded result / win-rate summary (see
