@@ -1,0 +1,47 @@
+{
+  "run_id": "34962529412",
+  "trigger": "schedule",
+  "commit_sha": "39b96cf1c0511dcd8a435e3f54b41f1b4eb4e744",
+  "started_at_utc": "2026-09-15T11:18:20.480910+00:00",
+  "finished_at_utc": "2026-09-15T11:19:28.751782+00:00",
+  "duration_s": 68.3,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 25982258,
+    "to_block": 25982514,
+    "new_trades": 430,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 51186796,
+    "to_block": 51189295,
+    "new_trades": 416,
+    "capped": true
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 0
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 2500,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5
+  },
+  "warnings": [
+    "base: brak znacznika czasu dla bloku 51188399"
+  ],
+  "lake_objects": [
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-09-15/part-34962529412.parquet",
+      "rows": 430
+    },
+    {
+      "source": "base",
+      "key": "trades/source=base/date=2026-09-15/part-34962529412.parquet",
+      "rows": 416
+    }
+  ]
+}
