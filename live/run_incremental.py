@@ -71,6 +71,7 @@ from hydra_signals.scoring import (  # noqa: E402
     decide_signal,
 )
 
+from live import lake  # noqa: E402
 from live import state as st  # noqa: E402
 from live.build_site import build_site  # noqa: E402
 
@@ -315,8 +316,15 @@ def main() -> int:
     # zapisywany przez `_finalize_and_save_manifest()` tuz przed KAZDYM
     # `return` z tej funkcji - patrz definicja tego helpera wyzej.
     run_started_at = datetime.datetime.now(datetime.timezone.utc)
+    # Faza "jezioro danych" (Etap B) - jedna data partycji dla WSZYSTKICH
+    # trzech zrodel w tym uruchomieniu, nawet gdyby samo uruchomienie
+    # przecinalo granice doby UTC - przy cyklu godzinowym to i tak
+    # nieistotne, a jedna wspolna wartosc jest prostsza niz liczenie jej
+    # osobno per zrodlo.
+    run_date = run_started_at.strftime("%Y-%m-%d")
+    run_id_for_lake = os.environ.get("GITHUB_RUN_ID", "local")
     manifest: dict = {
-        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+        "run_id": run_id_for_lake,
         "trigger": os.environ.get("GITHUB_EVENT_NAME", "manual"),
         "commit_sha": os.environ.get("GITHUB_SHA", "unknown"),
         "started_at_utc": run_started_at.isoformat(),
@@ -332,6 +340,7 @@ def main() -> int:
             "perp_weight": HYPERLIQUID_PERP_WEIGHT,
         },
         "warnings": [],
+        "lake_objects": [],
     }
 
     scoring_state = st.load_scoring_state()
@@ -386,6 +395,9 @@ def main() -> int:
         history_hl_trades = [t for t in hl_trades if t.ts_ms <= last_hl_ts_ms]
 
     manifest["hyperliquid"] = {"enabled": True, "new_trades": len(new_hl_trades)}
+    hl_lake_result = lake.upload_trades("hyperliquid", run_date, run_id_for_lake, new_hl_trades)
+    if hl_lake_result:
+        manifest["lake_objects"].append(hl_lake_result)
 
     hl_engine = HyperliquidScoringEngine(
         HyperliquidScoringConfig(),
@@ -671,6 +683,9 @@ def main() -> int:
         "new_trades": len(new_trades),
         "capped": to_block < head,
     }
+    mainnet_lake_result = lake.upload_trades("uniswap_mainnet", run_date, run_id_for_lake, new_trades)
+    if mainnet_lake_result:
+        manifest["lake_objects"].append(mainnet_lake_result)
 
     combined_buffer = trade_buffer + new_trades
     # Faza "Long term (30d)" - przycinanie MUSI uwzgledniac NAJDLUZSZE z obu
@@ -1366,6 +1381,11 @@ def main() -> int:
                         "new_trades": len(base_new_trades),
                         "capped": base_to_block < base_head,
                     }
+                    base_lake_result = lake.upload_trades(
+                        "base", run_date, run_id_for_lake, base_new_trades
+                    )
+                    if base_lake_result:
+                        manifest["lake_objects"].append(base_lake_result)
 
                     base_combined_buffer = base_trade_buffer + base_new_trades
                     base_lookback_start = base_to_block - BASE_LOOKBACK_BLOCKS
