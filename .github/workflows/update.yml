@@ -145,6 +145,17 @@ jobs:
           # (URL RPC dla sieci Base, ta sama aplikacja Alchemy co dla
           # mainnetu, z wlaczona siecia "Base").
           ALCHEMY_BASE_RPC_URL: ${{ secrets.ALCHEMY_BASE_RPC_URL }}
+          # Faza "jezioro danych" (Etap B, R2 + Parquet) - dokladnie ten sam
+          # wzorzec co ALCHEMY_BASE_RPC_URL wyzej: te trzy sekrety sa
+          # OPCJONALNE. Jesli ktorykolwiek z nich nie istnieje w repo,
+          # live/lake.py wykrywa to i SAM pomija archiwizacje transakcji do
+          # R2 (patrz komentarz w kodzie), bez zadnego bledu calego kroku.
+          # Zeby wlaczyc: zalozyc bucket R2 w Cloudflare, wygenerowac token
+          # API scoped do tego bucketu, dodac ponizsze trzy sekrety w
+          # Settings -> Secrets and variables -> Actions.
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: python live/run_incremental.py
 
       - name: Zacommituj zaktualizowane dane i strone
