@@ -722,3 +722,17 @@ def test_decide_signal_neutral_within_threshold_band():
     # Tuz POZA pasmem - normalna decyzja po znaku.
     assert decide_signal(0.11, threshold=0.1) == Signal.LONG
     assert decide_signal(-0.11, threshold=0.1) == Signal.SHORT
+
+
+def test_default_min_trades_for_classification_is_3_and_independent_from_hyperliquid():
+    # Prog obnizony z 5 na 3 (2026-09-17, propozycja uzytkownika: "moze dla
+    # dexow lepiej rozwazyc wariant minimum 3 transakcje? Hyperliquid by
+    # zostal 5") - zweryfikowane empirycznie na zywych 7-dniowych buforach
+    # transakcji (patrz komentarz w scoring.py). Ten test istnieje wylacznie
+    # po to, zeby przypadkowa zmiana defaultu nie przeszla niezauwazona - i
+    # zeby jawnie potwierdzic, ze zmiana PO STRONIE DEX (ScoringConfig) nigdy
+    # nie dotyka osobnej klasy configu dla Hyperliquid.
+    from hydra_signals.hyperliquid_wallets import HyperliquidScoringConfig
+
+    assert ScoringConfig().min_trades_for_classification == 3
+    assert HyperliquidScoringConfig().min_trades_for_classification == 5
