@@ -92,7 +92,21 @@ def upload_trades(source: str, run_date: str, run_id: str, trades: list) -> dict
     if not trades:
         return None
 
-    client = _r2_client()
+    try:
+        client = _r2_client()
+    except Exception as exc:  # noqa: BLE001
+        # NAPRAWA (2026-09-17): `_r2_client()` (import boto3 + budowa klienta
+        # S3-kompatybilnego) wczesniej byla wywolywana PRZED tym blokiem
+        # try/except, wiec dokladnie wbrew opisowi w docstringu modulu na
+        # gorze pliku ("kazdy blad zlapany WEWNATRZ upload_trades(), funkcja
+        # NIGDY nie rzuca wyjatku na zewnatrz") - blad tutaj (np. zle
+        # poswiadczenia od razu odrzucone przez boto3, brakujacy/zepsuty
+        # import) wyleciałby NIEZLAPANY i ubil caly `run_incremental.py`,
+        # mimo ze sekcja mainnetu jest na krytycznej sciezce (patrz docstring
+        # wyzej). Teraz traktowane identycznie jak kazdy inny blad R2 ponizej.
+        log(f"BLAD budowy klienta R2 ({exc!r}) - pomijam archiwizacje w tym uruchomieniu.")
+        return None
+
     if client is None:
         log("brak sekretow R2 (R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY) - pomijam archiwizacje.")
         return None
