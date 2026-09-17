@@ -771,6 +771,104 @@
   .event-text { display: flex; flex-direction: column; gap: 2px; }
   .event-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
   .event-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; text-transform: uppercase; }
+
+  /* ---------- Faza "dzienny bilans GOOD/BAD" (2026-09-17, zgloszenie
+     uzytkownika: "czy moglibysmy zsumowac buy/sell dla good i bad portfeli
+     na dzien? [...] wykres tego jakos [...] wolumen w USD tez chce") -
+     karta miedzy Wallets a wykresem ceny. Prefiks "db-" (dzienny bilans) na
+     WSZYSTKICH nowych klasach ponizej - celowo, zeby zaden nowy selektor
+     nie mogl przypadkiem trafic/nadpisac istniejacej klasy gdzies indziej
+     na stronie (np. generyczne nazwy jak ".stat-value" czy ".legend-row"
+     juz gdzies wystepuja lub mogłyby wystapic w przyszlosci). Karta
+     swiadomie REUZYWA (bez "db-") kilka juz istniejacych, globalnych klas
+     ponizej, gdzie ich wyglad juz jest dokladnie taki, jaki tu potrzebny:
+     .card / .card-head / .card-title / .info-tip / .range-switch /
+     .range-btn / .chart-wrap / .tooltip / .tri / .tri--up / .tri--down. */
+  .db-title-group { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .db-picker-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .db-date-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: 5px 10px;
+    border-radius: 9px;
+  }
+  .db-date-pick label { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); letter-spacing: 0.02em; }
+  .db-date-pick input[type="date"] {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    outline: none;
+    color-scheme: dark;
+  }
+  .db-date-pick.active { box-shadow: inset 0 0 0 1px var(--accent); }
+  .db-date-clear {
+    display: none;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0 0 0 2px;
+  }
+  .db-date-clear:hover { color: var(--text-primary); }
+  .db-date-pick.active .db-date-clear { display: inline; }
+
+  .db-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+    padding-left: 2px;
+  }
+  .db-legend-item { display: flex; align-items: center; gap: 6px; }
+  .db-legend-swatch { width: 9px; height: 9px; border-radius: 2px; }
+
+  .db-cohort-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .db-cohort-grid { grid-template-columns: 1fr; } }
+
+  .db-cohort-col { border: 1px solid var(--border); border-radius: 10px; padding: 14px 14px 10px; background: var(--bg); }
+  .db-cohort-label { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+  .db-cohort-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .db-cohort-dot--good { background: var(--good); box-shadow: 0 0 8px var(--good-glow); }
+  .db-cohort-dot--bad { background: var(--bad); box-shadow: 0 0 8px var(--bad-glow); }
+  .db-cohort-name { font-family: var(--font-display); font-size: 16.5px; letter-spacing: 0.03em; }
+  .db-cohort-name--good { color: var(--good-glow); }
+  .db-cohort-name--bad { color: var(--bad-glow); }
+
+  .db-cohort-stats { display: flex; gap: 22px; margin-bottom: 6px; flex-wrap: wrap; }
+  .db-stat-block { display: flex; flex-direction: column; gap: 2px; }
+  .db-stat-tag { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; display: flex; align-items: center; gap: 4px; }
+  .db-stat-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 500; color: var(--text-primary); }
+  .db-stat-usd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted); }
+  .db-stat-net .db-stat-value.up { color: var(--good-glow); }
+  .db-stat-net .db-stat-value.down { color: var(--bad-glow); }
+
+  svg.db-chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .db-zero-line { stroke: var(--border-strong); stroke-width: 1; }
+  .db-axis-label { font-family: var(--font-mono); font-size: 9.5px; fill: var(--text-muted); }
+  .db-bar-buy { fill: var(--good); }
+  .db-bar-sell { fill: var(--bad); }
+  .db-bar-buy:hover, .db-bar-sell:hover { filter: brightness(1.35); }
+  .db-hover-guide { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 2 2; opacity: 0; pointer-events: none; }
+  .db-chart-overlay { fill: transparent; cursor: crosshair; touch-action: none; }
+  .db-empty-note { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); padding: 26px 4px; text-align: center; }
+
+  /* Kolory wewnatrz .tooltip (reuzywanego, patrz wyzej) specyficzne dla tej
+     karty - nazwane "db-buy"/"db-sell" zeby nie kolidowac z juz istniejacym
+     ".tooltip .t-signal.long/.short" (inny kontekst, wykres ceny). */
+  .tooltip .db-buy { color: var(--good-glow); }
+  .tooltip .db-sell { color: var(--bad-glow); }
 </style>
 <div class="page">
 
@@ -928,6 +1026,100 @@
       <span id="volImpactText">-</span><span class="info-tip" tabindex="0" id="volImpactTip" data-tip="Sygnał liczy dwa niezależne tory: ile portfeli kupuje/sprzedaje (każdy portfel = 1 głos, bez względu na wielkość transakcji) i ile waży stojący za tym kapitał (waga = pierwiastek z wielkości transakcji, z twardym sufitem 50 000 USD na jedną transakcję, żeby pojedynczy duży gracz nie zdominował wyniku). Ta linijka pokazuje, czy i jak mocno kapitał zmienia obraz wynikający z samej liczby portfeli.">ⓘ</span>
     </div>
   </section>
+
+  <!-- Faza "dzienny bilans GOOD/BAD" (2026-09-17) - patrz komentarz przy
+       klasach "db-*" w <style> powyżej. Dane WYŁĄCZNIE realne (zgłoszenie
+       użytkownika: "to muszą być prawdziwe dane, nie zmyślaj"): świece
+       (goodBuyers/goodSellers/badBuyers/badSellers i ich base*/perp*
+       odpowiedniki) już od dawna zapisywane co uruchomienie w
+       candles_history.json (nigdy nie przycinanej - patrz state.py), a
+       *Usd (goodBuyUsd/itd.) to nowe pola realnego wolumenu w dolarach,
+       zbierające historię dopiero od dnia wdrożenia tej fazy - starsze
+       świece po prostu ich nie mają (patrz buildDailyBalanceSeries niżej,
+       `|| 0`). Karta celowo NIE reaguje na przełącznik Main/Long term
+       (patrz CURRENT_TRACK) - wszystkie te pola są zawsze liczone z
+       klasyfikacji głównego (7-dniowego) toru, niezależnie od tego, która
+       zakładka jest aktywna gdzie indziej na stronie. -->
+  <section class="card reveal reveal-3" id="dailyBalanceCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">Dzienny bilans GOOD / BAD</span>
+        <span class="info-tip" tabindex="0" data-tip="Suma - dzień po dniu (00:00–24:00 UTC) - portfeli GOOD/BAD o net-kupującym lub net-sprzedającym kierunku w każdym ok. 1-godzinnym oknie klasyfikacji, ze wszystkich trzech rynków razem (Uniswap + Base + Hyperliquid). To suma „głosów” okien, nie liczba unikalnych portfeli na dzień - portfel aktywny w kilku oknach tego samego dnia liczy się w każdym z nich osobno. Wolumen USD to prawdziwa suma dolarowa transakcji tych portfeli, ale ta metryka zbiera historię dopiero od dnia wdrożenia tej karty - starsze dni pokazują $0, nie szacunek.">ⓘ</span>
+      </div>
+      <div class="db-picker-row">
+        <div class="range-switch" id="dbRangeSwitch" role="group" aria-label="Zakres czasu bilansu dziennego">
+          <button type="button" class="range-btn" data-range="1">1D</button>
+          <button type="button" class="range-btn" data-range="7">7D</button>
+          <button type="button" class="range-btn active" data-range="30">30D</button>
+          <button type="button" class="range-btn" data-range="90">90D</button>
+          <button type="button" class="range-btn" data-range="all">WSZYSTKO</button>
+        </div>
+        <div class="db-date-pick" id="dbDatePick">
+          <label for="dbDateInput">Konkretny dzień</label>
+          <input type="date" id="dbDateInput">
+          <button type="button" class="db-date-clear" id="dbDateClear" title="Wyczyść wybraną datę">&#10005;</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="db-legend-row">
+      <span class="db-legend-item"><span class="db-legend-swatch" style="background:var(--good)"></span>Kupuje</span>
+      <span class="db-legend-item"><span class="db-legend-swatch" style="background:var(--bad)"></span>Sprzedaje</span>
+    </div>
+
+    <div class="db-cohort-grid">
+      <div class="db-cohort-col">
+        <div class="db-cohort-label">
+          <span class="db-cohort-dot db-cohort-dot--good"></span>
+          <span class="db-cohort-name db-cohort-name--good">GOOD</span>
+        </div>
+        <div class="db-cohort-stats">
+          <div class="db-stat-block">
+            <span class="db-stat-tag"><span class="tri tri--up"></span>Kupuje</span>
+            <span class="db-stat-value" id="dbGoodBuyTotal">-</span>
+            <span class="db-stat-usd" id="dbGoodBuyUsd">-</span>
+          </div>
+          <div class="db-stat-block">
+            <span class="db-stat-tag"><span class="tri tri--down"></span>Sprzedaje</span>
+            <span class="db-stat-value" id="dbGoodSellTotal">-</span>
+            <span class="db-stat-usd" id="dbGoodSellUsd">-</span>
+          </div>
+          <div class="db-stat-block db-stat-net">
+            <span class="db-stat-tag">Netto</span>
+            <span class="db-stat-value" id="dbGoodNetTotal">-</span>
+            <span class="db-stat-usd" id="dbGoodNetUsd">-</span>
+          </div>
+        </div>
+        <div class="chart-wrap" id="dbGoodChartWrap"></div>
+      </div>
+
+      <div class="db-cohort-col">
+        <div class="db-cohort-label">
+          <span class="db-cohort-dot db-cohort-dot--bad"></span>
+          <span class="db-cohort-name db-cohort-name--bad">BAD</span>
+        </div>
+        <div class="db-cohort-stats">
+          <div class="db-stat-block">
+            <span class="db-stat-tag"><span class="tri tri--up"></span>Kupuje</span>
+            <span class="db-stat-value" id="dbBadBuyTotal">-</span>
+            <span class="db-stat-usd" id="dbBadBuyUsd">-</span>
+          </div>
+          <div class="db-stat-block">
+            <span class="db-stat-tag"><span class="tri tri--down"></span>Sprzedaje</span>
+            <span class="db-stat-value" id="dbBadSellTotal">-</span>
+            <span class="db-stat-usd" id="dbBadSellUsd">-</span>
+          </div>
+          <div class="db-stat-block db-stat-net">
+            <span class="db-stat-tag">Netto</span>
+            <span class="db-stat-value" id="dbBadNetTotal">-</span>
+            <span class="db-stat-usd" id="dbBadNetUsd">-</span>
+          </div>
+        </div>
+        <div class="chart-wrap" id="dbBadChartWrap"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="card reveal reveal-4">
     <div class="card-head">
       <span class="card-title">Cena i sygnał w czasie</span>
@@ -2061,6 +2253,284 @@ function setTrack(track) {
 document.querySelectorAll('#trackSwitch .track-btn').forEach((btn) => {
   btn.addEventListener('click', () => setTrack(btn.dataset.track));
 });
+
+// =====================================================================
+// Faza "dzienny bilans GOOD/BAD" (2026-09-17). Karta NIEZALEŻNA od
+// CURRENT_TRACK/getCandles() powyżej - zawsze czyta wprost DATA.candles
+// (główny, 7-dniowy tor klasyfikacji - patrz komentarz przy sekcji HTML
+// tej karty), więc nie trzeba jej przebudowywać przy zmianie zakładki
+// Main/Long term.
+// =====================================================================
+const dbFmtNum = (n) => Math.round(n).toLocaleString('en-US');
+const dbFmtNet = (n) => (n > 0 ? '+' : '') + dbFmtNum(n);
+// Skrócony format USD (K/M) - CELOWO inny niż globalny fmtUsd() wyżej
+// (ten służy do ceny ETH z 2 miejscami po przecinku) - tu sumujemy
+// wolumen z potencjalnie wielu dni, więc "$1,234.56" byłoby nieczytelne,
+// a "$1.2K"/"$3.4M" nie.
+function dbFmtUsd(n) {
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(2) + 'M';
+  if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(1) + 'K';
+  return sign + '$' + abs.toFixed(0);
+}
+function dbFmtNetUsd(n) {
+  return (n >= 0 ? '+' : '') + dbFmtUsd(n);
+}
+function dbDayKey(ts) {
+  // Dzień kalendarzowy UTC z REALNEGO znacznika czasu świecy (to samo pole
+  // "ts", które napędza filterCandlesByRange() wyżej) - "00:00-24:00 UTC",
+  // dokładnie jak w info-tip tej karty.
+  return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+function dbFmtDayShort(dateKey) {
+  return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+}
+function dbFmtDayFull(dateKey) {
+  return new Date(dateKey + 'T00:00:00Z').toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+// Grupuje realne świece wg dnia kalendarzowego (UTC) i sumuje pola, które
+// backend liczy PRZY KAŻDEJ świecy - liczbę portfeli net-kupujących/
+// sprzedających (Uniswap+Base+Hyperliquid razem) i - gdy dostępne -
+// realny wolumen USD. `|| 0` wszędzie: starsze świece mogą w ogóle NIE
+// MIEĆ danego pola (Base/Hyperliquid/*Usd dodane później niż początek
+// historii candles_history.json) - ten sam wzorzec graceful degradation
+// co reszta strony (np. `"signalLt" in c` przy getCandles()).
+function buildDailyBalanceSeries(candles) {
+  const byDay = new Map();
+  candles.forEach((c) => {
+    if (c.ts == null) return;
+    const key = dbDayKey(c.ts);
+    let row = byDay.get(key);
+    if (!row) {
+      row = {
+        dateKey: key,
+        goodBuy: 0, goodSell: 0, badBuy: 0, badSell: 0,
+        goodBuyUsd: 0, goodSellUsd: 0, badBuyUsd: 0, badSellUsd: 0,
+      };
+      byDay.set(key, row);
+    }
+    row.goodBuy += (c.goodBuyers || 0) + (c.baseGoodBuyers || 0) + (c.perpGoodBuyers || 0);
+    row.goodSell += (c.goodSellers || 0) + (c.baseGoodSellers || 0) + (c.perpGoodSellers || 0);
+    row.badBuy += (c.badBuyers || 0) + (c.baseBadBuyers || 0) + (c.perpBadBuyers || 0);
+    row.badSell += (c.badSellers || 0) + (c.baseBadSellers || 0) + (c.perpBadSellers || 0);
+    row.goodBuyUsd += (c.goodBuyUsd || 0) + (c.baseGoodBuyUsd || 0) + (c.perpGoodBuyUsd || 0);
+    row.goodSellUsd += (c.goodSellUsd || 0) + (c.baseGoodSellUsd || 0) + (c.perpGoodSellUsd || 0);
+    row.badBuyUsd += (c.badBuyUsd || 0) + (c.baseBadBuyUsd || 0) + (c.perpBadBuyUsd || 0);
+    row.badSellUsd += (c.badSellUsd || 0) + (c.baseBadSellUsd || 0) + (c.perpBadSellUsd || 0);
+  });
+  return Array.from(byDay.values()).sort((a, b) => (a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0));
+}
+
+// `DATA.dailyBalanceCandles` (Faza "dzienny bilans GOOD/BAD") niesie PELNA
+// realna historie swiec (candles_history.json nigdy nie przycinane), NIE
+// obcieta do ostatnich `MAX_DISPLAY_CANDLES` jak `DATA.candles` - stad karta
+// widzi wiecej historii wstecz niz wykres ceny wyzej. Fallback na
+// `DATA.candles` tylko na wypadek niepelnego/nieuporzadkowanego wdrozenia
+// (np. gdyby stara strona wygenerowana starym build_site.py trafila tu przed
+// aktualizacja backendu) - ten sam ostrozny wzorzec co reszta strony.
+const DB_SERIES = buildDailyBalanceSeries(DATA.dailyBalanceCandles || DATA.candles);
+
+function dbSliceRange(range) {
+  if (range === 'all') return DB_SERIES;
+  const n = parseInt(range, 10);
+  return DB_SERIES.slice(-n);
+}
+function dbSliceDate(dateStr) {
+  return DB_SERIES.filter((r) => r.dateKey === dateStr);
+}
+
+function dbRenderChart(container, rows, buyKey, sellKey, usdBuyKey, usdSellKey, sharedMax, cohortLabel) {
+  container.innerHTML = '';
+  if (!rows.length) {
+    const note = document.createElement('div');
+    note.className = 'db-empty-note';
+    note.textContent = 'Brak danych dla wybranego zakresu.';
+    container.appendChild(note);
+    return;
+  }
+  const W = 460, H = 150, PAD_L = 4, PAD_R = 4, PAD_T = 6, PAD_B = 16;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+  const midY = PAD_T + plotH / 2;
+  const halfH = plotH / 2 - 4;
+  const n = rows.length;
+  const slot = plotW / n;
+  const barW = Math.max(1.4, Math.min(9, slot - 1.4));
+  const safeMax = sharedMax > 0 ? sharedMax : 1;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'db-chart');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const zero = document.createElementNS(svg.namespaceURI, 'line');
+  zero.setAttribute('class', 'db-zero-line');
+  zero.setAttribute('x1', PAD_L); zero.setAttribute('x2', W - PAD_R);
+  zero.setAttribute('y1', midY); zero.setAttribute('y2', midY);
+  svg.appendChild(zero);
+
+  rows.forEach((r, i) => {
+    const cx = PAD_L + slot * i + slot / 2;
+    const buyH = (r[buyKey] / safeMax) * halfH;
+    const sellH = (r[sellKey] / safeMax) * halfH;
+
+    const buyRect = document.createElementNS(svg.namespaceURI, 'rect');
+    buyRect.setAttribute('class', 'db-bar-buy');
+    buyRect.setAttribute('x', (cx - barW / 2).toFixed(2));
+    buyRect.setAttribute('y', (midY - Math.max(0, buyH) - 1).toFixed(2));
+    buyRect.setAttribute('width', barW.toFixed(2));
+    buyRect.setAttribute('height', Math.max(0, buyH).toFixed(2));
+    buyRect.setAttribute('rx', '1.6');
+    svg.appendChild(buyRect);
+
+    const sellRect = document.createElementNS(svg.namespaceURI, 'rect');
+    sellRect.setAttribute('class', 'db-bar-sell');
+    sellRect.setAttribute('x', (cx - barW / 2).toFixed(2));
+    sellRect.setAttribute('y', (midY + 1).toFixed(2));
+    sellRect.setAttribute('width', barW.toFixed(2));
+    sellRect.setAttribute('height', Math.max(0, sellH).toFixed(2));
+    sellRect.setAttribute('rx', '1.6');
+    svg.appendChild(sellRect);
+  });
+
+  if (rows.length === 1) {
+    const tc = document.createElementNS(svg.namespaceURI, 'text');
+    tc.setAttribute('class', 'db-axis-label'); tc.setAttribute('x', W / 2); tc.setAttribute('y', H - 4);
+    tc.setAttribute('text-anchor', 'middle');
+    tc.textContent = dbFmtDayFull(rows[0].dateKey);
+    svg.appendChild(tc);
+  } else {
+    const t0 = document.createElementNS(svg.namespaceURI, 'text');
+    t0.setAttribute('class', 'db-axis-label'); t0.setAttribute('x', PAD_L); t0.setAttribute('y', H - 4);
+    t0.textContent = dbFmtDayShort(rows[0].dateKey);
+    svg.appendChild(t0);
+    const t1 = document.createElementNS(svg.namespaceURI, 'text');
+    t1.setAttribute('class', 'db-axis-label'); t1.setAttribute('x', W - PAD_R); t1.setAttribute('y', H - 4);
+    t1.setAttribute('text-anchor', 'end');
+    t1.textContent = dbFmtDayShort(rows[rows.length - 1].dateKey);
+    svg.appendChild(t1);
+  }
+
+  const guide = document.createElementNS(svg.namespaceURI, 'line');
+  guide.setAttribute('class', 'db-hover-guide');
+  guide.setAttribute('y1', PAD_T); guide.setAttribute('y2', H - PAD_B);
+  svg.appendChild(guide);
+
+  const overlay = document.createElementNS(svg.namespaceURI, 'rect');
+  overlay.setAttribute('class', 'db-chart-overlay');
+  overlay.setAttribute('x', PAD_L); overlay.setAttribute('y', 0);
+  overlay.setAttribute('width', plotW); overlay.setAttribute('height', H);
+  svg.appendChild(overlay);
+
+  container.appendChild(svg);
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'tooltip';
+  container.appendChild(tooltip);
+
+  function showAt(clientX, rect) {
+    const xFrac = (clientX - rect.left) / rect.width;
+    const xSvg = xFrac * W;
+    let i = Math.floor((xSvg - PAD_L) / slot);
+    i = Math.max(0, Math.min(n - 1, i));
+    const r = rows[i];
+    const cx = PAD_L + slot * i + slot / 2;
+    guide.setAttribute('x1', cx); guide.setAttribute('x2', cx);
+    guide.style.opacity = '1';
+    const net = r[buyKey] - r[sellKey];
+    tooltip.innerHTML = `<strong>${dbFmtDayShort(r.dateKey)} &middot; ${cohortLabel}</strong><br>` +
+      `<span class="db-buy">Kupuje ${dbFmtNum(r[buyKey])} &middot; ${dbFmtUsd(r[usdBuyKey])}</span><br>` +
+      `<span class="db-sell">Sprzedaje ${dbFmtNum(r[sellKey])} &middot; ${dbFmtUsd(r[usdSellKey])}</span><br>` +
+      `Netto ${dbFmtNet(net)}`;
+    tooltip.style.opacity = '1';
+    const leftPct = Math.max(14, Math.min(86, (cx / W) * 100));
+    tooltip.style.left = leftPct + '%';
+    tooltip.style.top = '18px';
+  }
+  overlay.addEventListener('mousemove', (ev) => showAt(ev.clientX, svg.getBoundingClientRect()));
+  overlay.addEventListener('touchstart', (ev) => showAt(ev.touches[0].clientX, svg.getBoundingClientRect()), { passive: true });
+  overlay.addEventListener('touchmove', (ev) => showAt(ev.touches[0].clientX, svg.getBoundingClientRect()), { passive: true });
+  overlay.addEventListener('mouseleave', () => { guide.style.opacity = '0'; tooltip.style.opacity = '0'; });
+  overlay.addEventListener('touchend', () => { guide.style.opacity = '0'; tooltip.style.opacity = '0'; });
+}
+
+function dbSum(rows, key) { return rows.reduce((a, r) => a + r[key], 0); }
+
+function dbRenderRows(rows) {
+  const goodMax = rows.length ? Math.max(...rows.map((r) => Math.max(r.goodBuy, r.goodSell))) * 1.1 : 1;
+  const badMax = rows.length ? Math.max(...rows.map((r) => Math.max(r.badBuy, r.badSell))) * 1.1 : 1;
+
+  dbRenderChart(document.getElementById('dbGoodChartWrap'), rows, 'goodBuy', 'goodSell', 'goodBuyUsd', 'goodSellUsd', goodMax, 'GOOD');
+  dbRenderChart(document.getElementById('dbBadChartWrap'), rows, 'badBuy', 'badSell', 'badBuyUsd', 'badSellUsd', badMax, 'BAD');
+
+  const gb = dbSum(rows, 'goodBuy'), gs = dbSum(rows, 'goodSell');
+  const bb = dbSum(rows, 'badBuy'), bs = dbSum(rows, 'badSell');
+  const gbUsd = dbSum(rows, 'goodBuyUsd'), gsUsd = dbSum(rows, 'goodSellUsd');
+  const bbUsd = dbSum(rows, 'badBuyUsd'), bsUsd = dbSum(rows, 'badSellUsd');
+
+  document.getElementById('dbGoodBuyTotal').textContent = dbFmtNum(gb);
+  document.getElementById('dbGoodSellTotal').textContent = dbFmtNum(gs);
+  document.getElementById('dbBadBuyTotal').textContent = dbFmtNum(bb);
+  document.getElementById('dbBadSellTotal').textContent = dbFmtNum(bs);
+  document.getElementById('dbGoodBuyUsd').textContent = dbFmtUsd(gbUsd);
+  document.getElementById('dbGoodSellUsd').textContent = dbFmtUsd(gsUsd);
+  document.getElementById('dbBadBuyUsd').textContent = dbFmtUsd(bbUsd);
+  document.getElementById('dbBadSellUsd').textContent = dbFmtUsd(bsUsd);
+
+  const gNet = gb - gs, bNet = bb - bs;
+  const gNetEl = document.getElementById('dbGoodNetTotal');
+  gNetEl.textContent = dbFmtNet(gNet);
+  gNetEl.className = 'db-stat-value ' + (gNet >= 0 ? 'up' : 'down');
+  document.getElementById('dbGoodNetUsd').textContent = dbFmtNetUsd(gbUsd - gsUsd);
+
+  const bNetEl = document.getElementById('dbBadNetTotal');
+  bNetEl.textContent = dbFmtNet(bNet);
+  bNetEl.className = 'db-stat-value ' + (bNet >= 0 ? 'up' : 'down');
+  document.getElementById('dbBadNetUsd').textContent = dbFmtNetUsd(bbUsd - bsUsd);
+}
+
+const dbRangeButtons = document.querySelectorAll('#dbRangeSwitch .range-btn');
+const dbDateInput = document.getElementById('dbDateInput');
+const dbDatePick = document.getElementById('dbDatePick');
+const dbDateClear = document.getElementById('dbDateClear');
+
+function dbSelectRange(range) {
+  dbRangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
+  dbDatePick.classList.remove('active');
+  dbDateInput.value = '';
+  dbRenderRows(dbSliceRange(range));
+}
+function dbSelectDate(dateStr) {
+  const rows = dbSliceDate(dateStr);
+  dbRangeButtons.forEach((b) => b.classList.remove('active'));
+  dbDatePick.classList.add('active');
+  if (!rows.length) {
+    dbRenderChart(document.getElementById('dbGoodChartWrap'), [], null, null, null, null, 1, 'GOOD');
+    dbRenderChart(document.getElementById('dbBadChartWrap'), [], null, null, null, null, 1, 'BAD');
+    ['dbGoodBuyTotal', 'dbGoodSellTotal', 'dbBadBuyTotal', 'dbBadSellTotal'].forEach((id) => { document.getElementById(id).textContent = '0'; });
+    ['dbGoodBuyUsd', 'dbGoodSellUsd', 'dbBadBuyUsd', 'dbBadSellUsd'].forEach((id) => { document.getElementById(id).textContent = dbFmtUsd(0); });
+    ['dbGoodNetTotal', 'dbBadNetTotal'].forEach((id) => { const el = document.getElementById(id); el.textContent = '0'; el.className = 'db-stat-value'; });
+    ['dbGoodNetUsd', 'dbBadNetUsd'].forEach((id) => { document.getElementById(id).textContent = dbFmtNetUsd(0); });
+    return;
+  }
+  dbRenderRows(rows);
+}
+
+if (DB_SERIES.length) {
+  dbDateInput.min = DB_SERIES[0].dateKey;
+  dbDateInput.max = DB_SERIES[DB_SERIES.length - 1].dateKey;
+}
+dbRangeButtons.forEach((btn) => {
+  btn.addEventListener('click', () => dbSelectRange(btn.dataset.range));
+});
+dbDateInput.addEventListener('change', () => {
+  if (dbDateInput.value) dbSelectDate(dbDateInput.value);
+});
+dbDateClear.addEventListener('click', () => dbSelectRange('30'));
+
+dbSelectRange('30');
 
 document.getElementById('historyPrevBtn').addEventListener('click', () => {
   if (historyPage > 0) { historyPage--; buildHistory(); }
