@@ -182,10 +182,59 @@ jobs:
               echo "Push udany (proba $i)."
               exit 0
             fi
-            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Probuje ponownie..."
+            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Sprawdzam kto..."
             git fetch origin main
+
+            # NAPRAWA (2026-09-17, zgloszenie uzytkownika: "od niedawna sporo
+            # action Hydra nie przechodzi"): odkad "update.yml" odpala sie
+            # DODATKOWO przez "workflow_run" zaraz po kazdym zakonczeniu
+            # "hyperliquid-update.yml" (Faza "wyscig harmonogramu z
+            # Hyperliquid", 2026-09-11), przebiegow tego workflow jest ~2x
+            # wiecej niz wczesniej - co realnie podnioslo szanse, ze DWA
+            # osobne uruchomienia "update" wystartuja od tego samego stanu i
+            # oba policza WLASNE, niezaleznie swieze dane (nowe swiece,
+            # zaktualizowane EMA) z nakladajacego sie zakresu blokow, zanim
+            # ktorekolwiek zdazy zapushowac. Gdy tak sie stanie, `git rebase`
+            # probuje polaczyc DWIE fizycznie rozne, ale obie poprawne wersje
+            # tego samego pliku stanu (candles_history.json,
+            # scoring_state*.json, trade_buffer.csv, site/index.html) linia po
+            # linii - to nigdy nie moze sie udac sensownie (nie jest to
+            # konflikt w stylu "dwie osoby edytowaly rozne akapity", tylko dwa
+            # NIEZALEZNE przeliczenia tego samego stanu), stad prawdziwy
+            # konflikt tresci i przerwany job (dokladnie ten scenariusz, ktory
+            # oryginalny retry-loop z Fazy "utwardzenie workflow" swiadomie
+            # traktowal jako blad do zgloszenia, nie do automatycznego
+            # naprawienia - patrz komentarz w gorze pliku).
+            #
+            # Rozroznienie: jesli zdalny czubek to inny automatyczny przebieg
+            # DANYCH ("Automatyczna aktualizacja danych..."), nie ma sensu
+            # probowac REBASE'owac/laczyc dwoch niezaleznie policzonych stanow
+            # - drugi przebieg juz zapisal swiezsze dane (ten sam lancuch
+            # blokow, o krok dalej lub przynajmniej rownie aktualny), wiec
+            # WLASNY, teraz juz nieaktualny lokalny commit jest bezpiecznie
+            # porzucany (`git reset --hard origin/main`) i job konczy sie
+            # CZYSTO (exit 0, nie exit 1) - bez utraty danych: kazdy blok,
+            # ktory ten przebieg przetworzyl, a drugi przebieg jeszcze nie,
+            # zostanie po prostu ponownie pobrany i doliczony w NASTEPNYM
+            # uruchomieniu (bloki wciaz sa na lancuchu, nic nie ginie
+            # bezpowrotnie - ten sam mechanizm bezpieczenstwa co przy
+            # wyczerpaniu prob `eth_blockNumber`, patrz Faza "niezawodnosc
+            # odswiezania"). Jesli zdalny czubek to NATOMIAST prawdziwa, RECZNA
+            # zmiana uzytkownika (np. edycja docs.html przez przegladarke
+            # GitHub) - zachowanie bez zmian: probuj rebase, a przy
+            # prawdziwym konflikcie plikow przerwij job jawnym bledem, tak
+            # jak dotychczas.
+            REMOTE_TIP_MSG="$(git log -1 --format=%s origin/main)"
+            case "$REMOTE_TIP_MSG" in
+              "Automatyczna aktualizacja danych"*)
+                echo "Zdalna galaz ma juz swiezsze dane z INNEGO automatycznego przebiegu ($REMOTE_TIP_MSG) - odrzucam wlasny, teraz nieaktualny commit. Brakujace bloki dolicza kolejne uruchomienie. Konczie bez bledu."
+                git reset --hard origin/main
+                exit 0
+                ;;
+            esac
+
             if ! git rebase origin/main; then
-              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow) - przerywam."
+              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow, nie inny automatyczny przebieg) - przerywam."
               git rebase --abort || true
               exit 1
             fi
