@@ -437,6 +437,13 @@ def main() -> int:
             # tym samym `fmt_warsaw()` co reszta strony (ten sam format,
             # "DD.MM.YYYY, HH:MM", czas polski).
             "window_time": fmt_warsaw(hl_score.window_end_ts_ms / 1000),
+            # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - odpowiednik
+            # good_buy_usd/itd. z ScoringEngine (patrz komentarz przy
+            # "goodBuyUsd" w candle nizej) dla toru Hyperliquid.
+            "good_buy_usd": hl_score.good_buy_usd,
+            "good_sell_usd": hl_score.good_sell_usd,
+            "bad_buy_usd": hl_score.bad_buy_usd,
+            "bad_sell_usd": hl_score.bad_sell_usd,
         }
         new_hl_state = hl_engine.export_state()
         new_hl_state["last_processed_ts_ms"] = hl_score.window_end_ts_ms
@@ -475,6 +482,10 @@ def main() -> int:
                 "bad_buyers": 0,
                 "bad_sellers": 0,
                 "window_time": None,
+                "good_buy_usd": 0.0,
+                "good_sell_usd": 0.0,
+                "bad_buy_usd": 0.0,
+                "bad_sell_usd": 0.0,
             }
 
     composite_perp = perp_snapshot["composite"]
@@ -575,6 +586,10 @@ def main() -> int:
             "good_sell_weight": 0.0,
             "bad_buy_weight": 0.0,
             "bad_sell_weight": 0.0,
+            "good_buy_usd": 0.0,
+            "good_sell_usd": 0.0,
+            "bad_buy_usd": 0.0,
+            "bad_sell_usd": 0.0,
         }
     composite_base = base_snapshot["composite"]
 
@@ -1050,6 +1065,14 @@ def main() -> int:
                 "baseGoodSellers": base_snapshot["good_sellers"],
                 "baseBadBuyers": base_snapshot["bad_buyers"],
                 "baseBadSellers": base_snapshot["bad_sellers"],
+                # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - `.get(..., 0.0)`
+                # zamiast `[...]`, ten sam powod co `baseWindowTime` nizej:
+                # `base_snapshot` wczytany ze starego stanu na dysku (sprzed
+                # tej fazy) nie bedzie mial tych kluczy.
+                "baseGoodBuyUsd": round(base_snapshot.get("good_buy_usd", 0.0), 2),
+                "baseGoodSellUsd": round(base_snapshot.get("good_sell_usd", 0.0), 2),
+                "baseBadBuyUsd": round(base_snapshot.get("bad_buy_usd", 0.0), 2),
+                "baseBadSellUsd": round(base_snapshot.get("bad_sell_usd", 0.0), 2),
                 "baseMaturityThreshold": BASE_MIN_CLASSIFIED_WALLETS_FOR_MATURITY,
                 # Faza "znaczniki czasu w karcie Wallets" (2026-09-13) - kiedy
                 # (czas polski) zakonczylo sie okno, z ktorego pochodza
@@ -1072,6 +1095,12 @@ def main() -> int:
                 "perpGoodSellers": perp_snapshot["good_sellers"],
                 "perpBadBuyers": perp_snapshot["bad_buyers"],
                 "perpBadSellers": perp_snapshot["bad_sellers"],
+                # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - `.get(..., 0.0)`,
+                # ten sam powod co przy `baseGoodBuyUsd` wyzej.
+                "perpGoodBuyUsd": round(perp_snapshot.get("good_buy_usd", 0.0), 2),
+                "perpGoodSellUsd": round(perp_snapshot.get("good_sell_usd", 0.0), 2),
+                "perpBadBuyUsd": round(perp_snapshot.get("bad_buy_usd", 0.0), 2),
+                "perpBadSellUsd": round(perp_snapshot.get("bad_sell_usd", 0.0), 2),
                 "perpMaturityThreshold": hl_engine.cfg.min_classified_wallets_for_maturity,
                 # Analogicznie dla Hyperliquid - patrz komentarz przy
                 # "baseWindowTime" wyzej (ten sam wzorzec `.get(...)`).
@@ -1084,6 +1113,18 @@ def main() -> int:
                 "goodSellers": s.good_sellers,
                 "badBuyers": s.bad_buyers,
                 "badSellers": s.bad_sellers,
+                # Faza "dzienny bilans GOOD/BAD" (2026-09-17, zgloszenie
+                # uzytkownika: "czy moglibysmy zsumowac buy/sell dla good i
+                # bad portfeli na dzien? [...] wolumen w USD obok liczby
+                # transakcji tez chce"). `s` jest ZAWSZE swiezo policzone w
+                # tym uruchomieniu (nie wczytane ze starego stanu na dysku),
+                # a `WindowScore.good_buy_usd`/itd. maja domyslne 0.0 - wiec
+                # bezposredni dostep bez `.get()` jest tu bezpieczny (w
+                # przeciwienstwie do base/perp Usd wyzej).
+                "goodBuyUsd": round(s.good_buy_usd, 2),
+                "goodSellUsd": round(s.good_sell_usd, 2),
+                "badBuyUsd": round(s.bad_buy_usd, 2),
+                "badSellUsd": round(s.bad_sell_usd, 2),
                 "pool": s.pool_size,
                 "active": s.active_wallets,
                 "tracked": s.total_wallets_tracked,
@@ -1555,6 +1596,13 @@ def main() -> int:
                                 "good_sell_weight": base_latest.good_sell_weight,
                                 "bad_buy_weight": base_latest.bad_buy_weight,
                                 "bad_sell_weight": base_latest.bad_sell_weight,
+                                # Faza "dzienny bilans GOOD/BAD" (2026-09-17) -
+                                # ten sam ~1h lag jak reszta base_snapshot (patrz
+                                # komentarz przy jego budowie na poczatku main()).
+                                "good_buy_usd": base_latest.good_buy_usd,
+                                "good_sell_usd": base_latest.good_sell_usd,
+                                "bad_buy_usd": base_latest.bad_buy_usd,
+                                "bad_sell_usd": base_latest.bad_sell_usd,
                             }
                             new_base_state = base_engine.export_state()
                             new_base_state["last_scored_window_end"] = base_latest.window_end_block
