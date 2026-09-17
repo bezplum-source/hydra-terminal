@@ -490,6 +490,21 @@
             T. Every classification pass in this codebase respects that boundary.
           </p>
         </div>
+        <p>
+          A wallet also needs a minimum number of qualifying trades (see the <a
+          href="#reliability">dust filter</a>) within the reputation window before it's
+          classified at all — too little history and it's simply left out, not forced
+          into a cohort. That minimum is <strong>3 trades for both DEX sources</strong>
+          (Uniswap mainnet and Base — lowered from 5 on 2026-09-17, once a check against
+          the live 7-day trade buffers showed it excluding a large share of otherwise
+          real, above-dust wallets: 86% more mainnet wallets and 41% more Base wallets
+          become eligible at 3 than at 5) and stays at <strong>5 for Hyperliquid</strong>
+          — the two sources use separate config classes
+          (<code>ScoringConfig</code>/<code>HyperliquidScoringConfig</code>) specifically
+          so a threshold like this can differ without touching the other, reflecting that
+          on-chain trading (gas cost per trade) and perp trading (cheap, frequent) build up
+          a track record at very different rates.
+        </p>
       </section>
 
       <section id="composite">
