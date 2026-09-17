@@ -326,7 +326,7 @@
         <table>
           <tr><th>Source</th><th>Phase</th><th>What it feeds</th></tr>
           <tr>
-            <td><strong>Ethereum mainnet</strong><br>Uniswap V3 USDC/WETH 0.05%</td>
+            <td><strong>Ethereum mainnet</strong><br>Uniswap V3 (4 pools) + PancakeSwap V3 (3 pools)</td>
             <td><span class="pill long">live</span></td>
             <td>Wallet classification, <code>composite_spot</code>, the primary signal, and market regime</td>
           </tr>
@@ -406,10 +406,14 @@
           "who swapped how much, which direction, when."
         </p>
         <p>
-          Hydra specifically tracks the <strong>Uniswap V3 USDC/WETH 0.05% fee pool</strong> —
+          Hydra originally tracked a single <strong>Uniswap V3 USDC/WETH 0.05% fee pool</strong> —
           one of the deepest, most actively traded ETH/USD venues on Ethereum, chosen and
           verified directly against the on-chain contract rather than assumed from a
-          third-party list.
+          third-party list. It now reads from seven pools on Ethereum mainnet: four on
+          Uniswap V3 (two USDC/WETH fee tiers, two WETH/USDT fee tiers) and, as of
+          2026-09-17, three on <strong>PancakeSwap V3</strong> — an architecturally identical
+          fork of Uniswap V3 (same <code>Swap</code> event, same on-chain mechanics), added to
+          widen the pool of tracked wallets without touching the decoding pipeline at all.
         </p>
       </section>
 
@@ -767,13 +771,19 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
       <section id="mainnet">
         <h2>Data source: Ethereum mainnet</h2>
         <p>
-          The original and still primary source: <code>Swap</code> events from the Uniswap
-          V3 USDC/WETH 0.05% pool, read via JSON-RPC (<code>eth_getLogs</code> plus
-          transaction lookups to resolve the real sender). Because the RPC provider used
-          (Alchemy, free tier) hard-limits <code>eth_getLogs</code> to a 10-block range per
-          call, the collector issues many small ranges as a single batched JSON-RPC
-          request rather than hundreds of individual round trips, with automatic retry
-          on any call that fails or gets rate-limited.
+          The original and still primary source: <code>Swap</code> events from seven pools
+          on Ethereum mainnet, read via JSON-RPC (<code>eth_getLogs</code> plus transaction
+          lookups to resolve the real sender). Four are Uniswap V3 (USDC/WETH at 0.05% and
+          0.3%, WETH/USDT at 0.05% and 0.3%); three, added 2026-09-17, are PancakeSwap V3
+          (USDC/WETH 0.01%, WETH/USDT 0.01% and 0.05%) — PancakeSwap V3 is a verbatim fork
+          of Uniswap V3's contracts, so the same event signature, decoder, and batching
+          logic cover both without any code branching per DEX. All addresses are batched
+          into a single <code>eth_getLogs</code> filter, so adding pools costs nothing extra
+          in RPC calls, only in response size. Because the RPC provider used (Alchemy, free
+          tier) hard-limits <code>eth_getLogs</code> to a 10-block range per call, the
+          collector issues many small ranges as a single batched JSON-RPC request rather
+          than hundreds of individual round trips, with automatic retry on any call that
+          fails or gets rate-limited.
         </p>
       </section>
 
