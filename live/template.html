@@ -449,9 +449,39 @@
      kolory/kształty co realne markery w SVG niżej (regime-band-*,
      marker-start-bull/bear, marker-special-bull/bear), żeby legenda była
      dosłownym, skalowanym podglądem tego, co faktycznie widać na wykresie. */
-  .chart-legend { display: flex; flex-wrap: wrap; gap: 7px 18px; margin: -6px 0 18px; }
-  .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: -6px 0 18px; }
+  /* Faza "legenda klikalna" (2026-09-17) - każda etykieta to teraz <button>,
+     klikalny przełącznik widoczności swojej kategorii na wykresie (patrz JS
+     przy buildMainChart). Domyślnie wszystkie "włączone" (aria-pressed=true) -
+     zachowanie identyczne jak przed tą fazą, dopóki użytkownik czegoś nie
+     odklika. */
+  .chart-legend-item {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--text-secondary); white-space: nowrap;
+    background: none; border: 1px solid transparent; border-radius: 999px;
+    padding: 3px 9px; margin: 0; font-family: inherit; cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease, opacity .12s ease;
+  }
+  .chart-legend-item:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--border); }
+  .chart-legend-item:focus-visible { outline: 2px solid var(--regime-bull-glow); outline-offset: 1px; }
+  .chart-legend-item.is-off { opacity: 0.4; }
+  .chart-legend-item.is-off:hover { opacity: 0.65; }
   .chart-legend-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+
+  /* Ukrywanie wg klasy na <svg id="mainChart"> (nigdy nie czyszczonej przez
+     buildMainChart() - patrz komentarz przy tej funkcji), więc stan
+     przełącznika przeżywa każdy re-render (zmiana zakresu, zmiana zakładki
+     Main/Long term). To czysto kosmetyczne chowanie elementów (display:none),
+     NIE filtrowanie danych - liczby w kartach/tabelach niżej się nie zmieniają. */
+  #mainChart.legend-hidden-marker-start-bull .marker-start-bull,
+  #mainChart.legend-hidden-marker-start-bear .marker-start-bear,
+  #mainChart.legend-hidden-regime-band-bull .regime-band-bull,
+  #mainChart.legend-hidden-regime-band-bear .regime-band-bear,
+  #mainChart.legend-hidden-regime-band-neutral .regime-band-neutral,
+  #mainChart.legend-hidden-marker-special-bull .marker-special-bull,
+  #mainChart.legend-hidden-marker-special-bear .marker-special-bear {
+    display: none;
+  }
 
   /* ---------- main chart ---------- */
   .chart-wrap { position: relative; width: 100%; }
@@ -1154,13 +1184,13 @@
       </div>
     </div>
     <div class="chart-legend">
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,3 13,12 3,12" fill="var(--regime-bull-glow)"></polygon></svg>początek trendu wzrostowego</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,13 3,4 13,4" fill="var(--regime-bear-glow)"></polygon></svg>początek trendu spadkowego</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bull)"></rect></svg>wstążka: regime byczy</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bear)"></rect></svg>wstążka: regime niedźwiedzi</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-neutral)"></rect></svg>wstążka: regime neutralny</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bull-glow)"></polygon></svg>możliwe dno</span>
-      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bear-glow)"></polygon></svg>możliwa wyprzedaż</span>
+      <button type="button" class="chart-legend-item" data-legend-target="marker-start-bull" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,3 13,12 3,12" fill="var(--regime-bull-glow)"></polygon></svg>początek trendu wzrostowego</button>
+      <button type="button" class="chart-legend-item" data-legend-target="marker-start-bear" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,13 3,4 13,4" fill="var(--regime-bear-glow)"></polygon></svg>początek trendu spadkowego</button>
+      <button type="button" class="chart-legend-item" data-legend-target="regime-band-bull" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bull)"></rect></svg>wstążka: regime byczy</button>
+      <button type="button" class="chart-legend-item" data-legend-target="regime-band-bear" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bear)"></rect></svg>wstążka: regime niedźwiedzi</button>
+      <button type="button" class="chart-legend-item" data-legend-target="regime-band-neutral" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-neutral)"></rect></svg>wstążka: regime neutralny</button>
+      <button type="button" class="chart-legend-item" data-legend-target="marker-special-bull" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bull-glow)"></polygon></svg>możliwe dno</button>
+      <button type="button" class="chart-legend-item" data-legend-target="marker-special-bear" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bear-glow)"></polygon></svg>możliwa wyprzedaż</button>
     </div>
     <div class="chart-wrap" id="mainChartWrap">
       <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
@@ -2268,6 +2298,28 @@ function setTrack(track) {
 }
 document.querySelectorAll('#trackSwitch .track-btn').forEach((btn) => {
   btn.addEventListener('click', () => setTrack(btn.dataset.track));
+});
+
+// Faza "legenda klikalna" (2026-09-17, na prośbę użytkownika: przy zakresie
+// "WSZYSTKO" na wykresie jest za dużo naraz - triangle/wstążki/diamenty
+// wszystkich typów jednocześnie - więc każda etykieta legendy jest teraz
+// klikalnym przełącznikiem: kliknięcie chowa na wykresie WSZYSTKIE elementy
+// tej jednej kategorii (np. same "możliwe dno"), kolejne kliknięcie
+// przywraca. Czysto kosmetyczne (display:none przez klasę na <svg
+// id="mainChart"> - patrz reguły `#mainChart.legend-hidden-*` w <style>,
+// dopasowane do `data-legend-target` każdego przycisku), NIE filtruje
+// żadnych danych - liczby w kartach/tabelach niżej się nie zmieniają, tylko
+// to, co widać na samym wykresie. Nasłuch podpięty RAZ przy starcie strony
+// (przyciski legendy są statyczne w HTML, nie przebudowywane przy re-renderze
+// wykresu) - stan przetrwa każdą zmianę zakresu/zakładki, bo buildMainChart()
+// czyści tylko DZIECI <svg>, nigdy jego własnej listy klas (patrz komentarz
+// przy tej funkcji).
+document.querySelectorAll('.chart-legend-item[data-legend-target]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const isOff = btn.classList.toggle('is-off');
+    btn.setAttribute('aria-pressed', String(!isOff));
+    document.getElementById('mainChart').classList.toggle('legend-hidden-' + btn.dataset.legendTarget, isOff);
+  });
 });
 
 // =====================================================================
