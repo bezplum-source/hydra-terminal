@@ -786,6 +786,141 @@ def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
 
 
 # =====================================================================
+# Faza "dzienny bilans GOOD/BAD" (2026-09-17, zgloszenie uzytkownika: "czy
+# moglibysmy zsumowac buy/sell dla good i bad portfeli na dzien? [...]
+# wolumen w USD obok liczby transakcji tez chce")
+# =====================================================================
+
+
+def test_daily_balance_usd_fields_exposed_on_mainnet_candle(tmp_path, monkeypatch):
+    """`goodBuyUsd`/`goodSellUsd`/`badBuyUsd`/`badSellUsd` musza pojawic sie
+    na kazdej swiecy jako PRAWDZIWA suma dolarowa policzona z realnych
+    transakcji w tym uruchomieniu (ScoringEngine.run(), patrz
+    hydra_signals/scoring.py) - nie zmyslona/placeholderowa wartosc. Ten sam
+    fixture (`_seed_wallets`) co test_signal_threshold_is_exposed_on_every_
+    candle wyzej, o ktorym juz wiadomo (patrz
+    test_long_term_track_diverges_from_7d_when_given_shorter_lookback), ze
+    daje `goodBuyers > 0` na ostatniej swiecy - jesli sa net-kupujacy
+    portfele GOOD, ich realny wolumen w dolarach MUSI byc dodatni (transakcje
+    maja dodatnia cene i wielkosc)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    last = candles[-1]
+
+    for key in ("goodBuyUsd", "goodSellUsd", "badBuyUsd", "badSellUsd"):
+        assert key in last
+        assert isinstance(last[key], float)
+        assert last[key] >= 0.0
+
+    assert last["goodBuyers"] > 0
+    # Portfele GOOD faktycznie net-kupuja w tym oknie -> realny wolumen w
+    # dolarach musi byc dodatni, nie zero (to bylby znak, ze pole niesie
+    # placeholder, nie prawdziwa sume notional).
+    assert last["goodBuyUsd"] > 0.0
+
+
+def test_daily_balance_usd_fields_default_to_zero_for_pre_phase_snapshots(tmp_path, monkeypatch):
+    """Zgodnosc wsteczna: `last_base_snapshot`/`last_perp_snapshot` zapisane
+    JESZCZE PRZED ta faza (peny H3-owy ksztalt, ale bez nowych kluczy
+    `good_buy_usd`/itd.) nie moga wywalic uruchomienia KeyError-em, gdy w
+    TYM konkretnym uruchomieniu nie ma zadnych nowych transakcji Base/
+    Hyperliquid (wiec kod siega po snapshot z dysku zamiast liczyc swiezy) -
+    ten sam scenariusz co juz istniejacy
+    test_legacy_hyperliquid_scoring_state_schema_still_works, tylko o jeden
+    poziom "nowszy" schemat (post-H3, nie post-H2)."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.delenv("ALCHEMY_BASE_RPC_URL", raising=False)
+
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    legacy_base_state = {
+        "good_short": 0.9,
+        "good_long": 0.9,
+        "bad_short": 0.5,
+        "bad_long": 0.5,
+        "last_scored_window_end": 999_999,
+        "last_base_snapshot": {
+            "composite": 0.42,
+            "is_mature": True,
+            "tracked": 5,
+            "active": 0,
+            "classified": 25,
+            "good_buyers": 3,
+            "good_sellers": 1,
+            "bad_buyers": 0,
+            "bad_sellers": 2,
+            "window_time": "17.09.2026, 10:00",
+            "good_buy_weight": 12.0,
+            "good_sell_weight": 4.0,
+            "bad_buy_weight": 0.0,
+            "bad_sell_weight": 8.0,
+            # celowo BRAK good_buy_usd/good_sell_usd/bad_buy_usd/bad_sell_usd
+        },
+    }
+    (tmp_path / "data" / "base_scoring_state.json").write_text(
+        json.dumps(legacy_base_state), encoding="utf-8"
+    )
+    legacy_perp_state = {
+        "good_short": 0.9,
+        "good_long": 0.9,
+        "bad_short": 0.5,
+        "bad_long": 0.5,
+        "last_processed_ts_ms": 999_999,
+        "last_perp_snapshot": {
+            "composite": 0.24,
+            "is_mature": True,
+            "tracked": 30,
+            "active": 0,
+            "classified": 22,
+            "good_buyers": 2,
+            "good_sellers": 0,
+            "bad_buyers": 0,
+            "bad_sellers": 1,
+            "window_time": "17.09.2026, 10:00",
+            # celowo BRAK good_buy_usd/good_sell_usd/bad_buy_usd/bad_sell_usd
+        },
+    }
+    (tmp_path / "data" / "hyperliquid_scoring_state.json").write_text(
+        json.dumps(legacy_perp_state), encoding="utf-8"
+    )
+    st.save_hyperliquid_trades_buffer([])
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(
+        ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport)
+    )
+
+    assert ri.main() == 0  # nie KeyError - graceful degradation
+    candles = st.load_candles_history()
+    assert len(candles) > 0
+    last = candles[-1]
+    assert last["baseGoodBuyUsd"] == 0.0
+    assert last["baseGoodSellUsd"] == 0.0
+    assert last["baseBadBuyUsd"] == 0.0
+    assert last["baseBadSellUsd"] == 0.0
+    assert last["perpGoodBuyUsd"] == 0.0
+    assert last["perpGoodSellUsd"] == 0.0
+    assert last["perpBadBuyUsd"] == 0.0
+    assert last["perpBadSellUsd"] == 0.0
+    # Reszta starego snapshotu (bez zwiazku z ta faza) dalej dziala normalnie.
+    assert last["baseIsMature"] is True
+    assert last["perpIsMature"] is True
+
+
+# =====================================================================
 # Faza "Base L2, etap B0: zbieranie danych" (2026-09-02)
 # =====================================================================
 
