@@ -151,6 +151,30 @@ class WindowScore:
     bad_buy_weight: float = 0.0
     bad_sell_weight: float = 0.0
 
+    # --- Dzienny bilans GOOD/BAD (Faza "dzienny bilans", 2026-09-17,
+    # zgloszenie uzytkownika: "czy moglibysmy zsumowac buy/sell dla good i
+    # bad portfeli na dzien?") ---
+    # W odroznieniu od good_buyers/good_sellers wyzej (LICZBA PORTFELI o
+    # net-dodatnim/ujemnym kierunku w oknie - jeden portfel = jeden glos,
+    # bez wzgledu na to ile transakcji zlozyl ani jak duze), te cztery pola
+    # to SUMA notional_usd (Trade.notional_usd = price_usd * size_eth)
+    # WSZYSTKICH transakcji danego kierunku nalezacych do portfeli tej
+    # kohorty w tym oknie - realny wolumen w dolarach, nie liczba
+    # "glosujacych" portfeli. Liczone w TEJ SAMEJ petli co good_buy_weight
+    # wyzej (ten sam wallet_notional[wallet] co tam, tylko BEZ pierwiastka
+    # i BEZ twardego sufitu volume_weight_cap_notional_usd - ten limit
+    # istnieje wylacznie po to, zeby pojedynczy wieloryb nie zdominowal
+    # WAGI uzywanej w scoringu; tutaj chcemy prawdziwa, nieprzyciety sume
+    # dolarowa do wyswietlenia na dashboardzie, patrz karta "Dzienny bilans
+    # GOOD/BAD" w template.html). Domyslne 0.0 - wstecznie kompatybilne z
+    # juz zapisana historia swiec sprzed tej fazy (te swiece po prostu nie
+    # mialy tej informacji - graceful degradation, ten sam wzorzec co
+    # total_good_classified/good_buy_weight wyzej).
+    good_buy_usd: float = 0.0
+    good_sell_usd: float = 0.0
+    bad_buy_usd: float = 0.0
+    bad_sell_usd: float = 0.0
+
     def as_debug_line(self) -> str:
         """Renderuje wynik w formacie zbliżonym do wycieku z hydra.trading -
         głównie do wizualnej weryfikacji "czy to wygląda znajomo"."""
