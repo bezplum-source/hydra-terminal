@@ -1,15 +1,17 @@
-"""Konfiguracja pul Uniswap V3, z których czytamy transakcje.
+"""Konfiguracja pul DEX (Uniswap V3 i, od 2026-09-17, PancakeSwap V3 na
+Ethereum mainnet), z których czytamy transakcje.
 
-Każdy adres poniżej został **zweryfikowany on-chain** (nie tylko
+Każdy adres poniżej **powinien być zweryfikowany on-chain** (nie tylko
 "powszechnie cytowany") przez bezpośrednie wywołanie `eth_call` na
-`token0()`, `token1()` i `fee()` tego kontraktu.
+`token0()`, `token1()` i `fee()` tego kontraktu - to standing rule tego
+projektu, patrz odkrycie poniżej o mylących tagach Etherscana.
 
 Pierwsza pula (USDC/WETH 0.05%) zweryfikowana przy pierwszym ręcznym
 uruchomieniu tego pipeline'u przez przeglądarkę użytkownika (patrz projekt
 Claude, dokument `hydrav2-engine-v1.md`, sekcja "Co odkryliśmy po drodze",
 punkt 1).
 
-Trzy kolejne pule (Faza "wiele pul WETH + batchowanie adresów",
+Trzy kolejne pule Uniswap (Faza "wiele pul WETH + batchowanie adresów",
 2026-09-01) zweryfikowane tą samą metodą (`eth_call` przez Claude in Chrome
 na `ethereum.publicnode.com`) - WAŻNE ODKRYCIE PRZY OKAZJI: etykiety/tagi
 Etherscana ("USDC 2", "USDT 3", "USDT") NIE wskazują wiarygodnie fee tieru -
@@ -17,6 +19,27 @@ wstępne założenie (na podstawie samej nazwy) było błędne dla obu pul
 WETH/USDT, dopiero `fee()` z kontraktu dało poprawną wartość. Wniosek: przy
 dodawaniu kolejnych pul w przyszłości ZAWSZE weryfikować `fee()` on-chain,
 nigdy nie ufać samej etykiecie Etherscana.
+
+Trzy pule PancakeSwap V3 (Ethereum mainnet, dodane 2026-09-17 na wyraźną
+prośbę użytkownika "dodaj pancakeswap na ethereum", po researchu DEX-ów
+alternatywnych do Uniswap - patrz projekt Claude,
+`hydrav2-min-trades-3-and-dex-research.md`). Wstępnie skonfigurowane wg
+GeckoTermina (indekser czytający realny stan kontraktu), a NASTĘPNIE - w tej
+samej sesji, po podłączeniu Claude in Chrome przez użytkownika ("włączyłem
+chrome, sprawdź") - w pełni zweryfikowane bezpośrednim `eth_call` przez
+Etherscan "Read Contract" dla wszystkich trzech kontraktów: `token0()`,
+`token1()` i `fee()` odczytane wprost z każdego kontraktu, adresy tokenów
+potwierdzone jako kanoniczne USDC/WETH/USDT, `factory()` każdej puli
+zwraca kontrakt zgodny z interfejsem `IPancakeV3Factory` (widoczne wprost w
+opisie NatSpec na Etherscan), a każda pula ma pole `lmPool` (rozszerzenie
+specyficzne dla PancakeSwap V3, którego Uniswap V3 nie ma) - potwierdza to,
+że to faktycznie kontrakty PancakeSwap V3, a nie coś podszywającego się pod
+tę nazwę. Wyniki w pełni zgodne z wartościami skonfigurowanymi poniżej -
+zero rozbieżności. PancakeSwap V3 to architektonicznie dosłowny fork
+Uniswap V3 (identyczna sygnatura zdarzenia
+`Swap(address,address,int256,int256,uint160,uint128,int24)`, to samo
+`SWAP_TOPIC0` w `onchain_rpc.py`) - dekoder poniżej nie wymagał ŻADNEJ
+zmiany kodu, tylko nowych wpisów `PoolConfig`.
 """
 
 from __future__ import annotations
@@ -80,19 +103,74 @@ UNISWAP_V3_WETH_USDT_030 = PoolConfig(
     eth_is_token0=True,
 )
 
-# Wszystkie monitorowane pule. `live/run_incremental.py` przekazuje to jako
-# JEDNĄ listę do `fetch_trades_from_chain_batched` - dzięki batchowaniu
-# adresów w jednym filtrze `eth_getLogs` (patrz `onchain_rpc.py`), dodanie
-# kolejnej puli tutaj NIE zwiększa liczby wywołań RPC na uruchomienie,
-# tylko rozmiar pojedynczej odpowiedzi. To był świadomy wybór (patrz decyzja
-# użytkownika w projekcie Claude, `hydrav2-automation.md`) zamiast migracji
-# na subgraph, właśnie żeby uniknąć zwiększenia throttlingu Alchemy przy
-# dokładaniu pul.
+# ============================================================
+# PancakeSwap V3, Ethereum mainnet (dodane 2026-09-17)
+# ============================================================
+# Fork Uniswap V3 - identyczna sygnatura zdarzenia Swap, ten sam SWAP_TOPIC0,
+# ten sam decode_swap_log()/swap_to_trade() w onchain_rpc.py (zero zmian
+# kodu poza tymi wpisami PoolConfig). Trzy pule wybrane jako najlepsze wg
+# 24h wolumenu spośród par USDC/USDT na PancakeSwap V3 Ethereum (research w
+# projekcie Claude, `hydrav2-min-trades-3-and-dex-research.md`) - BSC
+# świadomie pominięty na razie (osobna, dużo większa decyzja architektoniczna:
+# nowy RPC, nowy czas bloku, populacja portfeli w innej przestrzeni adresowej).
+#
+# ZWERYFIKOWANE on-chain (2026-09-17, przez Etherscan "Read Contract" po
+# podłączeniu Claude in Chrome) - patrz docstring modułu wyżej po pełny opis:
+# token0()/token1()/fee() odczytane bezpośrednio z każdego z trzech
+# kontraktów, zgodne co do joty z wartościami poniżej.
+
+# PancakeSwap V3, USDC/WETH, fee 0.01% (100). Zweryfikowane eth_call (przez
+# Etherscan Read Contract): token0=USDC (0xA0b8...eB48), token1=WETH
+# (0xC02a...6Cc2), fee()=100.
+PANCAKESWAP_V3_USDC_WETH_001 = PoolConfig(
+    address="0x1445f32d1A74872bA41F3D8cF4022e9996120b31",
+    token0_symbol="USDC",
+    token0_decimals=6,
+    token1_symbol="WETH",
+    token1_decimals=18,
+    eth_is_token0=False,
+)
+
+# PancakeSwap V3, WETH/USDT, fee 0.01% (100). Zweryfikowane eth_call: token0=WETH
+# (0xC02a...6Cc2), token1=USDT (0xdAC1...1ec7), fee()=100.
+PANCAKESWAP_V3_WETH_USDT_001 = PoolConfig(
+    address="0xACDB27b266142223e1E676841c1E809255fc6d07",
+    token0_symbol="WETH",
+    token0_decimals=18,
+    token1_symbol="USDT",
+    token1_decimals=6,
+    eth_is_token0=True,
+)
+
+# PancakeSwap V3, WETH/USDT, fee 0.05% (500). Zweryfikowane eth_call: token0=WETH
+# (0xC02a...6Cc2), token1=USDT (0xdAC1...1ec7), fee()=500.
+PANCAKESWAP_V3_WETH_USDT_005 = PoolConfig(
+    address="0x6ca298D2983aB03Aa1dA7679389D955A4eFee15c",
+    token0_symbol="WETH",
+    token0_decimals=18,
+    token1_symbol="USDT",
+    token1_decimals=6,
+    eth_is_token0=True,
+)
+
+# Wszystkie monitorowane pule (Uniswap V3 + PancakeSwap V3, Ethereum
+# mainnet). `live/run_incremental.py` przekazuje to jako JEDNĄ listę do
+# `fetch_trades_from_chain_batched` - dzięki batchowaniu adresów w jednym
+# filtrze `eth_getLogs` (patrz `onchain_rpc.py`), dodanie kolejnej puli
+# tutaj NIE zwiększa liczby wywołań RPC na uruchomienie, tylko rozmiar
+# pojedynczej odpowiedzi (wywołania `eth_getTransactionByHash` per unikalny
+# hash transakcji rosną z wolumenem - patrz uwaga o throttlingu Alchemy).
+# To był świadomy wybór (patrz decyzja użytkownika w projekcie Claude,
+# `hydrav2-automation.md`) zamiast migracji na subgraph, właśnie żeby
+# uniknąć zwiększenia throttlingu Alchemy przy dokładaniu pul.
 POOLS: tuple[PoolConfig, ...] = (
     UNISWAP_V3_USDC_WETH_005,
     UNISWAP_V3_USDC_WETH_030,
     UNISWAP_V3_WETH_USDT_005,
     UNISWAP_V3_WETH_USDT_030,
+    PANCAKESWAP_V3_USDC_WETH_001,
+    PANCAKESWAP_V3_WETH_USDT_001,
+    PANCAKESWAP_V3_WETH_USDT_005,
 )
 
 # ============================================================
