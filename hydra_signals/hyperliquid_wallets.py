@@ -257,6 +257,17 @@ class HyperliquidWindowScore:
     active_wallets: int = 0
     total_wallets_tracked: int = 0
 
+    # --- Dzienny bilans GOOD/BAD (Faza "dzienny bilans", 2026-09-17) ---
+    # Dokladny odpowiednik WindowScore.good_buy_usd/itd. z models.py (patrz
+    # tam po pelne uzasadnienie) - suma notional_usd (nie liczba portfeli)
+    # transakcji danego kierunku nalezacych do portfeli tej kohorty w tym
+    # oknie. Domyslne 0.0 - wstecznie kompatybilne ze starszym kodem/testami
+    # sprzed tej fazy.
+    good_buy_usd: float = 0.0
+    good_sell_usd: float = 0.0
+    bad_buy_usd: float = 0.0
+    bad_sell_usd: float = 0.0
+
 
 class HyperliquidScoringEngine:
     """Stateful silnik EMA dla Hyperliquid — architektonicznie odpowiednik
@@ -385,20 +396,35 @@ class HyperliquidScoringEngine:
         for t in window_wallet_trades:
             net_direction[t.wallet] += t.size_eth if t.side is Side.BUY else -t.size_eth
 
+        # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - notional per portfel
+        # w tym oknie, ten sam wzorzec co `wallet_notional` w
+        # ScoringEngine.run() (hydra_signals/scoring.py) - uzywany TU
+        # wylacznie do zbudowania good_buy_usd/itd. ponizej (Hyperliquid nie
+        # ma odpowiednika wazenia wolumenem SPOT, wiec bez sqrt/cap).
+        wallet_notional: dict[str, float] = defaultdict(float)
+        for t in window_wallet_trades:
+            wallet_notional[t.wallet] += t.notional_usd
+
         good_buyers = good_sellers = bad_buyers = bad_sellers = 0
+        good_buy_usd = good_sell_usd = 0.0
+        bad_buy_usd = bad_sell_usd = 0.0
         for wallet, net in net_direction.items():
             if net == 0:
                 continue
             if wallet in good_wallets:
                 if net > 0:
                     good_buyers += 1
+                    good_buy_usd += wallet_notional[wallet]
                 else:
                     good_sellers += 1
+                    good_sell_usd += wallet_notional[wallet]
             elif wallet in bad_wallets:
                 if net > 0:
                     bad_buyers += 1
+                    bad_buy_usd += wallet_notional[wallet]
                 else:
                     bad_sellers += 1
+                    bad_sell_usd += wallet_notional[wallet]
 
         good_total = good_buyers + good_sellers
         bad_total = bad_buyers + bad_sellers
@@ -441,4 +467,8 @@ class HyperliquidScoringEngine:
             is_mature=n_classified >= cfg.min_classified_wallets_for_maturity,
             active_wallets=len(net_direction),
             total_wallets_tracked=len(self.total_tracked),
+            good_buy_usd=good_buy_usd,
+            good_sell_usd=good_sell_usd,
+            bad_buy_usd=bad_buy_usd,
+            bad_sell_usd=bad_sell_usd,
         )
