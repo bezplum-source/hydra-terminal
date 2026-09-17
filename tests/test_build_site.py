@@ -285,3 +285,124 @@ def test_build_site_streaks_lt_only_covers_candles_with_signal_lt(tmp_path, monk
     # Tor Main pozostaje niezmieniony (3 świece, jak przed ta faza) - Faza 2
     # dokłada streaksLt OBOK istniejącego "streaks", nie zamiast niego.
     assert len(data["streaks"]) == 2
+
+
+# =====================================================================
+# Faza "dzienny bilans GOOD/BAD" (2026-09-17) - `dailyBalanceCandles`,
+# osobna, WŁASNA lista świec dla karty "Dzienny bilans GOOD/BAD" w
+# live/template.html (patrz obszerny komentarz przy DAILY_BALANCE_FIELDS w
+# build_site.py). Dwie własności krytyczne dla zgłoszenia użytkownika ("to
+# muszą być prawdziwe dane, nie zmyślaj" / "zróbmy od tego momentu od
+# którego mamy dane"): (1) czyta PEŁNĄ `candles_history`, NIE `display_candles`
+# obcięte do MAX_DISPLAY_CANDLES - inaczej karta widziałaby mniej realnej
+# historii niż faktycznie istnieje; (2) świece bez danego pola (starsze niż
+# dana faza backendu) po prostu GO NIE MAJĄ w wyjściu - zero nigdy nie jest
+# tu wpisywane przez backend, to front-end (JS, `c.pole || 0`) decyduje, że
+# brak = 0.
+# =====================================================================
+
+
+def _sample_candle_with_ts(ts: int, **overrides) -> dict:
+    base = {
+        "ts": ts,
+        "goodBuyers": 3,
+        "goodSellers": 1,
+        "badBuyers": 2,
+        "badSellers": 4,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_build_daily_balance_candles_keeps_only_relevant_fields():
+    candles = [
+        _sample_candle_with_ts(
+            1_000,
+            baseGoodBuyers=1,
+            goodBuyUsd=123.45,
+            # Pole spoza DAILY_BALANCE_FIELDS (np. "price") - nie powinno
+            # trafić do wyjścia, żeby nie rozdymać payloadu strony.
+            price=2000.0,
+            block=42,
+        ),
+    ]
+    out = bs._build_daily_balance_candles(candles)
+    assert len(out) == 1
+    assert out[0] == {
+        "ts": 1_000,
+        "goodBuyers": 3,
+        "goodSellers": 1,
+        "badBuyers": 2,
+        "badSellers": 4,
+        "baseGoodBuyers": 1,
+        "goodBuyUsd": 123.45,
+    }
+    assert "price" not in out[0]
+    assert "block" not in out[0]
+
+
+def test_build_daily_balance_candles_skips_candles_without_ts():
+    # Bardzo stare świece (sprzed pola "ts") nie mają w ogole tego klucza -
+    # muszą być pominięte, nie wywalać KeyError/None-em jako dzień.
+    candles = [
+        {"goodBuyers": 1, "goodSellers": 1, "badBuyers": 1, "badSellers": 1},
+        _sample_candle_with_ts(2_000),
+    ]
+    out = bs._build_daily_balance_candles(candles)
+    assert len(out) == 1
+    assert out[0]["ts"] == 2_000
+
+
+def test_build_daily_balance_candles_omits_fields_missing_on_older_candles():
+    # Świeca sprzed fazy Base/Hyperliquid/Usd - te klucze są NIEOBECNE, nie
+    # `0` - front-end sam robi `|| 0` (graceful degradation, ten sam wzorzec
+    # co "signalLt").
+    candles = [_sample_candle_with_ts(3_000)]
+    out = bs._build_daily_balance_candles(candles)
+    assert "baseGoodBuyers" not in out[0]
+    assert "goodBuyUsd" not in out[0]
+    assert "perpBadSellUsd" not in out[0]
+
+
+def test_build_daily_balance_candles_uses_full_history_not_capped_display_candles(tmp_path, monkeypatch):
+    # Właściwość krytyczna dla "zróbmy od tego momentu od którego mamy dane":
+    # `dailyBalanceCandles` MUSI objąć całą historię, nawet gdy
+    # MAX_DISPLAY_CANDLES obcina "candles" (i przez to price-chart/tabelę
+    # historii) do dużo krótszego okna.
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+    monkeypatch.setattr(bs, "MAX_DISPLAY_CANDLES", 1)
+    # "signal"/"price"/"block" - wymagane przez _build_streaks() na
+    # display_candles (osobna logika od dailyBalanceCandles, ale build_site()
+    # woła obie na tej samej wejściowej liście świec).
+    candles = [
+        _sample_candle_with_ts(t, signal="HOLD", price=2000.0, block=t, time="01.01.2026, 12:00")
+        for t in (1_000, 2_000, 3_000)
+    ]
+
+    bs.build_site(candles)
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    # "candles" (price-chart) obcięte do 1, ale dailyBalanceCandles widzi
+    # wszystkie 3 - to jest cały sens tej fazy.
+    assert len(data["candles"]) == 1
+    assert len(data["dailyBalanceCandles"]) == 3
+    assert [c["ts"] for c in data["dailyBalanceCandles"]] == [1_000, 2_000, 3_000]
+
+
+def test_build_site_empty_history_gives_empty_daily_balance_candles(tmp_path, monkeypatch):
+    site_dir = tmp_path / "site"
+    monkeypatch.setattr(bs, "SITE_DIR", site_dir)
+
+    bs.build_site([])
+
+    html = (site_dir / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    end = html.index(";", start)
+    data = json.loads(html[start:end])
+    assert data["dailyBalanceCandles"] == []
