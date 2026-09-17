@@ -438,6 +438,14 @@
   .card-note { font-size: 12px; color: var(--text-muted); }
   .card-subnote { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin: -6px 0 18px; max-width: 66ch; }
 
+  /* Legenda ikonek wykresu (zastępuje dawny długi opis prozą) - te same
+     kolory/kształty co realne markery w SVG niżej (regime-band-*,
+     marker-start-bull/bear, marker-special-bull/bear), żeby legenda była
+     dosłownym, skalowanym podglądem tego, co faktycznie widać na wykresie. */
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 7px 18px; margin: -6px 0 18px; }
+  .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .chart-legend-icon { width: 14px; height: 14px; flex: 0 0 auto; }
+
   /* ---------- main chart ---------- */
   .chart-wrap { position: relative; width: 100%; }
   svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -879,7 +887,6 @@
     </div>
     <div class="topbar-right">
       <a class="topbar-link" href="./docs.html">Docs</a>
-      <span class="chip chip--warn"><span class="chip-dot"></span>dane on-chain na żywo &middot; 7 pul WETH (Uniswap V3 + PancakeSwap V3)</span>
       <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
@@ -910,7 +917,7 @@
       <span class="hero-price" id="heroPrice">$0.00</span>
       <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
-      <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span> (stała do zamknięcia sygnału)</span>
+      <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span></span>
     </div>
     <div style="display:flex; flex-direction:column; gap:14px;">
       <div class="composite-grid">
@@ -1134,7 +1141,15 @@
         <button type="button" class="range-btn active" data-range="all">WSZYSTKO</button>
       </div>
     </div>
-    <div class="card-subnote">Pasmo w tle: sygnał LONG/SHORT. Wąska wstążka na dole: regime BULL/BEAR/NEUTRAL. Trójkąty: START/END regime. Diamenty: CAPITULATION/DISTRIBUTION. Najedź lub dotknij, by zobaczyć szczegóły danej świecy.</div>
+    <div class="chart-legend">
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,3 13,12 3,12" fill="var(--regime-bull-glow)"></polygon></svg>początek trendu wzrostowego</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,13 3,4 13,4" fill="var(--regime-bear-glow)"></polygon></svg>początek trendu spadkowego</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bull)"></rect></svg>wstążka: regime byczy</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-bear)"></rect></svg>wstążka: regime niedźwiedzi</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-neutral)"></rect></svg>wstążka: regime neutralny</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bull-glow)"></polygon></svg>możliwe dno</span>
+      <span class="chart-legend-item"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bear-glow)"></polygon></svg>możliwa wyprzedaż</span>
+    </div>
     <div class="chart-wrap" id="mainChartWrap">
       <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
         <defs>
@@ -1181,19 +1196,15 @@
   <section class="card reveal reveal-2">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
-      <span class="card-note">grupowane wg ciągłych okresów tego samego sygnału &middot; wynik = wygrana/przegrana sygnału, nie surowa zmiana kursu</span>
     </div>
-    <span class="card-note" id="aggResetNote" style="display:none; margin-top:-8px; margin-bottom:10px;"></span>
     <div class="stat-grid" style="margin-bottom:18px;">
       <div class="stat">
         <span class="stat-label">Łączny wynik</span>
         <span class="stat-value" id="aggTotalPct">-</span>
-        <span class="stat-hint">iloczyn (1 + wynik) po wszystkich sygnałach LONG/SHORT, narastająco</span>
       </div>
       <div class="stat">
         <span class="stat-label">Trafione / nietrafione</span>
         <span class="stat-value" id="aggWinLoss">-</span>
-        <span class="stat-hint">zamknięte sygnały LONG/SHORT (bez HOLD)</span>
       </div>
       <div class="stat">
         <span class="stat-label">Win rate</span>
@@ -2155,17 +2166,7 @@ function renderAggregateStats() {
   const elWinLoss = document.getElementById('aggWinLoss');
   const elWinRate = document.getElementById('aggWinRate');
   const elWinRateHint = document.getElementById('aggWinRateHint');
-  const elResetNote = document.getElementById('aggResetNote');
   if (!elTotal) return;
-
-  if (elResetNote) {
-    if (resetFromBlock !== null) {
-      elResetNote.textContent = 'liczone od bloku ' + resetFromBlock.toLocaleString('pl-PL') + ' (wcześniejsze sygnały pominięte w tym podsumowaniu, nadal widoczne w tabeli niżej)';
-      elResetNote.style.display = '';
-    } else {
-      elResetNote.style.display = 'none';
-    }
-  }
 
   if (!streaks.length) {
     elTotal.textContent = '-';
