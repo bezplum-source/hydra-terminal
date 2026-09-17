@@ -1047,7 +1047,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           never allowed to interrupt scoring — the mainnet path in particular has no
           surrounding <code>try</code>/<code>except</code> of its own (see
           <a href="#reliability">Reliability lessons</a>), so this function is written to
-          never raise. The bucket name itself isn't secret — it defaults to
+          never raise. (A gap in that guarantee — client construction itself ran before the
+          <code>try</code> block, so a bad-credentials error at that exact point could still
+          escape uncaught — was found and closed 2026-09-17.) The bucket name itself isn't secret — it defaults to
           <code>hydra-terminal-lake</code>, overridable with the (non-secret)
           <code>HYDRA_R2_BUCKET</code> environment variable.
         </p>
@@ -1146,6 +1148,38 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           of each other after an hourly cycle: once on schedule (possibly on stale data),
           then again right after Hyperliquid lands, self-correcting without waiting for
           the next hour.
+        </p>
+        <h4>...and that fix doubled how often two runs can genuinely collide (fixed 2026-09-17)</h4>
+        <p>
+          Running <code>update.yml</code> roughly twice per hour instead of once (previous
+          entry) raised a different problem: two separate runs starting from the same
+          committed state, each independently fetching new on-chain blocks and recomputing
+          its own new candle/EMA state, before either has pushed. Git's own push-rejection
+          retry (added back in the original "harden the workflow" pass) was designed for a
+          person hand-editing a file on GitHub mid-run — <code>git rebase</code> onto
+          whatever landed first, and abort loudly only on a genuine line-level conflict.
+          Two automated runs racing each other isn't that kind of conflict: both commits are
+          independently correct snapshots of the same rolling state files
+          (<code>candles_history.json</code>, <code>scoring_state*.json</code>,
+          <code>trade_buffer.csv</code>, <code>site/index.html</code>) computed from
+          overlapping block ranges — there's no line-level merge of two such snapshots that
+          means anything, so the rebase reliably hit a real content conflict and the job
+          aborted. That's most of what pushed the visible failure rate up right after the
+          <code>workflow_run</code> trigger above shipped.
+        </p>
+        <p>
+          The fix distinguishes <em>why</em> a push was rejected before deciding how to
+          react: if the remote tip is another commit matching
+          <code>"Automatyczna aktualizacja danych..."</code>, this run's own local commit is
+          simply stale — someone else already published fresher (or at least
+          equally-fresh) data from the same chain state — so it's discarded outright
+          (<code>git reset --hard origin/main</code>) and the job exits cleanly. Nothing is
+          lost: any block this run processed that the other run didn't will simply be
+          re-fetched and scored on the <em>next</em> run, the same way an aborted
+          <code>eth_blockNumber</code> retry leaves nothing half-written (see "Partial
+          failure is silent by design" above). Only when the remote tip is <em>not</em> an
+          automated data commit — a real manual edit — does the workflow still attempt the
+          rebase, and still abort loudly on a genuine conflict, exactly as before.
         </p>
       </section>
 
