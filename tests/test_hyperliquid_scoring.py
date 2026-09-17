@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from hydra_signals.data_sources.hyperliquid_ws import AggressorSide, HyperliquidTrade
 from hydra_signals.hyperliquid_wallets import (
     HyperliquidScoringConfig,
@@ -111,6 +113,51 @@ def test_bad_cohort_net_buying_gives_negative_composite_contrarian():
     assert result.bad_buyers == 12
     assert result.bad_sellers == 0
     assert result.composite_score < 0
+
+
+# =====================================================================
+# Faza "dzienny bilans GOOD/BAD" (2026-09-17) - good_buy_usd/good_sell_usd/
+# bad_buy_usd/bad_sell_usd na HyperliquidWindowScore, mirror
+# tests/test_scoring.py dla Uniswap.
+# =====================================================================
+
+
+def test_good_buy_usd_sums_real_notional_not_wallet_count():
+    # Ten sam scenariusz co
+    # test_good_cohort_net_buying_gives_positive_composite_and_maturity -
+    # 12 portfeli GOOD, kazdy kupuje 20 ETH @ 100 USD (notional 2000) w
+    # oknie testowym. good_buy_usd musi sumowac PRAWDZIWY notional
+    # (12 * 2000), nie liczbe portfeli (ktora zostaje osobno w
+    # good_buyers == 12, niezmieniona przez ta faze).
+    history, ts = _make_mixed_good_bad_history(n_each=12)
+    window_trades = [make_hl_trade(f"good{i}", f"cpw{i}", 100.0, 20.0, ts_ms=ts + i) for i in range(12)]
+
+    cfg = HyperliquidScoringConfig(good_pct=0.5, bad_pct=0.5)
+    engine = HyperliquidScoringEngine(cfg)
+    result = engine.run(window_trades, history_trades=history, window_end_ts_ms=ts + 100)
+
+    assert result is not None
+    assert result.good_buyers == 12
+    assert result.good_buy_usd == pytest.approx(12 * 2000.0)
+    assert result.good_sell_usd == 0.0
+    assert result.bad_buy_usd == 0.0 and result.bad_sell_usd == 0.0
+
+
+def test_bad_sell_usd_sums_real_notional_for_contrarian_cohort():
+    # Mirror powyzszego, ale dla kohorty BAD po stronie SELL - 12 portfeli
+    # "bad{i}" sprzedaje 20 ETH @ 100 USD (notional 2000) w oknie testowym.
+    history, ts = _make_mixed_good_bad_history(n_each=12)
+    window_trades = [make_hl_trade(f"cpw{i}", f"bad{i}", 100.0, 20.0, ts_ms=ts + i) for i in range(12)]
+
+    cfg = HyperliquidScoringConfig(good_pct=0.5, bad_pct=0.5)
+    engine = HyperliquidScoringEngine(cfg)
+    result = engine.run(window_trades, history_trades=history, window_end_ts_ms=ts + 100)
+
+    assert result is not None
+    assert result.bad_sellers == 12
+    assert result.bad_sell_usd == pytest.approx(12 * 2000.0)
+    assert result.bad_buy_usd == 0.0
+    assert result.good_buy_usd == 0.0 and result.good_sell_usd == 0.0
 
 
 def test_ema_persists_across_two_separate_engine_instances():
