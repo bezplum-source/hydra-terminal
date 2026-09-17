@@ -116,3 +116,20 @@ def test_upload_trades_catches_upload_error_and_returns_none(monkeypatch):
     result = lake.upload_trades("uniswap_mainnet", "2026-09-15", "run1", _sample_trades())
 
     assert result is None
+
+
+def test_upload_trades_catches_r2_client_construction_error_and_returns_none(monkeypatch):
+    # NAPRAWA (2026-09-17): `_r2_client()` sama (np. `import boto3`, albo
+    # `boto3.client(...)` odrzucajace zle poswiadczenia od razu) wczesniej
+    # byla wywolywana PRZED blokiem try/except tej funkcji - blad w tym
+    # miejscu wylecialby NIEZLAPANY i ubilby caly `run_incremental.py`, mimo
+    # ze ta funkcja jest wywolywana na krytycznej sciezce mainnetu (patrz
+    # test wyzej). Ten test odtwarza dokladnie ten scenariusz.
+    def raise_on_construct():
+        raise RuntimeError("symulowany blad budowy klienta R2 (np. zle poswiadczenia)")
+
+    monkeypatch.setattr(lake, "_r2_client", raise_on_construct)
+
+    result = lake.upload_trades("uniswap_mainnet", "2026-09-15", "run1", _sample_trades())
+
+    assert result is None
