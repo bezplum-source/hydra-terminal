@@ -76,9 +76,46 @@ def _build_streaks(candles: list[dict], signal_key: str = "signal") -> list[dict
     return streaks
 
 
+# Faza "dzienny bilans GOOD/BAD" (2026-09-17, zgloszenie uzytkownika: "a moze
+# zrobmy od tego momentu od ktorego mamy dane. WAZNE - to musza byc prawdziwe
+# dane, nie zmyslaj") - tylko te pola sa potrzebne do zbudowania karty
+# "Dzienny bilans GOOD/BAD" (patrz buildDailyBalanceSeries() w
+# live/template.html). Celowo WLASNA, osobna lista swiec ZAMIAST reuzycia
+# "candles" (ktore MAX_DISPLAY_CANDLES tnie do ostatnich 500, zeby nie
+# rozdymac wykresu ceny/tabeli historii) - uzytkownik poprosil o pelna,
+# realna historie "od tego momentu od ktorego mamy dane", a candles_history.json
+# NIGDY nie jest przycinane (patrz state.py) - wiec ta karta musi czytac PELNA
+# `candles_history`, nie `display_candles`. Trzymajac tylko ~24 liczbowe pola
+# per swieca (zamiast ~50+ pol pelnej swiecy) rozmiar strony rosnie dużo
+# wolniej niz gdyby po prostu wyslac cala historie z "candles".
+DAILY_BALANCE_FIELDS = (
+    "ts",
+    "goodBuyers", "goodSellers", "badBuyers", "badSellers",
+    "baseGoodBuyers", "baseGoodSellers", "baseBadBuyers", "baseBadSellers",
+    "perpGoodBuyers", "perpGoodSellers", "perpBadBuyers", "perpBadSellers",
+    "goodBuyUsd", "goodSellUsd", "badBuyUsd", "badSellUsd",
+    "baseGoodBuyUsd", "baseGoodSellUsd", "baseBadBuyUsd", "baseBadSellUsd",
+    "perpGoodBuyUsd", "perpGoodSellUsd", "perpBadBuyUsd", "perpBadSellUsd",
+)
+
+
+def _build_daily_balance_candles(candles_history: list[dict]) -> list[dict]:
+    # `{k: c[k] for k in DAILY_BALANCE_FIELDS if k in c}` — pola nieobecne w
+    # starszych świecach (np. sprzed fazy Base/Hyperliquid/Usd) są PO PROSTU
+    # POMIJANE, nie wypełniane zerem tutaj — front-end (JS, `c.pole || 0`)
+    # sam decyduje, że brak pola = 0, ten sam wzorzec graceful degradation co
+    # reszta strony.
+    return [
+        {k: c[k] for k in DAILY_BALANCE_FIELDS if k in c}
+        for c in candles_history
+        if "ts" in c
+    ]
+
+
 def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     streaks = _build_streaks(display_candles) if display_candles else []
+    daily_balance_candles = _build_daily_balance_candles(candles_history)
 
     # Faza "Long term (30d)" front-end (Faza 2, patrz też trackView()/
     # getCandles() w live/template.html) — Faza 1 (backend) została wdrożona
@@ -109,6 +146,7 @@ def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
         "candles": display_candles,
         "streaks": streaks,
         "streaksLt": streaks_lt,
+        "dailyBalanceCandles": daily_balance_candles,
         "meta": meta or {},
     }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
