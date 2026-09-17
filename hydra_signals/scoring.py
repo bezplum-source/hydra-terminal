@@ -719,6 +719,15 @@ class ScoringEngine:
             good_buyers = good_sellers = bad_buyers = bad_sellers = 0
             good_buy_weight = good_sell_weight = 0.0
             bad_buy_weight = bad_sell_weight = 0.0
+            # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - te same cztery
+            # liczniki co good_buy_weight/itd. wyzej, ale BEZ pierwiastka i
+            # BEZ twardego sufitu volume_weight_cap_notional_usd (ten limit
+            # jest wylacznie dla ochrony WAGI uzywanej w scoringu przed
+            # wielorybem - tutaj chcemy prawdziwa, nieprzycieta sume
+            # dolarowa do wyswietlenia, patrz WindowScore.good_buy_usd/itd.
+            # w models.py po pelne uzasadnienie).
+            good_buy_usd = good_sell_usd = 0.0
+            bad_buy_usd = bad_sell_usd = 0.0
             for wallet, net in net_direction.items():
                 if net == 0:
                     continue
@@ -731,16 +740,20 @@ class ScoringEngine:
                     if net > 0:
                         good_buyers += 1
                         good_buy_weight += weight
+                        good_buy_usd += wallet_notional[wallet]
                     else:
                         good_sellers += 1
                         good_sell_weight += weight
+                        good_sell_usd += wallet_notional[wallet]
                 elif wallet in bad_wallets:
                     if net > 0:
                         bad_buyers += 1
                         bad_buy_weight += weight
+                        bad_buy_usd += wallet_notional[wallet]
                     else:
                         bad_sellers += 1
                         bad_sell_weight += weight
+                        bad_sell_usd += wallet_notional[wallet]
 
             good_total = good_buyers + good_sellers
             bad_total = bad_buyers + bad_sellers
@@ -911,6 +924,10 @@ class ScoringEngine:
                     good_sell_weight=good_sell_weight,
                     bad_buy_weight=bad_buy_weight,
                     bad_sell_weight=bad_sell_weight,
+                    good_buy_usd=good_buy_usd,
+                    good_sell_usd=good_sell_usd,
+                    bad_buy_usd=bad_buy_usd,
+                    bad_sell_usd=bad_sell_usd,
                 )
             )
 
