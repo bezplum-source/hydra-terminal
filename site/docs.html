@@ -599,6 +599,45 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           page.
         </p>
         <p>
+          A third addendum, 2026-09-17 ("dzienny bilans GOOD/BAD" phase): the project
+          owner asked for a daily buy/sell summary chart, with one hard condition stated
+          up front — "to muszą być prawdziwe dane, nie zmyślaj" (this has to be real
+          data, don't make it up). Two genuinely real sources exist for this: the
+          per-window GOOD/BAD wallet counts (<code>goodBuyers</code>/<code>goodSellers</code>/
+          <code>badBuyers</code>/<code>badSellers</code> and their <code>base*</code>/
+          <code>perp*</code> counterparts) that every candle has always carried, and — new
+          this phase — four raw dollar sums per <code>WindowScore</code>:
+          <code>good_buy_usd</code>, <code>good_sell_usd</code>, <code>bad_buy_usd</code>,
+          <code>bad_sell_usd</code> (mirrored on <code>HyperliquidWindowScore</code>, and
+          inherited by Base for free since it reuses the same <code>ScoringEngine</code>
+          class as mainnet). These reuse the exact same per-window <code>wallet_notional[wallet]</code>
+          map already computed for the <code>sqrt(min(notional_usd, cap))</code> weighting
+          described above, but sum the <em>literal</em> notional — no square root, no cap —
+          because the point here is an honest dollar figure for display, not a
+          whale-dampened score for the signal. <code>run_incremental.py</code> copies them
+          onto every candle as <code>goodBuyUsd</code>/<code>goodSellUsd</code>/
+          <code>badBuyUsd</code>/<code>badSellUsd</code> (mainnet), plus
+          <code>base*Usd</code>/<code>perp*Usd</code> variants, all defaulting to
+          <code>0.0</code> for backward compatibility with state files written before this
+          phase. A genuine limitation follows directly from "don't make it up": these
+          dollar sums can only start accumulating from the first pipeline run after this
+          phase deploys — there is no way to reconstruct historical per-trade USD volume
+          for blocks already processed (mainnet/Base trade buffers only ever stored block
+          numbers, not per-trade timestamps, and resolving historical block→timestamp
+          mappings would need live RPC access this project doesn't have standing
+          infrastructure for outside the live collectors). So every candle from before
+          deployment simply has no such field (or, after <code>.get(key, 0.0)</code>
+          defaulting on the Base/Hyperliquid side, reads as exactly <code>$0</code>) — the
+          dashboard shows that plainly rather than estimating a number. The wallet-count
+          fields have no such gap: they've been written to <code>candles_history.json</code>
+          (never pruned — see <a href="#run-manifests">Per-run manifests</a> for what
+          <em>is</em> pruned) since long before this phase, so the daily chart's bar
+          history reaches back as far as real data exists, even though its USD line
+          only reaches back to deployment day. See <a href="#frontend">Reading the
+          terminal</a> for how the card built from these fields reads and what it
+          deliberately does <em>not</em> claim.
+        </p>
+        <p>
           A second addendum, 2026-09-13: the hero's divergence banner ("Uwaga: sam spot
           ... wskazywałby ...") used to compare the final signal against
           <code>signalSpotOnly</code> — a naive, non-hysteresis signal computed from
@@ -1205,6 +1244,44 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             (unconfigured, immature, or a candle predating this phase), and the label is
             then omitted entirely rather than showing a confusing placeholder — the same
             graceful-degradation convention used throughout this card.</li>
+          <li><strong>Dzienny bilans GOOD/BAD (daily GOOD/BAD balance)</strong> — added
+            2026-09-17, sitting between the Wallets card and the price chart. The project
+            owner asked to see GOOD and BAD buy/sell activity summed per calendar day
+            rather than per ~1-hour window, with a range switch (1D/7D/30D/90D/WSZYSTKO)
+            plus an exact-date picker, and — after seeing a first mockup with placeholder
+            numbers — one explicit condition before any of it shipped for real: the data
+            has to be genuinely real, never invented. Two GOOD/BAD columns, each showing a
+            day-bucketed bar chart (buy bars up, sell bars down from a shared zero line,
+            independent vertical scale per column so BAD's usually-much-larger sell volume
+            doesn't visually flatten GOOD's bars to nothing) plus Kupuje/Sprzedaje/Netto
+            stat tiles above it, wallet-count total first and a smaller real-dollar figure
+            underneath. The <code>(i)</code> tooltip is deliberately specific about what
+            the wallet-count number actually is: a sum, across every ~1-hour classification
+            window that calendar day (00:00–24:00 UTC) and across all three sources
+            together, of how many GOOD/BAD wallets had a net-buying or net-selling
+            direction that window — not a count of individual trades, and not a count of
+            distinct wallets for the day (a wallet active in several windows the same day
+            is counted once per window, deliberately, since that's what the underlying
+            candle fields have always recorded). An earlier design mockup's own tooltip
+            copy described this as "liczba transakcji" (a transaction count) — an
+            acceptable simplification for a placeholder-data preview, but not something the
+            real card could say once it was wired to real fields, so the copy was corrected
+            before shipping. The USD figure underneath each count is a real dollar sum
+            (see the addendum on <code>good_buy_usd</code> and friends in
+            <a href="#composite">Composite score</a>), but — because that field only starts
+            accumulating the first run after this phase deployed — it reads as exactly
+            <code>$0</code> for every day before deployment, never an estimate. The card
+            deliberately ignores the Main/Long term tab switch above it (see
+            <a href="#long-term">Long term (30d) classification track</a>): every field it
+            reads (<code>goodBuyers</code>, <code>good_buy_usd</code>, etc.) is inherently
+            tied to the main 7-day classification track already, so the card is the same
+            regardless of which tab is active elsewhere on the page. It also draws on a
+            wider slice of history than the price chart above it —
+            <code>build_site.py</code> gives it its own <code>dailyBalanceCandles</code>
+            array built from the full, never-pruned <code>candles_history.json</code>
+            rather than the <code>MAX_DISPLAY_CANDLES</code>-capped list the rest of the
+            page uses, carrying only the ~24 numeric fields the card actually needs per
+            candle so the page doesn't balloon in size as history grows.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Unchanged from the
             previous layout.</li>
