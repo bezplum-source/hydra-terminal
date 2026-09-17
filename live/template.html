@@ -26,16 +26,23 @@
     --bad-glow: #FF3B5C;
     --bad-soft: rgba(184, 37, 63, 0.16);
 
-    /* Regime (BULL/BEAR/NEUTRAL) - paleta CELOWO odrębna od LONG/SHORT (--good/--bad),
-       żeby dwie różne osie (sygnał vs regime) nigdy się wizualnie nie zlewały, nawet
-       gdy akurat wskazują ten sam kierunek. BULL reużywa --accent (już używany do ceny
-       i marki, semantycznie neutralny), BEAR dostaje nowy fiolet. */
-    --regime-bull: var(--accent);
-    --regime-bull-glow: var(--accent-glow);
-    --regime-bull-soft: var(--accent-soft);
-    --regime-bear: #7C5CFF;
-    --regime-bear-glow: #B7A3FF;
-    --regime-bear-soft: rgba(124, 92, 255, 0.16);
+    /* Regime (BULL/BEAR/NEUTRAL) - PIERWOTNIE paleta celowo odrębna od LONG/SHORT
+       (--good/--bad, zloto/fiolet), żeby dwie różne osie (sygnał vs regime) nigdy się
+       wizualnie nie zlewały, nawet gdy akurat wskazują ten sam kierunek. ZMIENIONE
+       2026-09-17 na wyraźną prośbę użytkownika ("BULL zielony, BEAR czerwony" -
+       złoto/fiolet przy niskiej opacity na ciemnym tle było w praktyce nieczytelne,
+       wstążka "zlewała się" w jednolity szary pasek): teraz BULL/BEAR reużywają wprost
+       --good/--bad (te same odcienie co pasmo sygnału LONG/SHORT) - świadomie ZAMIAST
+       odrębnej palety, bo "zielony = wzrost/byczo, czerwony = spadek/niedźwiedzio" to
+       bardziej intuicyjna, spójna konwencja niż sztuczne rozdzielanie kolorów; wstążka
+       i pasmo sygnału zostają wizualnie odróżnialne dzięki innej grubości/pozycji
+       (osobny rząd pod wykresem), nie dzięki innemu odcieniowi. */
+    --regime-bull: var(--good);
+    --regime-bull-glow: var(--good-glow);
+    --regime-bull-soft: var(--good-soft);
+    --regime-bear: var(--bad);
+    --regime-bear-glow: var(--bad-glow);
+    --regime-bear-soft: var(--bad-soft);
     --regime-neutral: #8A8894;
     --regime-neutral-soft: rgba(168, 166, 176, 0.12);
 
@@ -499,8 +506,13 @@
   }
 
   /* ---------- regime ribbon + event markers (pod wykresem ceny, ten sam <svg>) ---------- */
-  .regime-band-bull { fill: var(--regime-bull); opacity: 0.55; }
-  .regime-band-bear { fill: var(--regime-bear); opacity: 0.55; }
+  /* Opacity BULL/BEAR podniesiona 0.55 -> 0.8 (2026-09-17, ta sama zmiana co
+     recolor wyżej w :root) - przy starej złoto/fioletowej palecie i niskiej
+     opacity wstążka była w praktyce nieczytelna na ciemnym tle ("zlewała się"
+     w jednolity szary pasek). NEUTRAL świadomie zostaje niżej (0.32) - ma się
+     wizualnie wycofywać na tle wyraźnych BULL/BEAR, nie konkurować z nimi. */
+  .regime-band-bull { fill: var(--regime-bull); opacity: 0.8; }
+  .regime-band-bear { fill: var(--regime-bear); opacity: 0.8; }
   .regime-band-neutral { fill: var(--regime-neutral); opacity: 0.32; }
   .regime-band-none { fill: rgba(255, 255, 255, 0.035); }
 
@@ -1901,7 +1913,10 @@ function buildMainChart(candlesParam) {
   // (RIBBON_H) i rząd markerów eventów (MARK_H) POD wykresem ceny, bez zmiany proporcji
   // samego wykresu bardziej niż konieczne.
   const W = 1000, H = 350, PAD_L = 54, PAD_R = 10, PAD_T = 12, PAD_B = 24;
-  const RIBBON_H = 16, MARK_H = 16;
+  // RIBBON_H podniesione 16 -> 22 (2026-09-17, razem z recolor BULL/BEAR->zielony/
+  // czerwony w :root i podniesioną opacity .regime-band-*) - grubsza wstążka jest
+  // łatwiej dostrzegalna, zwłaszcza w widoku "WSZYSTKO" ze skompresowaną historią.
+  const RIBBON_H = 22, MARK_H = 16;
   const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B - RIBBON_H - MARK_H;
 
   const prices = candles.map(c => c.price);
