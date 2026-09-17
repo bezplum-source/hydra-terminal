@@ -32,7 +32,20 @@ class ScoringConfig:
     # mechanizm dziala. Poprzednia wartosc: 250*24 (~24h).
     classification_lookback_blocks: int = 250 * 24 * 7
 
-    min_trades_for_classification: int = 5
+    # Prog obnizony z 5 na 3 (2026-09-17, propozycja uzytkownika: "moze dla
+    # dexow lepiej rozwazyc wariant minimum 3 transakcje? Hyperliquid by
+    # zostal 5"). Zweryfikowane EMPIRYCZNIE na prawdziwych 7-dniowych
+    # buforach transakcji z zywego repo (data/trade_buffer.csv,
+    # data/base_trade_buffer.csv) PRZED zmiana, nie zgadywanie: przy progu 5
+    # kwalifikuje sie 729 portfeli na mainnecie / 504 na Base; przy progu 3
+    # - 1354 / 711 (+86% / +41%). Handel on-chain (koszt gazu za kazda
+    # transakcje) buduje historie duzo wolniej niz tani, czesty handel perp
+    # na Hyperliquid - stad ten prog jest CELOWO nizszy tylko dla DEX-ow.
+    # `HyperliquidScoringConfig.DEFAULT_MIN_TRADES` (osobna klasa configu,
+    # patrz hyperliquid_wallets.py) zostaje bez zmian na 5 - te dwa progi sa
+    # niezalezne dokladnie po to, zeby taka zmiana po jednej stronie nigdy
+    # nie dotykala drugiej.
+    min_trades_for_classification: int = 3
     good_pct: float = 0.15
     bad_pct: float = 0.15
 
