@@ -1,6 +1,6 @@
 import pytest
 
-from hydra_signals.models import Side, Trade, Signal
+from hydra_signals.models import Side, Trade, Signal, WindowScore
 from hydra_signals.scoring import (
     ScoringConfig,
     ScoringEngine,
@@ -351,6 +351,126 @@ def test_run_whale_cannot_dominate_weighted_ratio_thanks_to_sqrt_and_cap():
     # 0.5 (przewaga wciaz po stronie 5 sprzedajacych), zamiast >0.99.
     assert ratio_w < 0.5
     assert ratio_w == pytest.approx(0.309, abs=1e-3)
+
+    # Faza "dzienny bilans GOOD/BAD" (2026-09-17) - good_buy_usd/itd. to
+    # SUROWA suma notional, CELOWO bez sqrt/capa (w odroznieniu od
+    # good_buy_weight powyzej) - tu wieloryb MUSI dominowac, bo to
+    # prawdziwy wolumen dolarowy do wyswietlenia, nie waga glosu w
+    # scoringu.
+    assert s.good_buy_usd == pytest.approx(10_000_000.0)
+    assert s.good_sell_usd == pytest.approx(5 * 10_000.0)
+    assert s.bad_buy_usd == 0.0 and s.bad_sell_usd == 0.0
+
+
+# =====================================================================
+# Faza "dzienny bilans GOOD/BAD" (2026-09-17, zgloszenie uzytkownika: "czy
+# moglibysmy zsumowac buy/sell dla good i bad portfeli na dzien? [...]
+# wolumen w USD obok liczby transakcji tez chce") - good_buy_usd/
+# good_sell_usd/bad_buy_usd/bad_sell_usd na WindowScore.
+# =====================================================================
+
+
+def test_run_good_buy_usd_is_raw_notional_sum_not_wallet_count():
+    # Te same dwa portfele GOOD co
+    # test_run_computes_sqrt_of_notional_weight_when_below_cap - tu
+    # sprawdzamy, ze good_buy_usd to SUMA notional_usd obu transakcji
+    # ($10 000 + $2 500), a NIE liczba portfeli (ktora zostaje osobno w
+    # good_buyers == 2, niezmieniona przez ta faze).
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),
+        make_trade("g2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 20.0),
+    ]
+    window_trades = [
+        make_trade("g1", 150, Side.BUY, 100.0, 100.0),  # notional 10 000
+        make_trade("g2", 150, Side.BUY, 100.0, 25.0),  # notional 2 500
+    ]
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        good_pct=1.0,
+        bad_pct=0.0,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 100.0, history_trades=history)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.good_buyers == 2
+    assert s.good_buy_usd == pytest.approx(10_000.0 + 2_500.0)
+    assert s.good_sell_usd == 0.0
+    assert s.bad_buy_usd == 0.0 and s.bad_sell_usd == 0.0
+
+
+def test_run_bad_sell_usd_accumulates_across_multiple_trades_same_wallet():
+    # Ten sam 4-portfelowy scenariusz klasyfikacji co
+    # test_total_good_bad_classified_counts_full_population_not_just_active
+    # powyzej (g1/g2 -> GOOD, b1/b2 -> BAD z historii) - percentylowy ranking
+    # `classify_wallets` na POJEDYNCZYM portfelu zawsze ladowalby go w GOOD
+    # (rowne cut-offy, patrz hydra_signals/wallets.py), wiec potrzeba
+    # kontrastowej pary GOOD/BAD, nie samego "b1", zeby wymusic BAD.
+    # W oknie testowym aktywny jest TYLKO b1, z DWIEMA transakcjami SELL -
+    # bad_sell_usd musi sumowac notional obu (dokladnie to samo
+    # `wallet_notional[wallet]`, ktore juz zasila bad_sell_weight).
+    history = [
+        make_trade("g1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g1", 2, Side.SELL, 200.0, 20.0),  # zysk -> GOOD
+        make_trade("g2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("g2", 2, Side.SELL, 190.0, 20.0),  # zysk -> GOOD
+        make_trade("b1", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b1", 2, Side.SELL, 75.0, 20.0),  # strata -> BAD
+        make_trade("b2", 1, Side.BUY, 100.0, 20.0),
+        make_trade("b2", 2, Side.SELL, 70.0, 20.0),  # strata -> BAD
+    ]
+    window_trades = [
+        make_trade("b1", 150, Side.SELL, 100.0, 10.0),  # notional 1 000
+        make_trade("b1", 151, Side.SELL, 100.0, 15.0),  # notional 1 500
+    ]
+    cfg = ScoringConfig(
+        window_blocks=100,
+        classification_lookback_blocks=1000,
+        min_trades_for_classification=2,
+        good_pct=0.5,
+        bad_pct=0.5,
+    )
+    engine = ScoringEngine(cfg)
+    scores = engine.run(window_trades, lambda b: 100.0, history_trades=history)
+    assert len(scores) == 1
+    s = scores[0]
+    assert s.bad_sellers == 1
+    assert s.bad_sell_usd == pytest.approx(1_000.0 + 1_500.0)
+    assert s.bad_buy_usd == 0.0
+    assert s.good_buy_usd == 0.0 and s.good_sell_usd == 0.0
+
+
+def test_window_score_usd_fields_default_to_zero_for_backward_compatibility():
+    # Konstrukcja WindowScore bez podania *_usd (np. stary kod/test sprzed
+    # tej fazy) musi dalej dzialac - domyslne 0.0, ten sam wzorzec co
+    # good_buy_weight/total_good_classified.
+    s = WindowScore(
+        window_end_block=100,
+        price_usd=1.0,
+        total_wallets_tracked=0,
+        active_wallets=0,
+        pool_size=0,
+        good_buyers=0,
+        good_sellers=0,
+        bad_buyers=0,
+        bad_sellers=0,
+        good_buy_ratio_raw=0.5,
+        bad_buy_ratio_raw=0.5,
+        ind_good_short=0.5,
+        ind_good_long=0.5,
+        ind_bad_short=0.5,
+        ind_bad_long=0.5,
+        composite_score=0.0,
+        signal=Signal.HOLD,
+    )
+    assert s.good_buy_usd == 0.0
+    assert s.good_sell_usd == 0.0
+    assert s.bad_buy_usd == 0.0
+    assert s.bad_sell_usd == 0.0
 
 
 # =====================================================================
