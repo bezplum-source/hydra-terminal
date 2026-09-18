@@ -5,10 +5,11 @@ zadnego live polaczenia RPC.
 Dodane przy okazji Fazy "PancakeSwap V3 na Ethereum mainnet" (2026-09-17,
 na wyrazna prosbe uzytkownika "dodaj pancakeswap na ethereum") - pilnuja
 przede wszystkim tego, zeby:
-1. Wszystkie 7 pul (4 Uniswap V3 + 3 PancakeSwap V3) bylo faktycznie w
-   `POOLS` (czyli trafialo do jednego batchowanego `eth_getLogs`, patrz
-   `onchain_rpc.py`/`run_incremental.py`) - latwo o pomylke "dodalem
-   PoolConfig, ale zapomnialem dopisac do krotki".
+1. Wszystkie 9 pul (6 Uniswap V3 + 3 PancakeSwap V3 - liczba 6 od
+   2026-09-18, patrz Faza "dwie nowe pule 0.01% fee" w docstringu modulu)
+   bylo faktycznie w `POOLS` (czyli trafialo do jednego batchowanego
+   `eth_getLogs`, patrz `onchain_rpc.py`/`run_incremental.py`) - latwo o
+   pomylke "dodalem PoolConfig, ale zapomnialem dopisac do krotki".
 2. Kazdy adres byl syntaktycznie poprawnym adresem Ethereum (0x + 40 hex) -
    nie chroni to przed zlym `token0()`/`fee()` (do tego wciaz trzeba
    `eth_call`, patrz docstring modulu), ale lapie oczywisty literowka.
@@ -25,8 +26,10 @@ from hydra_signals.data_sources.pools import (
     PANCAKESWAP_V3_WETH_USDT_001,
     PANCAKESWAP_V3_WETH_USDT_005,
     POOLS,
+    UNISWAP_V3_USDC_WETH_001,
     UNISWAP_V3_USDC_WETH_005,
     UNISWAP_V3_USDC_WETH_030,
+    UNISWAP_V3_WETH_USDT_001,
     UNISWAP_V3_WETH_USDT_005,
     UNISWAP_V3_WETH_USDT_030,
 )
@@ -34,13 +37,15 @@ from hydra_signals.data_sources.pools import (
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
-def test_pools_contains_all_seven_mainnet_pools_uniswap_and_pancakeswap():
-    assert len(POOLS) == 7
+def test_pools_contains_all_nine_mainnet_pools_uniswap_and_pancakeswap():
+    assert len(POOLS) == 9
     assert set(POOLS) == {
         UNISWAP_V3_USDC_WETH_005,
         UNISWAP_V3_USDC_WETH_030,
         UNISWAP_V3_WETH_USDT_005,
         UNISWAP_V3_WETH_USDT_030,
+        UNISWAP_V3_USDC_WETH_001,
+        UNISWAP_V3_WETH_USDT_001,
         PANCAKESWAP_V3_USDC_WETH_001,
         PANCAKESWAP_V3_WETH_USDT_001,
         PANCAKESWAP_V3_WETH_USDT_005,
@@ -70,3 +75,21 @@ def test_pancakeswap_pools_have_expected_token_order_and_decimals():
         assert pool.token1_symbol == "USDT"
         assert pool.token1_decimals == 6
         assert pool.eth_is_token0 is True
+
+
+def test_new_001_fee_tier_uniswap_pools_have_expected_token_order_and_decimals():
+    # token0/token1/fee zweryfikowane on-chain (eth_call przez Etherscan
+    # "Read Contract", 2026-09-18, patrz docstring modulu) - dodane po tym,
+    # jak pierwsza proba przez zewnetrzne narzedzia webowe (bez eth_call)
+    # dala niespojne odczyty fee tieru dla tych samych adresow.
+    assert UNISWAP_V3_USDC_WETH_001.token0_symbol == "USDC"
+    assert UNISWAP_V3_USDC_WETH_001.token0_decimals == 6
+    assert UNISWAP_V3_USDC_WETH_001.token1_symbol == "WETH"
+    assert UNISWAP_V3_USDC_WETH_001.token1_decimals == 18
+    assert UNISWAP_V3_USDC_WETH_001.eth_is_token0 is False
+
+    assert UNISWAP_V3_WETH_USDT_001.token0_symbol == "WETH"
+    assert UNISWAP_V3_WETH_USDT_001.token0_decimals == 18
+    assert UNISWAP_V3_WETH_USDT_001.token1_symbol == "USDT"
+    assert UNISWAP_V3_WETH_USDT_001.token1_decimals == 6
+    assert UNISWAP_V3_WETH_USDT_001.eth_is_token0 is True
