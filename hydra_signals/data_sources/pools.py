@@ -20,6 +20,29 @@ WETH/USDT, dopiero `fee()` z kontraktu dało poprawną wartość. Wniosek: przy
 dodawaniu kolejnych pul w przyszłości ZAWSZE weryfikować `fee()` on-chain,
 nigdy nie ufać samej etykiecie Etherscana.
 
+Dwie kolejne pule Uniswap V3 (fee tier 0.01% dla obu par USDC/WETH i
+WETH/USDT, dodane 2026-09-18) - na wyraźną prośbę użytkownika "jakie jeszcze
+warto pule dorzucić?" po researchu żywych wolumenów (GeckoTerminal) obu
+DEX-ów. To akurat dwie NAJWIĘKSZE nieśledzone dotąd pule mainnet -
+USDC/WETH 0.01% ≈$51M/24h (byłaby 2-3 co do wielkości ze wszystkich),
+WETH/USDT 0.01% ≈$20.5M/24h (większa niż 3 z 4 wtedy śledzonych pul
+Uniswap). Zweryfikowane on-chain (2026-09-18, `eth_call` przez Etherscan
+"Read Contract" po podłączeniu przeglądarki użytkownika) - `token0()`/
+`token1()`/`fee()` odczytane wprost z każdego z dwóch kontraktów, adresy
+tokenów potwierdzone jako kanoniczne USDC/WETH/USDT, wartości w pełni
+zgodne z konfiguracją poniżej. WAŻNE: to był świadomy powód do weryfikacji
+- pierwsza próba (przez zewnętrzne narzędzia webowe, bez `eth_call`) dała
+WEWNĘTRZNIE NIESPÓJNE odczyty fee tieru dla tych samych adresów (raz 0.01%,
+raz 0.05%) - dokładnie ten scenariusz, przed którym ostrzega standing rule
+tego modułu. `eth_call` przez Etherscan rozstrzygnął jednoznacznie:
+fee()=100 dla obu. Rozważane, ale ODRZUCONE jako niewarte: Uniswap V3
+DAI/WETH 0.3% (tylko ~$423K/24h - mniej niż nasza najmniejsza obecna pula);
+para WETH/WBTC (nawet przy wysokim wolumenie) wymagałaby przebudowy
+`swap_to_trade()` w `onchain_rpc.py`, bo dekoder liczy `price_usd` zakładając,
+że druga noga swapu to JUŻ jest wartość w dolarach (stablecoin) - WBTC nie
+jest stablecoinem, potrzebny byłby osobny feed ceny BTC/USD (ten sam koszt
+inżynierski co odrzucone wcześniej Curve).
+
 Trzy pule PancakeSwap V3 (Ethereum mainnet, dodane 2026-09-17 na wyraźną
 prośbę użytkownika "dodaj pancakeswap na ethereum", po researchu DEX-ów
 alternatywnych do Uniswap - patrz projekt Claude,
@@ -103,6 +126,31 @@ UNISWAP_V3_WETH_USDT_030 = PoolConfig(
     eth_is_token0=True,
 )
 
+# Uniswap V3, USDC/WETH, fee 0.01% (100), dodane 2026-09-18 (patrz docstring
+# modulu). Zweryfikowane eth_call: token0=USDC (0xA0b8...eB48), token1=WETH
+# (0xC02a...6Cc2), fee()=100. Najwiekszy pojedynczy wolumen ze wszystkich
+# pul mainnet w momencie dodania (~$51M/24h).
+UNISWAP_V3_USDC_WETH_001 = PoolConfig(
+    address="0xE0554a476A092703abdB3Ef35c80e0D76d32939F",
+    token0_symbol="USDC",
+    token0_decimals=6,
+    token1_symbol="WETH",
+    token1_decimals=18,
+    eth_is_token0=False,
+)
+
+# Uniswap V3, WETH/USDT, fee 0.01% (100), dodane 2026-09-18 (patrz docstring
+# modulu). Zweryfikowane eth_call: token0=WETH (0xC02a...6Cc2), token1=USDT
+# (0xdAC1...1ec7), fee()=100. ~$20.5M/24h w momencie dodania.
+UNISWAP_V3_WETH_USDT_001 = PoolConfig(
+    address="0xc7bbec68d12a0d1830360f8ec58fa599ba1b0e9b",
+    token0_symbol="WETH",
+    token0_decimals=18,
+    token1_symbol="USDT",
+    token1_decimals=6,
+    eth_is_token0=True,
+)
+
 # ============================================================
 # PancakeSwap V3, Ethereum mainnet (dodane 2026-09-17)
 # ============================================================
@@ -168,6 +216,8 @@ POOLS: tuple[PoolConfig, ...] = (
     UNISWAP_V3_USDC_WETH_030,
     UNISWAP_V3_WETH_USDT_005,
     UNISWAP_V3_WETH_USDT_030,
+    UNISWAP_V3_USDC_WETH_001,
+    UNISWAP_V3_WETH_USDT_001,
     PANCAKESWAP_V3_USDC_WETH_001,
     PANCAKESWAP_V3_WETH_USDT_001,
     PANCAKESWAP_V3_WETH_USDT_005,
