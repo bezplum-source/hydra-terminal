@@ -256,6 +256,27 @@
   }
   .chip--ok .chip-dot { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
 
+  /* Faza "aktywne Actions" (2026-09-18, prosba uzytkownika: "Czy na gorze
+     strony obok statusu ZAKTUALIZOWANO X TEMU jestesmy w stanie dodac
+     aktywne Actions?") - trzeci, niezalezny stan chipa (ani "dobry"
+     --good, ani "stary/warn" --accent) - uzywa --regime-neutral, bo to
+     ani dobra, ani zla informacja, tylko "w trakcie". Pulsujacy dot (w
+     odroznieniu od statycznego swiecenia .chip--ok/.chip--warn)
+     sygnalizuje, ze to JEDYNY naprawde zywy (pollowany) element na tej
+     inaczej statycznej stronie - patrz komentarz przy pollActiveActions()
+     nizej. */
+  .chip--running {
+    color: var(--regime-neutral);
+    border-color: color-mix(in srgb, var(--regime-neutral) 45%, var(--border));
+    background: var(--regime-neutral-soft);
+  }
+  .chip--running .chip-dot { background: var(--regime-neutral); animation: pulseDot 1.6s ease-in-out infinite; }
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 7px 0 rgba(168, 166, 176, 0.55); }
+    50% { opacity: 0.4; box-shadow: 0 0 2px 0 rgba(168, 166, 176, 0.15); }
+  }
+  #activeActionsRow { display: inline-flex; gap: 8px; }
+
   /* ---------- hero ---------- */
   .hero {
     background: linear-gradient(165deg, var(--bg-elevated), var(--bg-elevated-2));
@@ -929,6 +950,7 @@
     </div>
     <div class="topbar-right">
       <a class="topbar-link" href="./docs.html">Docs</a>
+      <span id="activeActionsRow" style="display:none;"></span>
       <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
@@ -1882,6 +1904,74 @@ function renderFreshness() {
   chip.classList.add(elapsedMin > 90 ? 'chip--warn' : 'chip--ok');
 }
 
+// Faza "aktywne Actions" (2026-09-18, prosba uzytkownika: "Czy na gorze
+// strony obok statusu ZAKTUALIZOWANO X TEMU jestesmy w stanie dodac aktywne
+// Actions? Przykladowo teraz: Hyperliquid 40m pending [...] A jak sie pojawi
+// hydra to tez tak samo Hydra 1m"). To JEDYNY prawdziwie zywy (pollowany) JS
+// na tej inaczej w pelni statycznej stronie - reszta danych jest wypiekana
+// RAZ przez live/build_site.py i widziana dopiero po recznym przeladowaniu
+// karty. Odpytuje publiczne GitHub REST API WPROST z przegladarki (repo jest
+// publiczne, wiec odczyt nie wymaga tokenu).
+const GH_REPO = 'bezplum-source/hydra-terminal';
+// 90s: GitHub limituje nieautoryzowane zapytania do 60/h na IP - 90s daje
+// ~40/h, bezpieczny zapas na normalne przeladowania strony w tym samym czasie.
+const GH_ACTIONS_POLL_MS = 90000;
+
+function ghWorkflowLabel(path) {
+  if (!path) return null;
+  if (path.endsWith('/hyperliquid-update.yml')) return 'Hyperliquid';
+  if (path.endsWith('/update.yml')) return 'Hydra';
+  return null;
+}
+
+const GH_ACTIVE_STATUSES = ['in_progress', 'queued', 'waiting', 'requested', 'pending'];
+
+async function pollActiveActions() {
+  const row = document.getElementById('activeActionsRow');
+  if (!row) return;
+  try {
+    const resp = await fetch(
+      'https://api.github.com/repos/' + GH_REPO + '/actions/runs?per_page=10',
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!resp.ok) throw new Error('GitHub API status ' + resp.status);
+    const data = await resp.json();
+    const seen = new Set();
+    const active = [];
+    for (const run of data.workflow_runs || []) {
+      if (!GH_ACTIVE_STATUSES.includes(run.status)) continue;
+      const label = ghWorkflowLabel(run.path);
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      const startedMs = run.run_started_at ? new Date(run.run_started_at).getTime() : Date.now();
+      const elapsedMin = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+      active.push({ label, elapsedMin, queued: run.status !== 'in_progress' });
+    }
+    renderActiveActions(active);
+  } catch (e) {
+    // Blad sieci/rate-limit/cokolwiek - to czysto kosmetyczny dodatek, nigdy
+    // nie ma pokazywac uzytkownikowi bledu za cos, co nie jest krytyczna dana.
+    renderActiveActions([]);
+  }
+}
+
+function renderActiveActions(active) {
+  const row = document.getElementById('activeActionsRow');
+  if (!row) return;
+  if (!active.length) {
+    row.style.display = 'none';
+    row.innerHTML = '';
+    return;
+  }
+  row.style.display = 'inline-flex';
+  row.innerHTML = active
+    .map((a) => {
+      const word = a.queued ? 'w kolejce' : a.elapsedMin + 'm';
+      return '<span class="chip chip--running"><span class="chip-dot"></span>' + a.label + ' ' + word + '</span>';
+    })
+    .join('');
+}
+
 function niceDomain(values) {
   const min = Math.min(...values), max = Math.max(...values);
   const pad = (max - min) * 0.08 || 1;
@@ -2644,4 +2734,6 @@ buildHistory();
 renderAggregateStats();
 renderFooter();
 renderFreshness();
+pollActiveActions();
+setInterval(pollActiveActions, GH_ACTIONS_POLL_MS);
 </script>
