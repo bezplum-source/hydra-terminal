@@ -1376,6 +1376,20 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           freshness indicator, which reflects when the pipeline itself last ran
           successfully.
         </p>
+        <p>
+          Next to the freshness chip, a small pill can appear for each GitHub Actions
+          workflow that is currently running — e.g. <code>HYPERLIQUID 40M</code> while its
+          ~50-minute WebSocket listen is still in progress, or <code>HYDRA 1M</code> right
+          after it starts. This is the one genuinely live (polled) piece of the page —
+          everything else is baked in once by <code>live/build_site.py</code> and only
+          changes on the next page load. The pill fetches
+          <code>GET /repos/&lt;owner&gt;/&lt;repo&gt;/actions/runs</code> from the
+          browser directly (the repo is public, so this needs no token), every 90 seconds,
+          and shows nothing at all when no workflow is active or when the request fails —
+          including on GitHub's unauthenticated rate limit (60 requests/hour per IP, which
+          the 90-second interval stays comfortably under). It never surfaces an error to
+          the viewer, since it is a cosmetic addition, not load-bearing data.
+        </p>
       </section>
 
       <section id="design-system">
