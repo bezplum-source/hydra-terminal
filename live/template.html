@@ -1280,7 +1280,7 @@
     </div>
   </section>
   <footer class="foot reveal reveal-4">
-    <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 7 pul WETH na Ethereum mainnet (Uniswap V3: USDC/WETH 0.05%+0.3%, WETH/USDT 0.05%+0.3%; PancakeSwap V3: USDC/WETH 0.01%, WETH/USDT 0.01%+0.05%), pobranych na żywo przez RPC.</span>
+    <span id="footerStats">Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 9 pul WETH na Ethereum mainnet (Uniswap V3: USDC/WETH 0.01%+0.05%+0.3%, WETH/USDT 0.01%+0.05%+0.3%; PancakeSwap V3: USDC/WETH 0.01%, WETH/USDT 0.01%+0.05%), pobranych na żywo przez RPC.</span>
     <span>To narzędzie badawcze, nie porada inwestycyjna.</span>
   </footer>
 
@@ -2249,7 +2249,7 @@ function renderFooter() {
   if (!el || !candles.length) return;
   const latest = candles[candles.length - 1];
   const first = candles[0];
-  el.innerHTML = 'Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 7 pul WETH na Ethereum mainnet (Uniswap V3: USDC/WETH 0.05%+0.3%, WETH/USDT 0.05%+0.3%; PancakeSwap V3: USDC/WETH 0.01%, WETH/USDT 0.01%+0.05%), pobranych na żywo przez RPC &middot; ' +
+  el.innerHTML = 'Rekonstrukcja mechanizmu hydra.trading &middot; klasyfikacja i scoring uruchomione na realnych transakcjach Swap z 9 pul WETH na Ethereum mainnet (Uniswap V3: USDC/WETH 0.01%+0.05%+0.3%, WETH/USDT 0.01%+0.05%+0.3%; PancakeSwap V3: USDC/WETH 0.01%, WETH/USDT 0.01%+0.05%), pobranych na żywo przez RPC &middot; ' +
     latest.tracked.toLocaleString('en-US') + ' śledzonych portfeli &middot; historia widoczna na wykresie: ' +
     first.time + ' &ndash; ' + latest.time + ' &middot; strona aktualizuje się automatycznie co ok. godzinę.';
 }
