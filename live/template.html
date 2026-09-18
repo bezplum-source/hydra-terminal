@@ -966,7 +966,7 @@
 
         <div class="composite-tile">
           <div class="composite-head">
-            <span class="composite-name">Ogólnie<span class="info-tip" tabindex="0" data-tip="Łączy presję kupna/sprzedaży z Uniswap (spot) i Hyperliquid (perp) w jedną liczbę: dodatnia = przewaga kupujących, ujemna = przewaga sprzedających.">ⓘ</span></span>
+            <span class="composite-name">Ogólnie<span class="info-tip" tabindex="0" data-tip="Łączy presję kupna/sprzedaży z Uniswap+Pancake (spot) i Hyperliquid (perp) w jedną liczbę: dodatnia = przewaga kupujących, ujemna = przewaga sprzedających.">ⓘ</span></span>
             <span class="composite-word" id="compositeWordAll">-</span>
           </div>
           <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillAll"></div></div>
@@ -976,7 +976,7 @@
 
         <div class="composite-tile">
           <div class="composite-head">
-            <span class="composite-name">Spot (Uniswap+Base)<span class="info-tip" tabindex="0" id="compositeTipSpot" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.">ⓘ</span></span>
+            <span class="composite-name">Spot (Uniswap+Pancake+Base)<span class="info-tip" tabindex="0" id="compositeTipSpot" data-tip="Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap+Pancake na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.">ⓘ</span></span>
             <span class="composite-word" id="compositeWordSpot">-</span>
           </div>
           <div class="composite-meter-track"><div class="composite-meter-zero"></div><div class="composite-meter-fill" id="compositeFillSpot"></div></div>
@@ -1031,7 +1031,7 @@
         <table class="wallet-breakdown-table">
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
-            <tr><td>Uniswap<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
+            <tr><td>Uniswap+Pancake<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletGoodUniBuy">-</td><td class="sell" id="walletGoodUniSell">-</td></tr>
             <tr><td>Base<span class="wallet-row-time" data-wallet-time="base"></span></td><td class="buy" id="walletGoodBaseBuy">-</td><td class="sell" id="walletGoodBaseSell">-</td></tr>
             <tr><td>Hyperliquid<span class="wallet-row-time" data-wallet-time="hl"></span></td><td class="buy" id="walletGoodHlBuy">-</td><td class="sell" id="walletGoodHlSell">-</td></tr>
           </tbody>
@@ -1056,7 +1056,7 @@
         <table class="wallet-breakdown-table">
           <thead><tr><th></th><th class="buy-h">&#9650; Kupuje</th><th class="sell-h">&#9660; Sprzedaje</th></tr></thead>
           <tbody>
-            <tr><td>Uniswap<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
+            <tr><td>Uniswap+Pancake<span class="wallet-row-time" data-wallet-time="uni"></span></td><td class="buy" id="walletBadUniBuy">-</td><td class="sell" id="walletBadUniSell">-</td></tr>
             <tr><td>Base<span class="wallet-row-time" data-wallet-time="base"></span></td><td class="buy" id="walletBadBaseBuy">-</td><td class="sell" id="walletBadBaseSell">-</td></tr>
             <tr><td>Hyperliquid<span class="wallet-row-time" data-wallet-time="hl"></span></td><td class="buy" id="walletBadHlBuy">-</td><td class="sell" id="walletBadHlSell">-</td></tr>
           </tbody>
@@ -1093,7 +1093,7 @@
     <div class="card-head">
       <div class="db-title-group">
         <span class="card-title">Dzienny bilans GOOD / BAD</span>
-        <span class="info-tip" tabindex="0" data-tip="Suma - dzień po dniu (00:00–24:00 UTC) - portfeli GOOD/BAD o net-kupującym lub net-sprzedającym kierunku w każdym ok. 1-godzinnym oknie klasyfikacji, ze wszystkich trzech rynków razem (Uniswap + Base + Hyperliquid). To suma „głosów” okien, nie liczba unikalnych portfeli na dzień - portfel aktywny w kilku oknach tego samego dnia liczy się w każdym z nich osobno. Wolumen USD to prawdziwa suma dolarowa transakcji tych portfeli, ale ta metryka zbiera historię dopiero od dnia wdrożenia tej karty - starsze dni pokazują $0, nie szacunek.">ⓘ</span>
+        <span class="info-tip" tabindex="0" data-tip="Suma - dzień po dniu (00:00–24:00 UTC) - portfeli GOOD/BAD o net-kupującym lub net-sprzedającym kierunku w każdym ok. 1-godzinnym oknie klasyfikacji, ze wszystkich trzech rynków razem (Uniswap+Pancake + Base + Hyperliquid). To suma „głosów” okien, nie liczba unikalnych portfeli na dzień - portfel aktywny w kilku oknach tego samego dnia liczy się w każdym z nich osobno. Wolumen USD to prawdziwa suma dolarowa transakcji tych portfeli, ale ta metryka zbiera historię dopiero od dnia wdrożenia tej karty - starsze dni pokazują $0, nie szacunek.">ⓘ</span>
       </div>
       <div class="db-picker-row">
         <div class="range-switch" id="dbRangeSwitch" role="group" aria-label="Zakres czasu bilansu dziennego">
@@ -1414,7 +1414,7 @@ function animateNumber(el, target, opts) {
 // odczytałoby już zmutowany, w pełni obliczony tekst z PIERWSZEGO wywołania
 // zamiast neutralnego opisu z HTML, doklejając kolejne zdania bez końca.
 // Stała, wpisana raz, zamiast czytania mutowalnego atrybutu DOM.
-const SPOT_TIP_BASE = 'Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.';
+const SPOT_TIP_BASE = 'Presja kupna/sprzedaży wśród portfeli handlujących ETH bezpośrednio na DEX-ach - Uniswap+Pancake na mainnecie i (gdy dojrzały) Base L2, połączone w jedną wartość.';
 
 function renderHero() {
   // "allCandles"/"latestAny" - cena/czas/blok świecy NIE zależą od toru
@@ -1498,13 +1498,13 @@ function renderHero() {
   if (!latest) {
     spotTip.setAttribute('data-tip', SPOT_TIP_BASE + ' Zakładka Long term dopiero zbiera własną historię — jeszcze bez ani jednej świecy tego toru.');
   } else {
-    const spotBaseTip = SPOT_TIP_BASE + ' Pula scoringu Uniswap (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
+    const spotBaseTip = SPOT_TIP_BASE + ' Pula scoringu Uniswap+Pancake (portfele GOOD w oknie): ' + latest.pool.toLocaleString('en-US') + '.';
     if (latest.baseTracked === undefined) {
       spotTip.setAttribute('data-tip', spotBaseTip + ' Dane z Base jeszcze się nie pojawiły w tej historii świec.');
     } else if (!latest.baseIsMature || latest.compositeBase == null) {
-      spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap decyduje bez zmian.');
+      spotTip.setAttribute('data-tip', spotBaseTip + ' Base jeszcze niedojrzały: ' + latest.baseClassified.toLocaleString('en-US') + ' / ' + latest.baseMaturityThreshold + ' sklasyfikowanych portfeli — nie wpływa jeszcze na wartość spot, sam Uniswap+Pancake decyduje bez zmian.');
     } else {
-      spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — w tej samej, wspólnej puli co Uniswap: wpływ proporcjonalny do liczby aktywnych sklasyfikowanych portfeli w tym oknie, nie sztywną wagą.');
+      spotTip.setAttribute('data-tip', spotBaseTip + ' Base dojrzały (' + latest.baseClassified.toLocaleString('en-US') + ' sklasyfikowanych, próg ' + latest.baseMaturityThreshold + ') — w tej samej, wspólnej puli co Uniswap+Pancake: wpływ proporcjonalny do liczby aktywnych sklasyfikowanych portfeli w tym oknie, nie sztywną wagą.');
     }
   }
 
@@ -1580,13 +1580,13 @@ function renderHero() {
   if (latest) {
     const trackedTotal = latest.tracked + (baseAvailable ? latest.baseTracked : 0) + (hlAvailable ? latest.perpTracked : 0);
     document.getElementById('walletsTrackedTotal').textContent = trackedTotal.toLocaleString('en-US');
-    document.getElementById('walletsTrackedSplit').textContent = 'Uniswap ' + latest.tracked.toLocaleString('en-US')
+    document.getElementById('walletsTrackedSplit').textContent = 'Uniswap+Pancake ' + latest.tracked.toLocaleString('en-US')
       + (baseAvailable ? ' · Base ' + latest.baseTracked.toLocaleString('en-US') : '')
       + (hlAvailable ? ' · Hyperliquid ' + latest.perpTracked.toLocaleString('en-US') : '');
 
     const activeTotal = latest.active + (baseAvailable ? latest.baseActive : 0) + (hlAvailable ? latest.perpActive : 0);
     document.getElementById('walletsActiveTotal').textContent = activeTotal.toLocaleString('en-US');
-    document.getElementById('walletsActiveSplit').textContent = 'Uniswap ' + latest.active.toLocaleString('en-US')
+    document.getElementById('walletsActiveSplit').textContent = 'Uniswap+Pancake ' + latest.active.toLocaleString('en-US')
       + (baseAvailable ? ' · Base ' + latest.baseActive.toLocaleString('en-US') : '')
       + (hlAvailable ? ' · Hyperliquid ' + latest.perpActive.toLocaleString('en-US') : '');
   } else {
