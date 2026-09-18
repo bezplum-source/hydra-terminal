@@ -256,6 +256,28 @@
   }
   .chip--ok .chip-dot { background: var(--good-glow); box-shadow: 0 0 8px var(--good-glow); }
 
+  /* Faza "Actions live status" (zgloszenie uzytkownika: chce widziec przy
+     chipie swiezosci, czy Hydra/Hyperliquid akurat sie wykonuja) - neutralny
+     odcien (--regime-neutral, ten sam szary co wstazka NEUTRAL), swiadomie
+     ODREBNY od --good (swieze dane)/--accent (stare dane) uzywanych przez
+     .chip--ok/.chip--warn wyzej - "w trakcie" to trzeci, niezalezny stan, nie
+     "dobry" ani "zly". Pulsujacy dot (zamiast statycznego swiecenia jak w
+     .chip--ok/.chip--warn) sygnalizuje "zywe", aktualnie trwajace dzialanie.
+     Krotszy padding-right, bo tekst konczy sie liczba minut, nie slowem. */
+  .chip--running {
+    color: var(--regime-neutral);
+    border-color: color-mix(in srgb, var(--regime-neutral) 45%, var(--border));
+    background: var(--regime-neutral-soft);
+  }
+  .chip--running .chip-dot { background: var(--regime-neutral); animation: pulseDot 1.6s ease-in-out infinite; }
+
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 7px 0 rgba(168, 166, 176, 0.55); }
+    50% { opacity: 0.4; box-shadow: 0 0 2px 0 rgba(168, 166, 176, 0.15); }
+  }
+
+  #activeActionsRow { display: inline-flex; gap: 8px; }
+
   /* ---------- hero ---------- */
   .hero {
     background: linear-gradient(165deg, var(--bg-elevated), var(--bg-elevated-2));
@@ -929,6 +951,7 @@
     </div>
     <div class="topbar-right">
       <a class="topbar-link" href="./docs.html">Docs</a>
+      <span id="activeActionsRow" style="display:none;"></span>
       <span class="chip" id="freshnessChip"><span class="chip-dot"></span><span id="freshnessText">-</span></span>
     </div>
   </header>
@@ -1882,6 +1905,83 @@ function renderFreshness() {
   chip.classList.add(elapsedMin > 90 ? 'chip--warn' : 'chip--ok');
 }
 
+// Faza "Actions live status" (2026-09-19, zgloszenie uzytkownika: "obok
+// statusu ZAKTUALIZOWANO X TEMU - jak zrobic zeby widzial ze akurat trwa
+// Hyperliquid 40m / Hydra 1m") - JEDYNY kawalek prawdziwie zywego
+// (pollowanego) JS na tej inaczej w pelni statycznej stronie: caly reszta
+// danych jest wypiekana do strony raz na uruchomienie pipeline'u
+// (`live/build_site.py`), a ten widget odpytuje GitHub REST API WPROST z
+// przegladarki uzytkownika - bez jakiegokolwiek backendu/serwera
+// posredniczacego (repo jest publiczne, `GET /actions/runs` nie wymaga
+// autoryzacji). Limit nieautoryzowanych zapytan GitHuba to 60/h na adres
+// IP - stad odpytywanie co 90s (40/h), z marginesem na normalne
+// przeladowania strony w tym samym czasie, nie czesciej.
+//
+// Filtrowanie po `run.path` (nie po `run.name`, ktore w teorii moglaby
+// kiedys zmienic sama nazwa workflow'u w YAML) - dokladnie dwa pliki,
+// `update.yml` (Hydra) i `hyperliquid-update.yml` (Hyperliquid), wszystko
+// inne ignorowane. Status "queued"/"waiting"/"requested"/"pending" (jeszcze
+// nie zaczal sie wykonywac - czeka na runner) pokazuje "w kolejce" zamiast
+// liczby minut, bo `run_started_at` dla takiego runu jeszcze nic uzytecznego
+// nie mowi. Blad/rate-limit = po prostu chowamy caly wiersz (catch) - to
+// czysto kosmetyczny dodatek, nigdy nie ma pokazywac uzytkownikowi bledu
+// za cos co nie jest krytyczna dana.
+const GH_REPO = 'bezplum-source/hydra-terminal';
+const GH_ACTIONS_POLL_MS = 90000;
+
+function ghWorkflowLabel(path) {
+  if (!path) return null;
+  if (path.endsWith('/hyperliquid-update.yml')) return 'Hyperliquid';
+  if (path.endsWith('/update.yml')) return 'Hydra';
+  return null;
+}
+
+const GH_ACTIVE_STATUSES = ['in_progress', 'queued', 'waiting', 'requested', 'pending'];
+
+async function pollActiveActions() {
+  const row = document.getElementById('activeActionsRow');
+  if (!row) return;
+  try {
+    const resp = await fetch(
+      'https://api.github.com/repos/' + GH_REPO + '/actions/runs?per_page=10',
+      { headers: { Accept: 'application/vnd.github+json' } }
+    );
+    if (!resp.ok) throw new Error('GitHub API status ' + resp.status);
+    const data = await resp.json();
+    const seen = new Set();
+    const active = [];
+    for (const run of data.workflow_runs || []) {
+      if (!GH_ACTIVE_STATUSES.includes(run.status)) continue;
+      const label = ghWorkflowLabel(run.path);
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      const startedMs = run.run_started_at ? new Date(run.run_started_at).getTime() : Date.now();
+      const elapsedMin = Math.max(0, Math.round((Date.now() - startedMs) / 60000));
+      active.push({ label, elapsedMin, queued: run.status !== 'in_progress' });
+    }
+    renderActiveActions(active);
+  } catch (e) {
+    renderActiveActions([]);
+  }
+}
+
+function renderActiveActions(active) {
+  const row = document.getElementById('activeActionsRow');
+  if (!row) return;
+  if (!active.length) {
+    row.style.display = 'none';
+    row.innerHTML = '';
+    return;
+  }
+  row.style.display = 'inline-flex';
+  row.innerHTML = active
+    .map((a) => {
+      const word = a.queued ? 'w kolejce' : a.elapsedMin + 'm';
+      return '<span class="chip chip--running"><span class="chip-dot"></span>' + a.label + ' ' + word + '</span>';
+    })
+    .join('');
+}
+
 function niceDomain(values) {
   const min = Math.min(...values), max = Math.max(...values);
   const pad = (max - min) * 0.08 || 1;
@@ -2629,4 +2729,6 @@ buildHistory();
 renderAggregateStats();
 renderFooter();
 renderFreshness();
+pollActiveActions();
+setInterval(pollActiveActions, GH_ACTIONS_POLL_MS);
 </script>
