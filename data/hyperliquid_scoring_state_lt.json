@@ -1,16 +1,16 @@
 {
-  "good_short": 0.35312449068908475,
-  "good_long": 0.4080505742316622,
-  "bad_short": 0.6155374724837099,
-  "bad_long": 0.6716317073902099,
-  "last_processed_ts_ms": 1789960772885,
+  "good_short": 0.34322891201120903,
+  "good_long": 0.39655561409345774,
+  "bad_short": 0.5724746185947962,
+  "bad_long": 0.6497517162080058,
+  "last_processed_ts_ms": 1789964417689,
   "last_perp_snapshot_lt": {
-    "composite": -0.3942035483738991,
+    "composite": -0.3558437576408612,
     "is_mature": true,
-    "classified": 8937,
-    "good_buyers": 32,
-    "good_sellers": 48,
-    "bad_buyers": 25,
-    "bad_sellers": 33
+    "classified": 8948,
+    "good_buyers": 5,
+    "good_sellers": 10,
+    "bad_buyers": 9,
+    "bad_sellers": 8
   }
 }
