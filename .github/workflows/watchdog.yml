@@ -1,0 +1,110 @@
+name: Watchdog harmonogramu (self-heal)
+
+# Powstal 2026-09-23 w odpowiedzi na powtarzajace sie tego dnia luki
+# 2-4+ godzinne, w ktorych ANI "update.yml" (cron co godzine, minuta 7),
+# ANI "hyperliquid-update.yml" (cron co godzine, minuta 20) nie odpalily
+# sie same z siebie - zero czerwonych runow, zero bledow w logach, zero
+# bannera "workflow disabled", Settings -> Actions -> General w porzadku
+# - a mimo to cisza, dopoki uzytkownik recznie nie kliknal "Run workflow"
+# (potwierdzone wielokrotnie tego samego dnia, patrz Projekt Claude,
+# "hydrav2-actions-watchdog.md").
+#
+# Rozpoznanie: to pasuje do udokumentowanego (patrz docs.html, sekcja
+# "Reliability lessons" -> "The two update workflows can race") zachowania
+# GitHuba - zdarzenie `schedule` bywa PO PROSTU POMIJANE (nie tylko
+# opoznione) pod obciazeniem infrastruktury GitHuba, a jeszcze bardziej
+# prawdopodobnie, gdy poprzedni run TEGO SAMEGO workflow jeszcze trwa albo
+# skonczyl sie tuz przed kolejnym tickiem. "hyperliquid-update.yml" siedzi
+# blisko pelnej godziny (~50-58 min nasluchu WS), wiec ma najmniejszy
+# margines ze wszystkich. Kiedy ten workflow zgubi tick, znika TAKZE jego
+# efekt uboczny - trigger "workflow_run", od ktorego zalezy samo-naprawiajacy
+# sie drugi przebieg "update.yml" (patrz komentarz w update.yml) - stad oba
+# workflow moga ucichnac naraz, mimo ze pierwotny problem dotyczy tylko
+# jednego z nich.
+#
+# Naprawa: NIE probujemy "naprawic" samego harmonogramu GitHuba (nie da
+# sie - to zachowanie po stronie ich infrastruktury, poza nasza kontrola).
+# Zamiast tego dodajemy tani, czesty (co 15 min) watchdog, ktory sam
+# sprawdza czas od ostatniego runu kazdego z dwoch glownych workflow i,
+# jesli przekroczyl rozsadny margines, sam je odpala przez
+# `gh workflow run` (czyli zdalny odpowiednik reczengo kliku
+# "Run workflow"). Uzywa WYLACZNIE wbudowanego, automatycznie
+# wystawianego `GITHUB_TOKEN` (ponizej jako `github.token`) - tego samego,
+# ktory kazdy run Actions i tak dostaje za darmo od GitHuba, ograniczonego
+# do tego repo - zadnego osobnego sekretu/PAT nie trzeba zakladac ani
+# nigdzie wklejac.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+# cancel-in-progress: true jest tu bezpieczne (w odroznieniu od
+# "update.yml"/"hyperliquid-update.yml") - ten job tylko CZYTA stan przez
+# GitHub API i ewentualnie odpala inny workflow; nie ma tu zadnego stanu
+# do stracenia przy przerwaniu w polowie, wiec nowszy tick moze spokojnie
+# zastapic starszy zamiast czekac w kolejce.
+concurrency:
+  group: hydra-watchdog
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Sprawdz i ewentualnie odpal ponownie "update.yml" oraz "hyperliquid-update.yml"
+        run: |
+          set -euo pipefail
+
+          # $1 = nazwa pliku workflow, $2 = prog w minutach
+          check_and_heal() {
+            local workflow_file="$1"
+            local threshold_minutes="$2"
+
+            # Nie dublujemy - jesli cos dla tego workflow juz leci albo
+            # czeka w kolejce, nic nie robimy (albo jeszcze nie skonczyl w
+            # normalnym czasie, albo poprzedni tick watchdoga juz to
+            # zalatwia).
+            local active
+            active=$(gh run list --repo "$REPO" --workflow "$workflow_file" --limit 5 \
+              --json status --jq '[.[] | select(.status=="in_progress" or .status=="queued" or .status=="waiting")] | length')
+            if [ "$active" -gt 0 ]; then
+              echo "$workflow_file: juz aktywny run (in_progress/queued) - pomijam."
+              return 0
+            fi
+
+            local last_created
+            last_created=$(gh run list --repo "$REPO" --workflow "$workflow_file" --limit 1 \
+              --json createdAt --jq '.[0].createdAt // empty')
+            if [ -z "$last_created" ]; then
+              echo "$workflow_file: brak historii runow - pomijam (nie ma czego naprawiac)."
+              return 0
+            fi
+
+            local last_epoch now_epoch gap_minutes
+            last_epoch=$(date -u -d "$last_created" +%s)
+            now_epoch=$(date -u +%s)
+            gap_minutes=$(( (now_epoch - last_epoch) / 60 ))
+
+            echo "$workflow_file: ostatni run zaczety $gap_minutes min temu (prog: $threshold_minutes min)."
+
+            if [ "$gap_minutes" -ge "$threshold_minutes" ]; then
+              echo "$workflow_file: przekroczony prog - odpalam samodzielnie (self-heal, workflow_dispatch)."
+              gh workflow run "$workflow_file" --repo "$REPO"
+            fi
+          }
+
+          # 90 min = ok. 30 min zapasu ponad normalny godzinny cykl obu
+          # workflow (w tym ~50-58-minutowy nasluch WS Hyperliquid), plus
+          # do 15 min wlasnej granulacji watchdoga - w najgorszym razie
+          # luka zostanie wykryta i zalatana w maks. ok. 105 min, zamiast
+          # ciagnac sie godzinami jak w incydencie z 2026-09-23.
+          check_and_heal "update.yml" 90
+          check_and_heal "hyperliquid-update.yml" 90
