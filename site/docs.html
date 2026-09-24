@@ -1211,6 +1211,36 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           automated data commit — a real manual edit — does the workflow still attempt the
           rebase, and still abort loudly on a genuine conflict, exactly as before.
         </p>
+        <h4>Scheduled triggers can simply not fire at all (fixed 2026-09-23)</h4>
+        <p>
+          On 2026-09-23 both <code>update.yml</code> and <code>hyperliquid-update.yml</code>
+          went silent for stretches of two to over four hours, several times in the same day,
+          with no failed run, no disabled-workflow banner, and nothing wrong in
+          Settings → Actions → General — every run that did happen finished green. The gaps
+          only closed when a person manually clicked "Run workflow." That combination points
+          at GitHub's <code>schedule</code> trigger itself: it's documented as best-effort and
+          can be delayed under load (see the entry above), but it can also simply be
+          <em>skipped</em> rather than delayed — most easily when the previous run of the
+          <em>same</em> workflow is still active or finished only moments before the next
+          tick. <code>hyperliquid-update.yml</code>'s ~50–58 minute WebSocket listen leaves it
+          the least margin of the two, and losing one of its ticks also silently removes the
+          <code>workflow_run</code> trigger that <code>update.yml</code> depends on for its own
+          self-correction (see above) — so a single missed Hyperliquid tick can go quiet on
+          both workflows at once, exactly as observed.
+        </p>
+        <p>
+          There's no way to fix GitHub's own scheduler from inside this repo, so the fix
+          doesn't try to. Instead, <code>.github/workflows/watchdog.yml</code> runs every 15
+          minutes and asks the GitHub API directly when each of the two workflows last ran; if
+          either has gone quiet for 90 minutes or more (comfortably past a normal hourly cycle,
+          including the long Hyperliquid listen) and doesn't already have a run active or
+          queued, the watchdog dispatches it itself — the automated equivalent of the manual
+          click that unblocked things on 2026-09-23. It authenticates with the
+          <code>GITHUB_TOKEN</code> GitHub already issues to every Actions run for free, scoped
+          to this repository only — no personal access token or extra secret involved. Worst
+          case, a lost tick is now caught and re-fired within about 105 minutes instead of
+          running for hours; it does nothing at all when the schedule is behaving normally.
+        </p>
       </section>
 
       <section id="frontend">
