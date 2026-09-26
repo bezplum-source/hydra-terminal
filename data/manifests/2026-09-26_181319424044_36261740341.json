@@ -1,0 +1,42 @@
+{
+  "run_id": "36261740341",
+  "trigger": "workflow_run",
+  "commit_sha": "628ff835953c356e875e3e9a5b4d5f4cb923aa48",
+  "started_at_utc": "2026-09-26T18:13:19.424044+00:00",
+  "finished_at_utc": "2026-09-26T18:14:56.276192+00:00",
+  "duration_s": 96.9,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26063000,
+    "to_block": 26063345,
+    "new_trades": 1140,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "error": "nie udalo sie pobrac czola lancucha Base"
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 3448
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 2500,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5
+  },
+  "warnings": [],
+  "lake_objects": [
+    {
+      "source": "hyperliquid",
+      "key": "trades/source=hyperliquid/date=2026-09-26/part-36261740341.parquet",
+      "rows": 3448
+    },
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-09-26/part-36261740341.parquet",
+      "rows": 1140
+    }
+  ]
+}
