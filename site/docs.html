@@ -1036,7 +1036,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>started_at_utc</code>, <code>finished_at_utc</code>, <code>duration_s</code></td><td>Wall-clock span of the run</td></tr>
           <tr><td><code>mainnet</code>, <code>base</code>, <code>hyperliquid</code></td><td>Per-source block range (where applicable), new-trade count, whether the source's per-run block cap was hit (<code>capped</code>), and any error that stopped that source specifically — each source fails independently, see <a href="#reliability">Reliability lessons</a></td></tr>
           <tr><td><code>config_snapshot</code></td><td>The tunable constants in effect for this run (<code>base_max_new_blocks_per_run</code> and similar) — so a later question like "what was the Base cap when this backlog started?" has a direct answer instead of a git-blame</td></tr>
-          <tr><td><code>warnings</code></td><td>Non-fatal issues noticed during the run — today, exclusively the rare case where a block's timestamp couldn't be fetched (see <a href="#reliability">Reliability lessons</a>)</td></tr>
+          <tr><td><code>warnings</code></td><td>Non-fatal issues noticed during the run — a block timestamp that couldn't be fetched (more common than "rare" under RPC throttling, see <a href="#reliability">Reliability lessons</a>) and any Base backlog fast-forward</td></tr>
+          <tr><td><code>ts_repair</code></td><td>Self-healing of candles that lack a measured timestamp: how many were missing before this run, how many were fetched, how many still lack a measured <code>ts</code>, and how many of those carry a <code>~</code> estimate instead of <code>?</code> (see <a href="#reliability">Reliability lessons</a>)</td></tr>
+          <tr><td><code>base.fast_forward</code></td><td>Present only on runs where the Base collector gave up on a too-large backlog and jumped ahead: the skipped block range, how many blocks that was, and the lag before the jump</td></tr>
         </table>
         </div>
         <p>
@@ -1240,6 +1242,74 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           to this repository only — no personal access token or extra secret involved. Worst
           case, a lost tick is now caught and re-fired within about 105 minutes instead of
           running for hours; it does nothing at all when the schedule is behaving normally.
+        </p>
+        <p>
+          <strong>Follow-up (2026-09-25):</strong> the watchdog's own <code>schedule</code>
+          trigger turned out to be subject to the same unreliability — it fired every three to
+          five hours instead of every 15 minutes, while every manual or API-triggered
+          <code>workflow_dispatch</code> run started instantly and reliably. So the watchdog is
+          no longer left to GitHub's scheduler: an external cron service now calls the GitHub
+          REST API's <code>workflow_dispatch</code> endpoint for <code>watchdog.yml</code> every
+          15 minutes, which GitHub treats as a normal API event rather than a low-priority
+          scheduled one. The credential for that call lives only in the external service and
+          is a fine-grained token scoped to this one repository with Actions read/write; nothing
+          in this repository stores it.
+        </p>
+
+        <h4>A candle's timestamp is a separate RPC call that can fail (fixed 2026-10-06)</h4>
+        <p>
+          A candle's price and signal come from the swap logs, but its <em>date</em> comes from
+          a separate <code>eth_getBlockByNumber</code> call for the block that closed its window.
+          Under the shared, throttled RPC budget (see the first entry in this section) that call
+          can fail even after retries, and until 2026-10-06 the candle then kept
+          <code>ts: null</code> / <code>time: "?"</code> forever — nothing ever came back for it.
+          The "rare case" turned out not to be rare: 395 of 1,259 candles (31%) had no
+          timestamp, and 59 of the latest 100. The visible symptoms were "?" in the
+          START/END columns of the Signal history table and a missing date next to
+          Uniswap+Pancake in the Wallets card (that row reuses the latest candle's own time).
+        </p>
+        <p>
+          The fix has three parts. The lookup now retries far longer than the generic default
+          (12 attempts, growing delay — it's a cheap single call, worth the patience). Every run
+          then repairs history: it re-fetches the timestamp for up to 60 candles that lack one,
+          newest first (block timestamps are immutable, so a late fetch is just as correct), and
+          the <code>ts_repair</code> manifest field records how it went. Finally, a candle that
+          still has no measured timestamp gets its <code>time</code> label <em>estimated</em>
+          from the block number — 12 seconds per block from the nearest candle with a real
+          timestamp — and shown with a leading <code>~</code> (for example
+          <code>~06.10.2026, 12:35</code>) instead of <code>?</code>. Only the label is
+          estimated: <code>ts</code> stays <code>null</code>, because <code>ts</code> feeds
+          time-based analytics (range filters, daily balance, freshness chip) and must remain a
+          measurement. A <code>~</code> label turns into a plain date by itself on the next run
+          that manages to fetch the real value.
+        </p>
+
+        <h4>A capped collector can fall behind forever (fixed 2026-10-06)</h4>
+        <p>
+          The Base collector processes at most a fixed number of blocks per run
+          (<code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code>). If that cap covers less of Base's own
+          timeline than the real time between successful runs, the backlog grows on every run
+          instead of stabilizing — the same mechanism that raised the cap from 1,000 to 2,500 on
+          2026-09-14, now repeating at 2,500: about a third of runs fail to fetch Base's chain
+          head at all (the Base call runs last, on whatever shared RPC budget is left), so the
+          real gap between successful runs was ~100–115 minutes against 83 minutes of coverage.
+          By 2026-10-06 the Base timestamp on the Wallets card read 01.10.2026 — five days
+          stale — and Base, being "mature," was still feeding that old data into the SPOT
+          composite.
+        </p>
+        <p>
+          Two changes. The cap is now 4,000 blocks per run (~133 minutes), and the chain-head
+          lookup uses the same stronger retry as timestamps. More importantly, the collector now
+          has a <em>fast-forward</em>: when the backlog exceeds ~6 hours
+          (<code>HYDRA_BASE_MAX_LAG_BLOCKS</code>) it stops trying to walk through it and jumps to
+          the most recent ~3.3 hours (<code>HYDRA_BASE_FASTFORWARD_KEEP_BLOCKS</code>), discarding
+          the skipped trades. That is a deliberate trade — five-day-old Base data in a live
+          composite is worse than none — and it is safe for the scoring engine because candle
+          windows are derived from the trades actually present, so a gap simply produces no
+          windows rather than empty ones. Older trades already in the buffer still count toward
+          wallet classification. Each jump is recorded in that run's manifest
+          (<code>base.fast_forward</code>, plus a <code>warnings</code> entry), so a recurring
+          jump is visible as the signal to raise the cap again.
         </p>
       </section>
 
@@ -1563,7 +1633,11 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>ALCHEMY_BASE_RPC_URL</code></td><td>No</td><td>Base JSON-RPC endpoint. Omitted entirely → Base collection is safely skipped, logged, and everything else runs normally.</td></tr>
           <tr><td><code>HYDRA_BACKFILL_BLOCKS</code></td><td>No</td><td>Mainnet backfill depth on a cold start</td></tr>
           <tr><td><code>HYDRA_BASE_BACKFILL_BLOCKS</code></td><td>No</td><td>Base backfill depth on a cold start (default ~10,000 blocks, ~5.5h)</td></tr>
-          <tr><td><code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code></td><td>No</td><td>Caps how many Base blocks one run will attempt to catch up, to bound RPC usage (default 2,500 — raised from 1,000 on 2026-09-14 after the dashboard's Base timestamp fell ~4 days behind: at 1,000/run and Base's ~2s block time, each run only covered ~33 minutes of Base's own timeline, less than the real time elapsed between runs, so the backlog grew every run instead of stabilizing. 2,500 gives headroom to actually pay the backlog down rather than just stop it growing, while staying well under the 5,000 that caused a throttling incident on 2026-09-02 — see the code comment above <code>BASE_MAX_NEW_BLOCKS_PER_RUN</code> in <code>live/run_incremental.py</code>)</td></tr>
+          <tr><td><code>HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN</code></td><td>No</td><td>Caps how many Base blocks one run will attempt to catch up, to bound RPC usage (default 4,000 — raised from 1,000 to 2,500 on 2026-09-14 and to 4,000 on 2026-10-06. At Base's ~2s block time, 2,500 blocks is only ~83 minutes of Base's own timeline, while the real gap between <em>successful</em> runs is ~100–115 minutes (about one run in three fails to fetch Base's chain head), so every run hit the cap and the backlog grew to ~5 days. 4,000 ≈ 133 minutes gives real headroom while staying under the 5,000 that caused a throttling incident on 2026-09-02 — see the code comments above <code>BASE_MAX_NEW_BLOCKS_PER_RUN</code> in <code>live/run_incremental.py</code>)</td></tr>
+          <tr><td><code>HYDRA_BASE_MAX_LAG_BLOCKS</code></td><td>No</td><td>Backlog size (chain head minus last processed Base block) beyond which the collector fast-forwards instead of catching up (default 10,800 blocks, ~6h) — see <a href="#reliability">Reliability lessons</a></td></tr>
+          <tr><td><code>HYDRA_BASE_FASTFORWARD_KEEP_BLOCKS</code></td><td>No</td><td>How much recent Base history a fast-forward keeps: it jumps to <code>head − this</code> (default 6,000 blocks, ~3.3h)</td></tr>
+          <tr><td><code>HYDRA_TS_FETCH_MAX_RETRIES</code>, <code>HYDRA_TS_FETCH_BASE_DELAY</code></td><td>No</td><td>Retry budget for the cheap single-call lookups — block timestamps and Base's chain head (defaults 12 retries, 1.0s growing delay; the generic default of 6 / 0.6s wasn't enough under a shared, throttled RPC budget)</td></tr>
+          <tr><td><code>HYDRA_TS_REPAIR_PER_RUN</code></td><td>No</td><td>How many candles missing a timestamp the history tries to repair per run, newest first (default 60) — bounded so the repair can't eat the shared RPC budget</td></tr>
           <tr><td><code>HYDRA_BASE_LOOKBACK_BLOCKS</code></td><td>No</td><td>How far back the Base trade buffer retains data (default 1,330,000 blocks, ~30 days + margin — raised twice: from the original ~1-day/43,200-block default once Base's B1–B3 classification needed a full 7-day reputation window, then again from 310,000/~7-days once the "Long term (30d)" phase needed a full 30-day window to read from — see <a href="#long-term">Long term (30d) classification track</a>)</td></tr>
           <tr><td><code>HYDRA_BASE_WINDOW_BLOCKS</code></td><td>No</td><td>Base's own candle window size in blocks (default 1,800, ≈1h at Base's ~2s block time)</td></tr>
           <tr><td><code>HYDRA_BASE_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for classifying Base wallets on the original track (default 302,400 blocks, ~7 days)</td></tr>
