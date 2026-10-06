@@ -1979,3 +1979,153 @@ def test_run_manifest_lake_objects_records_uploads_when_r2_configured(tmp_path, 
     # manifescie bez odpowiadajacego wywolania.
     assert len(fake_r2.put_calls) == 1
     assert fake_r2.put_calls[0]["Key"] == lake_entry["key"]
+
+
+# =====================================================================
+# Faza "przeskok zaleglosci Base + naprawa dat swiec" (2026-10-06)
+# =====================================================================
+
+
+def _latest_manifest():
+    files = sorted(st.RUN_MANIFESTS_DIR.glob("*.json"))
+    return json.loads(files[-1].read_text(encoding="utf-8"))
+
+
+def test_base_lag_beyond_threshold_fast_forwards_and_records_it(tmp_path, monkeypatch):
+    """Regresja na realny incydent (2026-10-06): kolektor Base byl ~5 dni w
+    tyle (kazde uruchomienie `capped`, zaleglosc rosla w nieskonczonosc).
+    Gdy zaleglosc przekracza prog, kolektor przeskakuje do `czolo - KEEP`,
+    gubi transakcje z luki, a przeskok jest widoczny w manifescie/warnings."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setattr(ri, "BASE_MAX_LAG_BLOCKS", 10_000)
+    monkeypatch.setattr(ri, "BASE_FASTFORWARD_KEEP_BLOCKS", 2_000)
+    monkeypatch.setattr(ri, "BASE_MAX_NEW_BLOCKS_PER_RUN", 50_000)
+    monkeypatch.setattr(ri, "TS_FETCH_BASE_DELAY", 0.0)
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    base_chain.add_swap(500, "0xGAP", "gapWallet", amount0=3_000_000_000, amount1=-(10**18))
+    base_chain.add_swap(29_500, "0xKEPT", "keptWallet", amount0=3_000_000_000, amount1=-(10**18))
+    base_chain.head = 30_000
+    st.save_base_collector_state({"last_processed_block": 100})  # zaleglosc 29 900 bl.
+
+    def fake_client(url):
+        chain = base_chain if url == "https://fake-base-rpc.invalid" else mainnet_chain
+        return JsonRpcClient(url, transport=chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+
+    assert ri.main() == 0
+    assert st.load_base_collector_state()["last_processed_block"] == 30_000
+    assert {t.wallet for t in st.load_base_trade_buffer()} == {"keptWallet"}  # luka pominieta
+    m = _latest_manifest()
+    ff = m["base"]["fast_forward"]
+    assert ff["from_block"] == 101 and ff["to_block"] == 30_000 - 2_000
+    assert ff["skipped_blocks"] == 30_000 - 2_000 - 101 + 1
+    assert any("przeskok zaleglosci" in w for w in m["warnings"])
+
+
+def test_base_lag_below_threshold_does_not_fast_forward(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("ALCHEMY_BASE_RPC_URL", "https://fake-base-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setattr(ri, "BASE_MAX_LAG_BLOCKS", 10_000)
+    monkeypatch.setattr(ri, "BASE_MAX_NEW_BLOCKS_PER_RUN", 50_000)
+
+    mainnet_chain = FakeChain()
+    _seed_wallets(mainnet_chain, start_block=0, end_block=500)
+    base_chain = FakeChain(pool_address=BASE_UNISWAP_V3_WETH_USDC_005.address)
+    base_chain.add_swap(150, "0xA", "baseWallet1", amount0=3_000_000_000, amount1=-(10**18))
+    base_chain.head = 300
+    st.save_base_collector_state({"last_processed_block": 100})
+
+    def fake_client(url):
+        chain = base_chain if url == "https://fake-base-rpc.invalid" else mainnet_chain
+        return JsonRpcClient(url, transport=chain.transport)
+
+    monkeypatch.setattr(ri, "JsonRpcClient", fake_client)
+    assert ri.main() == 0
+    m = _latest_manifest()
+    assert "fast_forward" not in m["base"]
+    assert m["base"]["from_block"] == 101
+
+
+def test_missing_candle_timestamps_are_repaired_on_next_run(tmp_path, monkeypatch):
+    """Swiece z `ts: null` (RPC padl przy pierwszym podejsciu) dostaja
+    prawdziwy `ts`/`time` w kolejnym uruchomieniu, a `time` nigdy nie
+    zostaje gołym "?" jesli jest z czego szacowac."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    monkeypatch.setattr(ri, "TS_FETCH_BASE_DELAY", 0.0)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=1000)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+    assert ri.main() == 0
+
+    candles = st.load_candles_history()
+    assert len(candles) >= 3
+    real_ts = {c["block"]: c["ts"] for c in candles}
+    assert all(v is not None for v in real_ts.values())
+    victim_a, victim_b = candles[0], candles[-1]
+    for c in (victim_a, victim_b):
+        c["ts"], c["time"] = None, "?"
+    st.save_candles_history(candles)
+
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+
+    after = {c["block"]: c for c in st.load_candles_history()}
+    for victim in (victim_a, victim_b):
+        fixed = after[victim["block"]]
+        assert fixed["ts"] == real_ts[victim["block"]]
+        assert fixed["time"] == ri.fmt_warsaw(real_ts[victim["block"]])
+    assert _latest_manifest()["ts_repair"]["fetched"] == 2
+
+
+def test_unfetchable_new_candle_timestamp_gets_estimated_label_not_question_mark(tmp_path, monkeypatch):
+    """Gdy `eth_getBlockByNumber` nie zwraca danych nawet po ponowieniach,
+    swieca ma `ts: None` (to POMIAR - nie udajemy go), ale `time` to szacunek
+    z numeru bloku z prefiksem "~", dzieki czemu karta Wallets/historia
+    sygnalow maja date."""
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    monkeypatch.setattr(ri, "TS_FETCH_BASE_DELAY", 0.0)
+    monkeypatch.setattr(ri, "TS_FETCH_MAX_RETRIES", 1)
+
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=1000)
+    client_ok = JsonRpcClient("https://fake-rpc.invalid", transport=chain.transport)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: client_ok)
+    assert ri.main() == 0
+    n_before = len(st.load_candles_history())
+
+    # Od teraz KAZDE pobranie znacznika czasu bloku zwraca null (przeciazony RPC).
+    original = chain.transport
+
+    def flaky(url, payload):
+        out = original(url, payload)
+        for item, req in zip(out, payload):
+            if req["method"] == "eth_getBlockByNumber":
+                item["result"] = None
+        return out
+
+    flaky_client = JsonRpcClient("https://fake-rpc.invalid", transport=flaky)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: flaky_client)
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+
+    new_candles = st.load_candles_history()[n_before:]
+    assert new_candles
+    for c in new_candles:
+        assert c["ts"] is None
+        assert c["time"].startswith("~"), c["time"]
