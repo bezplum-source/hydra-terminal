@@ -61,6 +61,7 @@ from hydra_signals.hyperliquid_wallets import (  # noqa: E402
     HyperliquidScoringEngine,
 )
 from hydra_signals.models import Signal  # noqa: E402
+from live import block_time as bt  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
     ScoringConfig,
@@ -135,7 +136,38 @@ BASE_BACKFILL_BLOCKS = int(os.environ.get("HYDRA_BASE_BACKFILL_BLOCKS", "10000")
 # wraca do 5000 (poziomu, ktory juz raz wywolal throttling) - do dalszego
 # przestrojenia w gore dopiero po obserwacji logow Actions bez throttlingu
 # przy tej wartosci.
-BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "2500"))
+BASE_MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_BASE_MAX_NEW_BLOCKS_PER_RUN", "4000"))
+# PODNIESIONE z 2500 do 4000 (2026-10-06, zgloszenie uzytkownika: "Base
+# znowu dlugo sie nie aktualizuje"). 2500 blokow Base ~ 83 min "czasu Base"
+# na uruchomienie, a realny odstep miedzy UDANYMI uruchomieniami to ~100-115
+# min (co trzeci przebieg konczy sie bledem pobrania czola lancucha Base),
+# wiec KAZDE uruchomienie bylo `capped: True` i zaleglosc rosla bez konca -
+# 2026-10-06 byla to juz ~5 dni (ostatni przetworzony blok = 1 pazdziernika
+# ok. 10:43 UTC). 4000 ~ 133 min "czasu Base" na uruchomienie daje zapas ~1000
+# blokow/uruchomienie ponad to, co dociera w miedzyczasie. Swiadomie ponizej
+# 5000 (poziom incydentu throttlingu z 2026-09-02) - choc od tamtego czasu
+# blok Base idzie NA KONCU main() (po zapisie krytycznego toru), wiec nawet
+# throttling Base juz nie psuje mainnetu. Do dalszego strojenia po obserwacji
+# manifestow (`capped`).
+#
+# PRZESKOK ZALEGLOSCI (2026-10-06): gdy zaleglosc kolektora Base (czolo -
+# last_processed_block) przekroczy `BASE_MAX_LAG_BLOCKS` (~6h), kolektor
+# NIE dogania mozolnie przez dni - przeskakuje do `czolo -
+# BASE_FASTFORWARD_KEEP_BLOCKS` i traci dane z pominietej luki (okna scoringu
+# sa wyznaczane z faktycznie obecnych transakcji, wiec luka nie psuje silnika,
+# patrz `ScoringEngine.run()`). Swiadomy wybor: 5-dniowe dane Base w
+# kompozycie spot sa gorsze niz ich brak. Kazdy przeskok jest odnotowany w
+# manifescie (`base.fast_forward`) i w `warnings`.
+BASE_MAX_LAG_BLOCKS = int(os.environ.get("HYDRA_BASE_MAX_LAG_BLOCKS", "10800"))
+BASE_FASTFORWARD_KEEP_BLOCKS = int(os.environ.get("HYDRA_BASE_FASTFORWARD_KEEP_BLOCKS", "6000"))
+# Pobieranie znacznikow czasu blokow (`eth_getBlockByNumber`): wezsze i tansze
+# niz `eth_getLogs`, wiec warte wiekszej cierpliwosci niz domyslne
+# (max_retries=6, base_delay=0.6) - patrz `live/block_time.py` (31% swiec
+# bez daty na 2026-10-06). `TS_REPAIR_PER_RUN` = ile swiec bez `ts` historia
+# probuje naprawic w JEDNYM uruchomieniu (od najnowszych).
+TS_FETCH_MAX_RETRIES = int(os.environ.get("HYDRA_TS_FETCH_MAX_RETRIES", "12"))
+TS_FETCH_BASE_DELAY = float(os.environ.get("HYDRA_TS_FETCH_BASE_DELAY", "1.0"))
+TS_REPAIR_PER_RUN = int(os.environ.get("HYDRA_TS_REPAIR_PER_RUN", "60"))
 # Faza "integracja Base B1-B3" (2026-09-11, zgloszenie uzytkownika: "Tak,
 # wdrozmy Base", po rozmowie o tym, ze portfeli sledzonych po stronie
 # Uniswap mainnet jest duzo mniej niz po stronie Hyperliquid) - Base
@@ -255,6 +287,27 @@ def fmt_warsaw(ts: int) -> str:
     return dt.strftime("%d.%m.%Y, %H:%M")
 
 
+def fetch_block_timestamps(rpc, blocks: list[int]) -> dict[int, int]:
+    """`{blok: unix_ts}` dla blokow, ktore sie udalo pobrac (z ponawianiem
+    wzmocnionym wzgledem domyslnego - patrz `TS_FETCH_MAX_RETRIES`). Bloki,
+    ktorych nie udalo sie pobrac, po prostu nie trafiaja do wyniku."""
+    if not blocks:
+        return {}
+    calls = [("eth_getBlockByNumber", [hex(b), False]) for b in blocks]
+    results = batch_call_with_retry(
+        rpc,
+        calls,
+        batch_size=CALLS_PER_BATCH,
+        max_retries=TS_FETCH_MAX_RETRIES,
+        base_delay=TS_FETCH_BASE_DELAY,
+    )
+    out: dict[int, int] = {}
+    for b, res in zip(blocks, results):
+        if res and "timestamp" in res:
+            out[b] = int(res["timestamp"], 16)
+    return out
+
+
 def _finalize_and_save_manifest(manifest: dict, started_at: datetime.datetime) -> None:
     """Domyka manifest tego uruchomienia (czas zakonczenia, czas trwania) i
     zapisuje go na dysk - wywolywane tuz przed KAZDYM `return` z `main()`
@@ -335,6 +388,8 @@ def main() -> int:
         "hyperliquid": {"enabled": True},
         "config_snapshot": {
             "base_max_new_blocks_per_run": BASE_MAX_NEW_BLOCKS_PER_RUN,
+            "base_max_lag_blocks": BASE_MAX_LAG_BLOCKS,
+            "base_fastforward_keep_blocks": BASE_FASTFORWARD_KEEP_BLOCKS,
             "max_new_blocks_per_run": MAX_NEW_BLOCKS_PER_RUN,
             "backfill_blocks": BACKFILL_BLOCKS,
             "perp_weight": HYPERLIQUID_PERP_WEIGHT,
@@ -825,7 +880,13 @@ def main() -> int:
     if new_scores:
         block_numbers = [s.window_end_block for s in new_scores]
         ts_calls = [("eth_getBlockByNumber", [hex(b), False]) for b in block_numbers]
-        block_results = batch_call_with_retry(rpc, ts_calls, batch_size=CALLS_PER_BATCH)
+        block_results = batch_call_with_retry(
+            rpc,
+            ts_calls,
+            batch_size=CALLS_PER_BATCH,
+            max_retries=TS_FETCH_MAX_RETRIES,
+            base_delay=TS_FETCH_BASE_DELAY,
+        )
         block_ts: dict[int, int] = {}
         for b, res in zip(block_numbers, block_results):
             if res and "timestamp" in res:
@@ -833,6 +894,11 @@ def main() -> int:
             else:
                 log(f"UWAGA: nie udalo sie pobrac znacznika czasu dla bloku {b}.")
                 manifest["warnings"].append(f"mainnet: brak znacznika czasu dla bloku {b}")
+
+        # Punkty odniesienia do SZACUNKU daty swiec, ktorym mimo ponowien nie
+        # udalo sie pobrac znacznika czasu (patrz `live/block_time.py`) -
+        # prawdziwe pomiary z tego uruchomienia + ze zapisanej historii.
+        ts_anchors = bt.build_anchors(candles_history, extra=list(block_ts.items()))
 
         # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
         # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
@@ -1128,7 +1194,11 @@ def main() -> int:
                 "pool": s.pool_size,
                 "active": s.active_wallets,
                 "tracked": s.total_wallets_tracked,
-                "time": fmt_warsaw(ts) if ts is not None else "?",
+                # Gdy mimo ponowien nie ma zmierzonego `ts`: etykieta to SZACUNEK z
+                # numeru bloku ("~dd.mm.rrrr, HH:MM"), a nie "?" - `ts` zostaje
+                # `None` (to pole to POMIAR, uzywany w analityce czasowej).
+                # Prawdziwy `ts` doleci pozniej z `repair_missing_timestamps`.
+                "time": fmt_warsaw(ts) if ts is not None else bt.approx_label(s.window_end_block, ts_anchors),
                 "ts": ts,
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
                 # Niezalezne od "signal"/"composite" powyzej - osobny,
@@ -1254,6 +1324,26 @@ def main() -> int:
     st.save_scoring_state(new_state)
     st.save_trade_buffer(trimmed_buffer)
     st.save_wallets_seen(engine.total_tracked)
+    # Samonaprawa historii (patrz `live/block_time.py`): dociagnij prawdziwy
+    # znacznik czasu dla swiec, ktore go nie maja (max TS_REPAIR_PER_RUN
+    # najnowszych), a reszcie daj szacunek "~..." zamiast "?". Best effort -
+    # nigdy nie przerywa krytycznego toru.
+    try:
+        ts_repair = bt.repair_missing_timestamps(
+            candles_history,
+            lambda blocks: fetch_block_timestamps(rpc, blocks),
+            limit=TS_REPAIR_PER_RUN,
+        )
+        manifest["ts_repair"] = ts_repair
+        if ts_repair["missing_before"]:
+            log(
+                f"Znaczniki czasu swiec: bez ts {ts_repair['missing_before']}, "
+                f"naprawiono {ts_repair['fetched']}, nadal bez ts "
+                f"{ts_repair['still_missing']} (z tego z szacunkiem '~': "
+                f"{ts_repair['estimated']})."
+            )
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: naprawa znacznikow czasu swiec nie powiodla sie ({exc}) - pomijam.")
     st.save_candles_history(candles_history)
     st.save_regime_state(regime_engine.export_state())
     st.save_signal_state(signal_engine.export_state())
@@ -1353,8 +1443,15 @@ def main() -> int:
             base_collector_state = st.load_base_collector_state()
             base_trade_buffer = st.load_base_trade_buffer()
 
+            # Wzmocnione ponawianie (2026-10-06): ~1/3 uruchomien konczyla sie
+            # bledem pobrania czola lancucha Base przy domyslnych 6 probach -
+            # to pojedyncze, tanie wywolanie, warte wiekszej cierpliwosci.
             base_head_result = batch_call_with_retry(
-                base_rpc, [("eth_blockNumber", [])], batch_size=CALLS_PER_BATCH
+                base_rpc,
+                [("eth_blockNumber", [])],
+                batch_size=CALLS_PER_BATCH,
+                max_retries=TS_FETCH_MAX_RETRIES,
+                base_delay=TS_FETCH_BASE_DELAY,
             )[0]
             if base_head_result is None:
                 log(
@@ -1368,6 +1465,7 @@ def main() -> int:
                 }
             else:
                 base_head = int(base_head_result, 16)
+                base_fast_forward = None
                 base_last_processed = base_collector_state.get("last_processed_block")
                 if base_last_processed is None:
                     base_from_block = max(0, base_head - BASE_BACKFILL_BLOCKS)
@@ -1377,6 +1475,26 @@ def main() -> int:
                     )
                 else:
                     base_from_block = base_last_processed + 1
+                    base_lag_blocks = base_head - base_last_processed
+                    if base_lag_blocks > BASE_MAX_LAG_BLOCKS:
+                        base_ff_from = max(base_from_block, base_head - BASE_FASTFORWARD_KEEP_BLOCKS + 1)
+                        base_skipped = base_ff_from - base_from_block
+                        log(
+                            f"Base L2: zaleglosc {base_lag_blocks} blokow (~{base_lag_blocks * 2 / 3600:.1f} h) "
+                            f"przekracza prog {BASE_MAX_LAG_BLOCKS} - PRZESKAKUJE do bloku {base_ff_from} "
+                            f"(pomijam {base_skipped} blokow, ~{base_skipped * 2 / 3600:.1f} h danych Base)."
+                        )
+                        manifest["warnings"].append(
+                            f"base: przeskok zaleglosci - pominieto bloki {base_from_block}-{base_ff_from - 1} "
+                            f"({base_skipped} blokow)"
+                        )
+                        base_fast_forward = {
+                            "from_block": base_from_block,
+                            "to_block": base_ff_from - 1,
+                            "skipped_blocks": base_skipped,
+                            "lag_blocks_before": base_lag_blocks,
+                        }
+                        base_from_block = base_ff_from
 
                 base_to_block = base_head
                 if base_from_block > base_to_block:
@@ -1422,6 +1540,8 @@ def main() -> int:
                         "new_trades": len(base_new_trades),
                         "capped": base_to_block < base_head,
                     }
+                    if base_fast_forward:
+                        manifest["base"]["fast_forward"] = base_fast_forward
                     base_lake_result = lake.upload_trades(
                         "base", run_date, run_id_for_lake, base_new_trades
                     )
@@ -1556,13 +1676,11 @@ def main() -> int:
                             # czasu w karcie Wallets bedzie ukryty (graceful
                             # degradation, patrz "window_time": None nizej).
                             base_window_time = None
-                            base_ts_results = batch_call_with_retry(
-                                base_rpc,
-                                [("eth_getBlockByNumber", [hex(base_latest.window_end_block), False])],
-                                batch_size=CALLS_PER_BATCH,
+                            base_ts_map = fetch_block_timestamps(
+                                base_rpc, [base_latest.window_end_block]
                             )
-                            if base_ts_results and base_ts_results[0] and "timestamp" in base_ts_results[0]:
-                                base_window_time = fmt_warsaw(int(base_ts_results[0]["timestamp"], 16))
+                            if base_latest.window_end_block in base_ts_map:
+                                base_window_time = fmt_warsaw(base_ts_map[base_latest.window_end_block])
                             else:
                                 log(
                                     "UWAGA: nie udalo sie pobrac znacznika czasu dla "
