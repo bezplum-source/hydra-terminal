@@ -1,0 +1,53 @@
+{
+  "run_id": "37781069066",
+  "trigger": "workflow_dispatch",
+  "commit_sha": "174368828fd37af1d6eff7468b8bf3ab9e9233fc",
+  "started_at_utc": "2026-10-08T13:01:31.086431+00:00",
+  "finished_at_utc": "2026-10-08T13:04:07.563920+00:00",
+  "duration_s": 156.5,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26147399,
+    "to_block": 26147849,
+    "new_trades": 634,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 52334911,
+    "to_block": 52337622,
+    "new_trades": 0,
+    "capped": false
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 11590
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 4000,
+    "base_max_lag_blocks": 10800,
+    "base_fastforward_keep_blocks": 6000,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5
+  },
+  "warnings": [],
+  "lake_objects": [
+    {
+      "source": "hyperliquid",
+      "key": "trades/source=hyperliquid/date=2026-10-08/part-37781069066.parquet",
+      "rows": 11590
+    },
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-10-08/part-37781069066.parquet",
+      "rows": 634
+    }
+  ],
+  "ts_repair": {
+    "missing_before": 0,
+    "fetched": 0,
+    "still_missing": 0,
+    "estimated": 0
+  }
+}
