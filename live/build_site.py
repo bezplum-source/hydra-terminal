@@ -41,18 +41,31 @@ def _build_streaks(candles: list[dict], signal_key: str = "signal") -> list[dict
         sig = candles[i][signal_key]
         while j + 1 < len(candles) and candles[j + 1][signal_key] == sig:
             j += 1
-        start, end = candles[i], candles[j]
-        # Wynik WYGRANEJ/PRZEGRANEJ sygnału, nie surowa zmiana kursu: dla LONG
+        start, last = candles[i], candles[j]
+        # MOMENT WYJSCIA (zmiana 2026-10-22, zgloszenie uzytkownika: "po
+        # pierwszej swiecy" - podsumowanie wyniku/win rate bylo zle): pozycja
+        # zamyka sie w chwili, gdy sygnal SIE ZMIENIA, czyli na PIERWSZEJ
+        # swiecy z innym sygnalem (`candles[j + 1]`), a nie na ostatniej
+        # swiecy, ktora jeszcze miala dany sygnal (`last`). Poprzednia
+        # konwencja (wyjscie na `last`) pomijala ruch ceny, ktory wlasnie
+        # spowodowal zmiane sygnalu, i systematycznie zanizala wynik (na
+        # prawdziwych danych 2026-10-22: 13/10 i -7.6% zamiast 15/8 i -1.8%).
+        # Dla OTWARTEGO streaka (ostatni w historii, `j + 1` nie istnieje)
+        # nie ma jeszcze swiecy zmiany - wyjsciem jest najnowsza swieca
+        # ("wynik na teraz", niezrealizowany), a `closed` = False.
+        closed = j + 1 < len(candles)
+        end = candles[j + 1] if closed else last
+        # Wynik WYGRANEJ/PRZEGRANEJ sygnalu, nie surowa zmiana kursu: dla LONG
         # wzrost ceny = zysk (znak bez zmian), dla SHORT wzrost ceny = strata
-        # (znak odwrócony) — bo SHORT zarabia, gdy cena SPADA. Bez tego SHORT
-        # trafiony w dół wyglądał na stronie jak sukces (zielony +), a to była
-        # w rzeczywistości pomyłka sygnału.
+        # (znak odwrocony) - bo SHORT zarabia, gdy cena SPADA. Bez tego SHORT
+        # trafiony w dol wygladal na stronie jak sukces (zielony +), a to byla
+        # w rzeczywistosci pomylka sygnalu.
         # HOLD ("NEUTRALNY", Faza "NEUTRAL dead-zone") NIE jest ani LONG, ani
-        # SHORT — nie ma aktywnej pozycji, więc liczenie "wyniku" w ogóle nie
-        # ma sensu (poprzednio HOLD dostawał direction=+1, czyli był
-        # traktowany jak LONG — myląca resztka z czasów, gdy HOLD był tylko
-        # teoretycznym stanem startowym i nigdy realnie nie występował w
-        # historii). `pct=None` — front-end renderuje to jako "–", nie 0.00%.
+        # SHORT - nie ma aktywnej pozycji, wiec liczenie "wyniku" w ogole nie
+        # ma sensu (poprzednio HOLD dostawal direction=+1, czyli byl
+        # traktowany jak LONG - mylaca resztka z czasow, gdy HOLD byl tylko
+        # teoretycznym stanem startowym i nigdy realnie nie wystepowal w
+        # historii). `pct=None` - front-end renderuje to jako "-", nie 0.00%.
         direction = -1 if sig == "SHORT" else 1 if sig == "LONG" else None
         pct = (
             round(direction * (end["price"] - start["price"]) / start["price"] * 100, 2)
@@ -69,6 +82,7 @@ def _build_streaks(candles: list[dict], signal_key: str = "signal") -> list[dict
                 "pct": pct,
                 "startTime": start["time"],
                 "endTime": end["time"],
+                "closed": closed,
             }
         )
         i = j + 1
@@ -114,7 +128,15 @@ def _build_daily_balance_candles(candles_history: list[dict]) -> list[dict]:
 
 def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
-    streaks = _build_streaks(display_candles) if display_candles else []
+    # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
+    # budowane z PELNEJ historii, NIE z `display_candles` (naprawa
+    # 2026-10-22): limit MAX_DISPLAY_CANDLES jest tylko dla wykresu ceny
+    # (rozmiar strony) - uzyty do streakow ucinal je do ostatnich ~17 dni
+    # (strona pokazywala 8 zagran zamiast 23 od resetu, a pierwszy streak w
+    # oknie byl uciety w polowie, wiec jego wynik tez bywal bledny). Streaki
+    # to male obiekty (~130 sztuk na ~1700 swiec), wiec rozmiar strony rosnie
+    # pomijalnie.
+    streaks = _build_streaks(candles_history) if candles_history else []
     daily_balance_candles = _build_daily_balance_candles(candles_history)
 
     # Faza "Long term (30d)" front-end (Faza 2, patrz też trackView()/
@@ -128,7 +150,8 @@ def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
     # track="lt". Zanim ta faza ma za sobą własną historię, `lt_candles`
     # (a więc i `streaksLt`) będzie po prostu puste — front-end renderuje to
     # jako czytelny stan "zbieramy historię tego toru", nie jako błąd.
-    lt_candles = [c for c in display_candles if "signalLt" in c]
+    # Tak samo jak `streaks` wyzej: z PELNEJ historii (nie z `display_candles`).
+    lt_candles = [c for c in candles_history if "signalLt" in c]
     streaks_lt = _build_streaks(lt_candles, signal_key="signalLt") if lt_candles else []
 
     # Faza "wiarygodna swiezosc" (zgloszenie uzytkownika: chip swiezosci na
