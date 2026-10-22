@@ -406,3 +406,102 @@ def test_build_site_empty_history_gives_empty_daily_balance_candles(tmp_path, mo
     end = html.index(";", start)
     data = json.loads(html[start:end])
     assert data["dailyBalanceCandles"] == []
+
+
+# =====================================================================
+# 2026-10-22: moment wyjscia streaka + streaki z PELNEJ historii
+# (zgloszenie uzytkownika: podsumowanie "Historii sygnalow" zle liczy
+# ilosc zagran, win rate i wynik; wyjscie "po pierwszej swiecy")
+# =====================================================================
+
+
+def _c(block, price, signal, time="t"):
+    return {**_sample_candles()[0], "block": block, "price": price, "signal": signal, "time": time}
+
+
+def test_closed_streak_exits_at_first_candle_of_next_signal_not_at_own_last_candle():
+    candles = [
+        _c(1, 2000.0, "LONG", "t1"),
+        _c(2, 2100.0, "LONG", "t2"),  # ostatnia swieca z LONG
+        _c(3, 2050.0, "HOLD", "t3"),  # pierwsza swieca po zmianie = wyjscie
+    ]
+    streaks = bs._build_streaks(candles)
+    long_streak = streaks[1]  # najnowszy pierwszy: [HOLD, LONG]
+    assert long_streak["signal"] == "LONG"
+    assert long_streak["endPrice"] == 2050.0
+    assert long_streak["endBlock"] == 3
+    assert long_streak["endTime"] == "t3"
+    assert long_streak["pct"] == 2.5  # (2050-2000)/2000, NIE 5.0
+    assert long_streak["closed"] is True
+
+
+def test_closed_short_streak_exit_uses_flip_candle_and_sign_flip():
+    candles = [
+        _c(1, 2000.0, "SHORT"),
+        _c(2, 1900.0, "SHORT"),
+        _c(3, 2100.0, "LONG"),  # cena odskoczyla w gore na swiecy zmiany
+    ]
+    short_streak = bs._build_streaks(candles)[1]
+    assert short_streak["signal"] == "SHORT"
+    assert short_streak["endPrice"] == 2100.0
+    assert short_streak["pct"] == -5.0  # SHORT: cena wzrosla 2000 -> 2100 = strata
+    # dawna konwencja (wyjscie na ostatniej swiecy SHORT, 1900) dalaby +5.0
+    assert short_streak["closed"] is True
+
+
+def test_open_streak_is_measured_to_latest_candle_and_marked_not_closed():
+    candles = [
+        _c(1, 2000.0, "HOLD"),
+        _c(2, 2000.0, "LONG"),
+        _c(3, 2060.0, "LONG"),
+    ]
+    open_streak = bs._build_streaks(candles)[0]
+    assert open_streak["signal"] == "LONG"
+    assert open_streak["endPrice"] == 2060.0
+    assert open_streak["endBlock"] == 3
+    assert open_streak["pct"] == 3.0
+    assert open_streak["closed"] is False
+
+
+def test_hold_streak_still_has_no_pct_and_closes_at_next_candle():
+    candles = [_c(1, 2000.0, "HOLD"), _c(2, 2010.0, "HOLD"), _c(3, 2020.0, "SHORT")]
+    hold = bs._build_streaks(candles)[1]
+    assert hold["signal"] == "HOLD" and hold["pct"] is None
+    assert hold["endBlock"] == 3 and hold["closed"] is True
+
+
+def _many_candles(n):
+    # naprzemiennie LONG, LONG, HOLD, HOLD -> jeden streak co 2 swiece
+    out = []
+    for k in range(n):
+        sig = "LONG" if (k // 2) % 2 == 0 else "HOLD"
+        out.append(_c(1000 + k, 2000.0 + k, sig, f"t{k}"))
+    return out
+
+
+def test_build_site_streaks_cover_full_history_not_only_display_candles(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
+    history = _many_candles(bs.MAX_DISPLAY_CANDLES + 200)
+    bs.build_site(history)
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    start = html.index("const DATA = ") + len("const DATA = ") if "const DATA = " in html else None
+    assert start is not None
+    data, _ = json.JSONDecoder().raw_decode(html[start:])
+    assert len(data["candles"]) == bs.MAX_DISPLAY_CANDLES  # wykres nadal przyciety
+    assert len(data["streaks"]) == len(bs._build_streaks(history))
+    assert len(data["streaks"]) > len(bs._build_streaks(history[-bs.MAX_DISPLAY_CANDLES:])) - 1
+    # najstarszy streak z calej historii (nie ucieta polowka z okna wykresu)
+    assert data["streaks"][-1]["startBlock"] == history[0]["block"]
+
+
+def test_build_site_streaks_lt_also_cover_full_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
+    history = _many_candles(bs.MAX_DISPLAY_CANDLES + 200)
+    for c in history:
+        c["signalLt"] = c["signal"]
+    bs.build_site(history)
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    start = html.index("const DATA = ") + len("const DATA = ")
+    data, _ = json.JSONDecoder().raw_decode(html[start:])
+    assert len(data["streaksLt"]) == len(bs._build_streaks(history, signal_key="signalLt"))
+    assert data["streaksLt"][-1]["startBlock"] == history[0]["block"]
