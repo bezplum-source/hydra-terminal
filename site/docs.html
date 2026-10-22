@@ -735,6 +735,18 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           project's own scoreboard for whether the underlying hypothesis is actually
           working, kept visible rather than hidden.
         </p>
+        <p>
+          A streak is a run of consecutive candles with the same signal. It is entered at
+          the price of its first candle and exited at the price of the <em>first candle
+          with a different signal</em> — the moment the position actually closes (since
+          2026-10-22; before that the exit was the last candle still carrying the signal,
+          which left out the very price move that triggered the flip and understated
+          results). SHORT results are sign-flipped, since a falling price is a win. The
+          current, still-open streak has no flip candle yet, so it is measured to the
+          latest candle and shown as an unrealized result. Streaks are built from the
+          full, never-pruned candle history — not from the 500 candles the price chart
+          displays.
+        </p>
       </section>
 
       <section id="regime">
@@ -1311,6 +1323,32 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           (<code>base.fast_forward</code>, plus a <code>warnings</code> entry), so a recurring
           jump is visible as the signal to raise the cap again.
         </p>
+
+        <h4>Statistics computed from a display-capped list (fixed 2026-10-22)</h4>
+        <p>
+          The "Signal history" table and its compounded result / win-rate summary looked
+          wrong: too few trades, a win rate that didn't match the table, and a total that
+          didn't match the history. The cause was that streaks were built from the same
+          list the price chart uses — <code>candles_history[-MAX_DISPLAY_CANDLES:]</code>,
+          the latest 500 candles, roughly 17 days — a cap meant only to keep the page
+          small. On 2026-10-22 that meant 17 streaks in the table instead of 131, and a
+          summary of 8 trades (4 wins, 4 losses, −4.61%) instead of the 23 trades since
+          the win-rate reset (13 / 10, 57%, −7.59% under the old exit rule). The first
+          streak inside the window was also cut off mid-way, so its own result could be
+          wrong. The earlier suspicion that the reset file alone narrowed the summary
+          was incomplete: the reset worked as documented, the cap did the rest.
+        </p>
+        <p>
+          Streaks, and the Long term track's <code>streaksLt</code>, are now built from
+          the full, never-pruned history; streak objects are tiny, so the page barely
+          grows. At the same time the exit rule changed: a streak now closes at the first
+          candle with a different signal rather than at its own last candle, because the
+          position really closes when the signal flips. On the same 23 trades that moves
+          the result from 13 wins / 10 losses (−7.6%) to 15 / 8 (−1.8%) — the old rule
+          systematically dropped the price move that caused the flip. The general rule:
+          anything that reports totals must read the full dataset, never a list that was
+          trimmed for display.
+        </p>
       </section>
 
       <section id="frontend">
@@ -1465,9 +1503,14 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             latest event, so a separate historical log was judged unnecessary. The full
             list of past events is no longer shown anywhere on the page; the price
             chart's event markers (above) are the only remaining trace of history.</li>
-          <li><strong>Signal history</strong> — every closed LONG/SHORT streak with its
-            realized outcome, plus a compounded win-rate summary. Unchanged, including
-            the win-rate reset behavior described above.</li>
+          <li><strong>Signal history</strong> — every LONG/SHORT/NEUTRAL streak in the
+            full candle history (131 at the time of the 2026-10-22 fix, paginated 15
+            per page) with its outcome — the streak is exited at the first candle of
+            the next, different signal; the newest, still-open streak is measured to the
+            latest candle — plus a compounded win-rate summary that honors the
+            win-rate reset described above. Both the table and the summary used to be
+            built from only the latest 500 candles; see
+            <a href="#reliability">Reliability lessons</a>.</li>
         </ul>
         <p>
           Two time indicators appear in the hero and are easy to conflate but measure
