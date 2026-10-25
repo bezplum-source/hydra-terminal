@@ -1,29 +1,29 @@
 {
-  "good_short": 0.6895786139183432,
-  "good_long": 0.6780949706701789,
-  "bad_short": 0.3354112562930238,
-  "bad_long": 0.53902701047182,
+  "good_short": 0.5947893069591716,
+  "good_long": 0.6506957444132282,
+  "bad_short": 0.1677056281465119,
+  "bad_long": 0.45609977809154,
   "prev_signal": "LONG",
-  "last_scored_window_end": 53053199,
+  "last_scored_window_end": 53054999,
   "last_base_snapshot": {
-    "composite": 0.4237013377244988,
+    "composite": 0.5243816619735038,
     "is_mature": true,
     "tracked": 5473,
-    "active": 23,
+    "active": 13,
     "classified": 126,
     "good_buyers": 0,
     "good_sellers": 0,
     "bad_buyers": 0,
-    "bad_sellers": 2,
-    "window_time": "25.10.2026, 03:35",
+    "bad_sellers": 1,
+    "window_time": "25.10.2026, 04:35",
     "good_buy_weight": 0.0,
     "good_sell_weight": 0.0,
     "bad_buy_weight": 0.0,
-    "bad_sell_weight": 65.00523548888034,
+    "bad_sell_weight": 36.38204931097983,
     "good_buy_usd": 0.0,
     "good_sell_usd": 0.0,
     "bad_buy_usd": 0.0,
-    "bad_sell_usd": 2114.0194530337753
+    "bad_sell_usd": 1323.6535120665678
   },
-  "updated_at_utc": "2026-10-25T02:45:12.462472+00:00"
+  "updated_at_utc": "2026-10-25T03:36:04.716381+00:00"
 }
