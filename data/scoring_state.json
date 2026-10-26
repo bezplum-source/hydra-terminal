@@ -1,10 +1,10 @@
 {
-  "good_short": 0.478765413862248,
-  "good_long": 0.50888581343261,
-  "bad_short": 0.5596367040639671,
-  "bad_long": 0.5534435965999236,
+  "good_short": 0.5086134761618932,
+  "good_long": 0.513435924975522,
+  "bad_short": 0.5298183520319836,
+  "bad_long": 0.54522150481532,
   "prev_signal": "HOLD",
-  "last_processed_block": 26279177,
-  "last_scored_window_end": 26278999,
-  "updated_at_utc": "2026-10-26T20:13:22.899833+00:00"
+  "last_processed_block": 26279433,
+  "last_scored_window_end": 26279249,
+  "updated_at_utc": "2026-10-26T21:05:03.230720+00:00"
 }
