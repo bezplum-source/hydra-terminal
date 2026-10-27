@@ -474,10 +474,14 @@ class SignalConfig:
     Rozwiązanie: DOKŁADNIE ten sam wzorzec, co już wdrożony i zaakceptowany
     `regime.RegimeEngine` (BULL/BEAR/NEUTRAL) - asymetryczna histereza
     wejście/wyjście + wymóg kilku kolejnych świec potwierdzających PRZED
-    wejściem w LONG/SHORT z HOLD. WYJŚCIE z LONG/SHORT z powrotem do HOLD
-    jest CELOWO natychmiastowe (bez potwierdzenia) - ta sama asymetria co w
-    `RegimeConfig`: trzymanie pozycji, która już wyraźnie się skończyła, nie
+    wejściem w LONG/SHORT z HOLD. WYJŚCIE z LONG/SHORT z powrotem do HOLD było
+    pierwotnie CELOWO natychmiastowe (bez potwierdzenia) - ta sama asymetria co
+    w `RegimeConfig`: trzymanie pozycji, która już wyraźnie się skończyła, nie
     powinno być sztucznie przeciągane, tylko WEJŚCIE ma być ostrożne.
+    UWAGA (2026-10-27): ta asymetria okazała się zbyt kosztowna w praktyce -
+    patrz `min_exit_confirmation_periods` niżej; wyjście wymaga teraz
+    kilku KOLEJNYCH słabych świec, a poniższy opis "natychmiastowe" opisuje
+    już tylko wartość 1 tego parametru (dawne zachowanie).
     Przejście LONG<->SHORT bezpośrednio (bez przejścia przez HOLD) jest
     architektonicznie niemożliwe - dokładnie jak BULL<->BEAR w RegimeEngine
     - co dodatkowo tłumi "migotanie" przy szybkiej zmianie znaku.
@@ -495,6 +499,26 @@ class SignalConfig:
     enter_threshold: float = 0.35
     exit_threshold: float = 0.1
     min_confirmation_periods: int = 3
+    # POTWIERDZENIE WYJSCIA (2026-10-27, decyzja uzytkownika po analizie
+    # "dlaczego sygnal wypada z LONG co chwile, a hydra.trading trzyma go
+    # tygodniami"): wyjscie z LONG/SHORT do HOLD wymaga TERAZ tylu KOLEJNYCH
+    # swiec "slabszych" niz `exit_threshold` (LONG: composite < exit;
+    # SHORT: composite > -exit) - kazda swieca z powrotem po dobrej stronie
+    # progu ZERUJE licznik. Poprzednio (do 2026-10-27) wyjscie bylo
+    # natychmiastowe (1 swieca), co - przy wejsciu wymagajacym 3 swiec z
+    # composite > 0.35 - dawalo asymetrie "trudno wejsc, latwo wypasc":
+    # na oknie 12.09-27.10.2026 sygnal spedzal 71% czasu w HOLD (poza
+    # rynkiem), 9 z 20 wyjsc to byly chwilowe zejscia, po ktorych composite
+    # wracal nad prog w ciagu 5 swiec. 6 swiec ~ 5 godzin (mediana odstepu
+    # swiec 50 min). Na tych samych danych (wejscie bez zmian, 3 swiece):
+    # 17 zagran zamiast 20, srednio 36 swiec zamiast 19, wynik -2.0%
+    # zamiast -10.4% przy ETH -8% w tym oknie - ALE to ~45 dni i kilka
+    # pojedynczych zagran (wartosc 3 daje -8.0%, wynik NIE jest monotoniczny
+    # po tym parametrze), wiec 6 to swiadoma decyzja, nie wynik optymalizacji;
+    # do przestrojenia po wiekszej probie / backtescie (Faza 5), jak kazdy
+    # inny prog w projekcie. Wartosc 1 przywraca dawne zachowanie
+    # (natychmiastowe wyjscie).
+    min_exit_confirmation_periods: int = 6
 
 
 class SignalEngine:
@@ -519,12 +543,18 @@ class SignalEngine:
         self.signal: Signal = Signal(state.get("signal", "HOLD"))
         self.long_streak: int = state.get("long_streak", 0)
         self.short_streak: int = state.get("short_streak", 0)
+        # Licznik KOLEJNYCH swiec "slabszych" niz exit_threshold, gdy jestesmy
+        # w LONG/SHORT (patrz `SignalConfig.min_exit_confirmation_periods`).
+        # `.get(..., 0)`: stary `signal_state.json` (sprzed 2026-10-27) nie
+        # ma tego klucza - wznawia sie z zerem, bez utraty ciaglosci sygnalu.
+        self.exit_streak: int = state.get("exit_streak", 0)
 
     def export_state(self) -> dict:
         return {
             "signal": self.signal.value,
             "long_streak": self.long_streak,
             "short_streak": self.short_streak,
+            "exit_streak": self.exit_streak,
         }
 
     def process(self, composite: float) -> Signal:
@@ -535,17 +565,25 @@ class SignalEngine:
         `RegimeEngine.process_candle`."""
         cfg = self.cfg
 
+        # WYJSCIE z LONG/SHORT (od 2026-10-27) wymaga `min_exit_confirmation_
+        # periods` KOLEJNYCH swiec po "slabszej" stronie exit_threshold; swieca
+        # po dobrej stronie zeruje licznik (patrz `SignalConfig`).
         if self.signal is Signal.LONG:
-            if composite < cfg.exit_threshold:
+            self.exit_streak = self.exit_streak + 1 if composite < cfg.exit_threshold else 0
+            if self.exit_streak >= cfg.min_exit_confirmation_periods:
                 self.signal = Signal.HOLD
+                self.exit_streak = 0
             self.long_streak = 0
             self.short_streak = 0
         elif self.signal is Signal.SHORT:
-            if composite > -cfg.exit_threshold:
+            self.exit_streak = self.exit_streak + 1 if composite > -cfg.exit_threshold else 0
+            if self.exit_streak >= cfg.min_exit_confirmation_periods:
                 self.signal = Signal.HOLD
+                self.exit_streak = 0
             self.long_streak = 0
             self.short_streak = 0
         else:  # HOLD
+            self.exit_streak = 0
             long_condition = composite > cfg.enter_threshold
             short_condition = composite < -cfg.enter_threshold
             self.long_streak = self.long_streak + 1 if long_condition else 0
