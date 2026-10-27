@@ -729,6 +729,31 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           for market regime, described next).
         </p>
         <p>
+          The rules are a small state machine with separate entry and exit conditions.
+          <strong>Entering</strong> LONG needs the blended composite above +0.35 for 3
+          consecutive candles (SHORT: below −0.35); a single weaker candle resets that
+          count. <strong>Exiting</strong> back to HOLD needs 6 consecutive candles on
+          the weak side of ±0.1 (LONG: composite below +0.1; SHORT: above −0.1) — about
+          five hours at the ~50-minute candle spacing — and any candle back on the
+          strong side resets the count. A signal can never flip LONG↔SHORT directly; it
+          always passes through HOLD first. Until 2026-10-27 the exit was immediate (one
+          weak candle), which made the machine hard to enter and easy to fall out of: over
+          2026-09-12 → 2026-10-27 the signal spent 71% of the time in HOLD, and 9 of its
+          20 exits were brief dips after which the composite recovered within five
+          candles — the project owner noticed that a competing site holds the same
+          direction for weeks while this one kept dropping out of it. The longer exit
+          confirmation is a deliberate, owner-approved choice rather than an optimized
+          one: on that same window it gave 17 trades instead of 20 (average length 36
+          candles instead of 19) and −2.0% instead of −10.4% while ETH fell 8%, but the
+          sample is ~45 days and a handful of trades, and the result is not monotonic in
+          the parameter (3 candles gave −8.0%), so treat it as a starting value to retune
+          once there is more history. The parameter
+          (<code>SignalConfig.min_exit_confirmation_periods</code>) applies to both the
+          7-day and the 30-day tracks; setting it to 1 restores the old immediate exit.
+          The change only affects candles produced after it was deployed — existing
+          history is not rewritten.
+        </p>
+        <p>
           The dashboard also tracks every past signal period as a "streak" and reports
           its outcome — did the price move in the direction the signal implied by the
           time it ended — plus a running win rate across all closed streaks. That's the
@@ -1011,7 +1036,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/hyperliquid_scoring_state_lt.json</code></td><td>Hyperliquid classification + composite EMA for the 30-day track</td></tr>
           <tr><td><code>data/base_scoring_state_lt.json</code></td><td>Base classification + composite EMA for the 30-day track, plus its own last-computed snapshot (same one-run lag as <code>base_scoring_state.json</code>)</td></tr>
           <tr><td><code>data/spot_pool_state_lt.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base) for the 30-day track</td></tr>
-          <tr><td><code>data/signal_state_lt.json</code></td><td>Signal hysteresis state machine for the 30-day track</td></tr>
+          <tr><td><code>data/signal_state_lt.json</code></td><td>Signal hysteresis state machine for the 30-day track (current signal plus the entry and exit confirmation counters)</td></tr>
         </table>
         </div>
         <p>
