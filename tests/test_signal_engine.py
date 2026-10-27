@@ -38,8 +38,12 @@ def test_a_single_weak_candle_resets_the_confirmation_streak():
     assert result is Signal.HOLD  # tylko 1 z rzedu po przerwaniu, nie 3
 
 
-def test_exits_to_hold_immediately_below_exit_threshold_no_confirmation_needed():
-    cfg = SignalConfig(enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=3)
+def test_exits_to_hold_immediately_below_exit_threshold_when_exit_confirmation_is_1():
+    # Dawne zachowanie (do 2026-10-27) = min_exit_confirmation_periods=1.
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=3,
+        min_exit_confirmation_periods=1,
+    )
     engine = SignalEngine(cfg)
 
     for _ in range(3):
@@ -71,7 +75,10 @@ def test_composite_between_exit_and_enter_threshold_holds_position_without_flipp
 
 
 def test_short_side_is_symmetric():
-    cfg = SignalConfig(enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=2)
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=2,
+        min_exit_confirmation_periods=1,
+    )
     engine = SignalEngine(cfg)
 
     engine.process(-0.5)
@@ -88,7 +95,10 @@ def test_cannot_flip_directly_from_long_to_short_must_pass_through_hold():
     gdy composite gwaltownie przeskakuje z mocno dodatniego na mocno ujemny w
     JEDNEJ swiecy, silnik najpierw wraca do HOLD - wejscie w SHORT wymaga
     wlasnego, swiezego streaku potwierdzajacego."""
-    cfg = SignalConfig(enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=2)
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=2,
+        min_exit_confirmation_periods=1,
+    )
     engine = SignalEngine(cfg)
     engine.process(0.5)
     engine.process(0.5)
@@ -103,13 +113,18 @@ def test_signal_engine_state_round_trips_via_export_state():
     # SignalEngine: podzielenie tej samej sekwencji swiec na dwa oddzielne
     # "uruchomienia procesu" (drugie wznowione ze stanu pierwszego) musi dac
     # IDENTYCZNY wynik co jeden ciagly przebieg.
-    cfg = SignalConfig(enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=3)
-    composites = [0.5, 0.5, 0.5, 0.2, 0.05, -0.5, -0.5, -0.5, -0.1]
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=3,
+        min_exit_confirmation_periods=3,
+    )
+    # dluzsza sekwencja: podzial wypada W SRODKU liczenia swiec wyjscia
+    # (exit_streak musi przetrwac export/import stanu)
+    composites = [0.5, 0.5, 0.5, 0.2, 0.05, 0.02, -0.5, -0.5, -0.5, -0.5, 0.0, 0.05, 0.08, 0.0]
 
     continuous = SignalEngine(cfg)
     continuous_results = [continuous.process(c) for c in composites]
 
-    split_point = 4
+    split_point = 5  # po 1. slabej swiecy z 3 wymaganych: exit_streak == 1
     run1 = SignalEngine(cfg)
     run1_results = [run1.process(c) for c in composites[:split_point]]
     state = run1.export_state()
@@ -128,3 +143,83 @@ def test_default_config_values_match_documented_empirical_choice():
     assert cfg.enter_threshold == 0.35
     assert cfg.exit_threshold == 0.1
     assert cfg.min_confirmation_periods == 3
+    assert cfg.min_exit_confirmation_periods == 6
+
+
+# ---------------------------------------------------------------------
+# 2026-10-27: potwierdzenie WYJSCIA (min_exit_confirmation_periods)
+# ---------------------------------------------------------------------
+
+
+def _long_engine(exit_periods: int) -> SignalEngine:
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=3,
+        min_exit_confirmation_periods=exit_periods,
+    )
+    engine = SignalEngine(cfg)
+    for _ in range(3):
+        engine.process(0.5)
+    assert engine.signal is Signal.LONG
+    return engine
+
+
+def test_exit_requires_n_consecutive_weak_candles():
+    engine = _long_engine(3)
+    assert engine.process(0.05) is Signal.LONG   # 1. slaba
+    assert engine.process(0.0) is Signal.LONG    # 2. slaba
+    assert engine.process(-0.2) is Signal.HOLD   # 3. z rzedu -> wyjscie
+
+
+def test_a_recovery_candle_resets_the_exit_streak():
+    engine = _long_engine(3)
+    engine.process(0.05)
+    engine.process(0.05)
+    assert engine.process(0.2) is Signal.LONG    # wrocil nad exit_threshold -> licznik na 0
+    engine.process(0.05)
+    assert engine.process(0.05) is Signal.LONG   # dopiero 2 z rzedu po resecie, nie 3
+    assert engine.process(0.05) is Signal.HOLD   # 3. z rzedu
+
+
+def test_default_exit_confirmation_is_six_candles_for_long():
+    engine = SignalEngine()
+    for _ in range(3):
+        engine.process(0.5)
+    assert engine.signal is Signal.LONG
+    for _ in range(5):
+        assert engine.process(0.0) is Signal.LONG
+    assert engine.process(0.0) is Signal.HOLD    # 6. z rzedu
+
+
+def test_short_exit_confirmation_is_symmetric():
+    cfg = SignalConfig(
+        enter_threshold=0.35, exit_threshold=0.1, min_confirmation_periods=2,
+        min_exit_confirmation_periods=3,
+    )
+    engine = SignalEngine(cfg)
+    engine.process(-0.5)
+    engine.process(-0.5)
+    assert engine.signal is Signal.SHORT
+    assert engine.process(0.0) is Signal.SHORT   # > -exit_threshold, 1. slaba
+    assert engine.process(-0.5) is Signal.SHORT  # silny odczyt SHORT zeruje licznik
+    assert engine.process(0.0) is Signal.SHORT
+    assert engine.process(0.0) is Signal.SHORT
+    assert engine.process(0.0) is Signal.HOLD
+
+
+def test_exit_streak_is_zero_after_leaving_and_in_hold():
+    engine = _long_engine(2)
+    engine.process(0.0)
+    engine.process(0.0)
+    assert engine.signal is Signal.HOLD
+    assert engine.exit_streak == 0
+    assert engine.export_state()["exit_streak"] == 0
+
+
+def test_legacy_state_without_exit_streak_resumes_with_zero():
+    """Stary signal_state.json (sprzed 2026-10-27) nie ma klucza
+    `exit_streak` - wznowienie nie moze sie wywrocic ani zmienic sygnalu."""
+    legacy = {"signal": "LONG", "long_streak": 0, "short_streak": 0}
+    engine = SignalEngine(initial_state=legacy)
+    assert engine.signal is Signal.LONG
+    assert engine.exit_streak == 0
+    assert engine.process(0.0) is Signal.LONG  # 1. z 6 wymaganych
