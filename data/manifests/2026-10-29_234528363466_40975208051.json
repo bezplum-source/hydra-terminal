@@ -1,27 +1,27 @@
 {
-  "run_id": "40796019790",
+  "run_id": "40975208051",
   "trigger": "workflow_run",
-  "commit_sha": "5aa3961e392a6411812e3252a03f22e14b2773fd",
-  "started_at_utc": "2026-10-29T00:44:59.728386+00:00",
-  "finished_at_utc": "2026-10-29T00:46:48.231397+00:00",
-  "duration_s": 108.5,
+  "commit_sha": "cf88099fe907afaaf84ee8420daa25d8191e63df",
+  "started_at_utc": "2026-10-29T23:45:28.363466+00:00",
+  "finished_at_utc": "2026-10-29T23:48:20.815017+00:00",
+  "duration_s": 172.5,
   "mainnet": {
     "enabled": true,
-    "from_block": 26294651,
-    "to_block": 26294903,
-    "new_trades": 728,
+    "from_block": 26301522,
+    "to_block": 26301774,
+    "new_trades": 1837,
     "capped": false
   },
   "base": {
     "enabled": true,
-    "from_block": 53221169,
-    "to_block": 53222718,
-    "new_trades": 376,
+    "from_block": 53262616,
+    "to_block": 53264148,
+    "new_trades": 857,
     "capped": false
   },
   "hyperliquid": {
     "enabled": true,
-    "new_trades": 2669
+    "new_trades": 27450
   },
   "config_snapshot": {
     "base_max_new_blocks_per_run": 4000,
@@ -35,18 +35,18 @@
   "lake_objects": [
     {
       "source": "hyperliquid",
-      "key": "trades/source=hyperliquid/date=2026-10-29/part-40796019790.parquet",
-      "rows": 2669
+      "key": "trades/source=hyperliquid/date=2026-10-29/part-40975208051.parquet",
+      "rows": 27450
     },
     {
       "source": "uniswap_mainnet",
-      "key": "trades/source=uniswap_mainnet/date=2026-10-29/part-40796019790.parquet",
-      "rows": 728
+      "key": "trades/source=uniswap_mainnet/date=2026-10-29/part-40975208051.parquet",
+      "rows": 1837
     },
     {
       "source": "base",
-      "key": "trades/source=base/date=2026-10-29/part-40796019790.parquet",
-      "rows": 376
+      "key": "trades/source=base/date=2026-10-29/part-40975208051.parquet",
+      "rows": 857
     }
   ],
   "ts_repair": {
