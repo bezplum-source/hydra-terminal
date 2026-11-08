@@ -1,23 +1,23 @@
 {
-  "good_short": 0.5409353925562091,
-  "good_long": 0.5527722177690355,
-  "bad_short": 0.32901673873405435,
-  "bad_long": 0.38557896850536894,
-  "last_processed_ts_ms": 1794134673023,
+  "good_short": 0.6454676962781045,
+  "good_long": 0.5831149534968763,
+  "bad_short": 0.3311750360336938,
+  "bad_long": 0.3775411784789019,
+  "last_processed_ts_ms": 1794137767665,
   "last_perp_snapshot": {
-    "composite": 0.29551527845398806,
+    "composite": 0.4170795477533979,
     "is_mature": true,
-    "tracked": 49288,
-    "active": 83,
-    "classified": 4673,
-    "good_buyers": 1,
+    "tracked": 49292,
+    "active": 154,
+    "classified": 4667,
+    "good_buyers": 3,
     "good_sellers": 1,
     "bad_buyers": 1,
     "bad_sellers": 2,
-    "window_time": "08.11.2026, 11:44",
-    "good_buy_usd": 4671.43651,
-    "good_sell_usd": 2000.2783499999998,
-    "bad_buy_usd": 59899.125,
-    "bad_sell_usd": 3009.2025
+    "window_time": "08.11.2026, 12:36",
+    "good_buy_usd": 110101.31692,
+    "good_sell_usd": 4293.4350699999995,
+    "bad_buy_usd": 2681.8047,
+    "bad_sell_usd": 32941.19191
   }
 }
