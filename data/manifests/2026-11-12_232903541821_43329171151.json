@@ -1,0 +1,61 @@
+{
+  "run_id": "43329171151",
+  "trigger": "workflow_run",
+  "commit_sha": "4b1fd1eb4bd074c8140c18b40338a2a07cf78248",
+  "started_at_utc": "2026-11-12T23:29:03.541821+00:00",
+  "finished_at_utc": "2026-11-12T23:30:41.634804+00:00",
+  "duration_s": 98.1,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26401906,
+    "to_block": 26402158,
+    "new_trades": 845,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 56673183,
+    "to_block": 56677182,
+    "new_trades": 0,
+    "capped": true,
+    "fast_forward": {
+      "from_block": 56661984,
+      "to_block": 56673182,
+      "skipped_blocks": 11199,
+      "lag_blocks_before": 17199
+    }
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 3441
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 4000,
+    "base_max_lag_blocks": 10800,
+    "base_fastforward_keep_blocks": 6000,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5
+  },
+  "warnings": [
+    "base: przeskok zaleglosci - pominieto bloki 56661984-56673182 (11199 blokow)"
+  ],
+  "lake_objects": [
+    {
+      "source": "hyperliquid",
+      "key": "trades/source=hyperliquid/date=2026-11-12/part-43329171151.parquet",
+      "rows": 3441
+    },
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-11-12/part-43329171151.parquet",
+      "rows": 845
+    }
+  ],
+  "ts_repair": {
+    "missing_before": 0,
+    "fetched": 0,
+    "still_missing": 0,
+    "estimated": 0
+  }
+}
