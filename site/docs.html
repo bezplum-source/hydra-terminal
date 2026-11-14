@@ -343,8 +343,8 @@
           </tr>
           <tr>
             <td><strong>Funding &amp; open interest</strong><br>Hyperliquid ETH-PERP, REST</td>
-            <td><span class="pill bull">recording only</span></td>
-            <td>Stored in <code>derivs_history.json</code> and as fields on each candle; does <em>not</em> feed the signal yet — see <a href="#derivs">Funding rate &amp; open interest</a></td>
+            <td><span class="pill bull">informational</span></td>
+            <td>Stored in <code>derivs_history.json</code>, as fields on each candle, and shown in its own dashboard card; does <em>not</em> feed the signal — see <a href="#derivs">Funding rate &amp; open interest</a></td>
           </tr>
         </table>
         </div>
@@ -854,7 +854,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           is deliberately kept out of git history entirely and stored instead in GitHub
           Actions' own cache between runs.
         </p>
-        <h3 id="derivs">Funding rate &amp; open interest (recorded, not yet scored)</h3>
+        <h3 id="derivs">Funding rate &amp; open interest (recorded and shown, not scored)</h3>
         <p>
           Besides the wallet trades, every hourly run (<code>update.yml</code>) also asks
           Hyperliquid's public REST API two questions about the ETH perpetual, through
@@ -882,10 +882,18 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           changed by this step.
         </p>
         <p>
-          This is a <em>recording-only</em> phase: none of these fields feed the composite
-          yet. If Hyperliquid's API is unreachable the run carries on normally, logs a
-          <code>derivs:</code> warning in the manifest, and the candle fields stay
-          <code>null</code>.
+          None of these fields feed the composite. They are recorded and, since
+          2026-11-14, shown on the dashboard in an informational card (see
+          <a href="#frontend">Reading the terminal</a>); whether they belong in the
+          signal is decided later from the recorded series, not assumed. A first check
+          on ~80 days of candles found no measurable predictive edge in funding (its
+          raw correlation with future price disappeared once the previous 24 hours'
+          price move and the composite were controlled for), and open interest was too
+          new to judge — the question is revisited once the open-interest series is a
+          few weeks long. If Hyperliquid's API is unreachable the run carries on
+          normally, logs a <code>derivs:</code> warning in the manifest, and the candle
+          fields stay <code>null</code> (the dashboard card keeps showing the last
+          stored values).
         </p>
       </section>
 
@@ -1568,6 +1576,26 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             latest event, so a separate historical log was judged unnecessary. The full
             list of past events is no longer shown anywhere on the page; the price
             chart's event markers (above) are the only remaining trace of history.</li>
+          <li><strong>Rynek kontraktów ETH (ETH futures market)</strong> — an
+            <em>informational-only</em> card (badge "tylko informacyjnie") showing the
+            two derivatives indicators described in
+            <a href="#derivs">Funding rate &amp; open interest</a>: the current
+            <strong>funding</strong> as an annualised percentage with a plain-language
+            state pill (<em>ujemny / poniżej normy / norma / podwyższony / wysoki</em>, by
+            fixed thresholds around Hyperliquid's ~11% baseline), the current
+            <strong>open interest</strong> in USD and ETH with its 24-hour change, and a
+            30-day line chart of each (hover crosshair and tooltip; the funding chart
+            has a zero line and a dashed baseline). A collapsed "Co to jest funding i
+            open interest?" section explains both terms for readers who have never met
+            them. The card is independent of the Main / Long term tab (it is market data,
+            not a wallet classification) and is rendered once at load from
+            <code>DATA.derivs</code>, which <code>build_site.py</code> builds from
+            <code>derivs_history.json</code>
+            (<code>_build_derivs_summary()</code>); with no data yet it shows a
+            "Zbieramy dane" placeholder, and the open-interest chart waits until at
+            least 6 snapshots spanning 3 hours exist. Charts are drawn in container
+            pixels and redrawn on window resize so axis labels stay legible on phones.
+            It does not touch the signal in any way.</li>
           <li><strong>Signal history</strong> — every LONG/SHORT/NEUTRAL streak in the
             full candle history (131 at the time of the 2026-10-22 fix, paginated 15
             per page) with its outcome — the streak is exited at the first candle of
