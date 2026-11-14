@@ -235,6 +235,7 @@
       <h4>Data Sources &amp; Pipeline</h4>
       <a href="#mainnet">Ethereum mainnet</a>
       <a href="#hyperliquid">Hyperliquid (ETH-PERP)</a>
+      <a href="#derivs">Funding &amp; open interest</a>
       <a href="#base">Base L2</a>
       <a href="#long-term">Long term (30d) track</a>
       <a href="#automation">Automation &amp; state</a>
@@ -339,6 +340,11 @@
             <td><strong>Base L2</strong><br>Uniswap V3 WETH/USDC 0.05%</td>
             <td><span class="pill long">live · B1–B3 complete</span></td>
             <td>Independent wallet classification, pooled with mainnet's per-window counts into the combined "spot" value (proportional to actual window activity, not a fixed weight) — one run behind, see <a href="#base">Data source: Base L2</a></td>
+          </tr>
+          <tr>
+            <td><strong>Funding &amp; open interest</strong><br>Hyperliquid ETH-PERP, REST</td>
+            <td><span class="pill bull">recording only</span></td>
+            <td>Stored in <code>derivs_history.json</code> and as fields on each candle; does <em>not</em> feed the signal yet — see <a href="#derivs">Funding rate &amp; open interest</a></td>
           </tr>
         </table>
         </div>
@@ -848,6 +854,39 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           is deliberately kept out of git history entirely and stored instead in GitHub
           Actions' own cache between runs.
         </p>
+        <h3 id="derivs">Funding rate &amp; open interest (recorded, not yet scored)</h3>
+        <p>
+          Besides the wallet trades, every hourly run (<code>update.yml</code>) also asks
+          Hyperliquid's public REST API two questions about the ETH perpetual, through
+          <code>hydra_signals/data_sources/hyperliquid_derivs.py</code> and
+          <code>live/derivs.py</code>: <code>metaAndAssetCtxs</code> for a snapshot of the
+          current <strong>funding rate</strong>, <strong>open interest</strong>, mark and oracle price and
+          premium, and <code>fundingHistory</code> for every funding interval since the last
+          stored one. Funding history can be backfilled from the exchange (the first run
+          after this was added pulls 120 days, hourly rows); open interest has no history
+          endpoint, so it is only collected forward, one snapshot per run — that series
+          starts empty and grows with the pipeline.
+        </p>
+        <p>
+          Both series live in <code>data/derivs_history.json</code> (funding kept 200 days,
+          snapshots 120 days). Each new candle also carries derived fields:
+          <code>fundingRate</code> (per interval), <code>fundingApr</code> (annualised, %),
+          <code>fundingZ</code> (z-score against the trailing 30 days — needs 72+ rows),
+          <code>openInterest</code> (ETH) and <code>openInterestUsd</code>,
+          <code>oiChange24h</code> (%) and <code>perpPremium</code>. Any field is
+          <code>null</code> when its data point is missing or further than 3 hours from the
+          candle, never an error. On the first run after deployment the fields are also
+          filled in for the existing candle history (funding is exact in time; open interest
+          stays <code>null</code> for the past because it cannot be backfilled). Existing
+          candle values — including <code>signal</code> and <code>composite</code> — are never
+          changed by this step.
+        </p>
+        <p>
+          This is a <em>recording-only</em> phase: none of these fields feed the composite
+          yet. If Hyperliquid's API is unreachable the run carries on normally, logs a
+          <code>derivs:</code> warning in the manifest, and the candle fields stay
+          <code>null</code>.
+        </p>
       </section>
 
       <section id="base">
@@ -1030,6 +1069,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/base_wallets_seen.txt</code></td><td>Cumulative set of every Base wallet address ever tracked</td></tr>
           <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts), plus a second, parallel volume-weighted EMA track (added 2026-09-11) — see <a href="#composite">Composite score</a></td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
+          <tr><td><code>data/derivs_history.json</code></td><td>ETH-PERP funding rate history (backfilled, hourly) and open-interest snapshots (one per run) from Hyperliquid — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
           <tr><td><code>data/scoring_state_lt.json</code></td><td>Mainnet EMA state, last signal — same as <code>scoring_state.json</code> but for the parallel 30-day track, see <a href="#long-term">Long term (30d) classification track</a></td></tr>
           <tr><td><code>data/regime_state_lt.json</code></td><td>Regime state machine for the 30-day track</td></tr>
@@ -1626,10 +1666,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
   data_sources/
     pools.py                 verified pool addresses (mainnet + Base)
     onchain_rpc.py            JSON-RPC client, batching, Swap-log decoding
+    hyperliquid_derivs.py      ETH-PERP funding history + open-interest snapshot (REST)
 
 live/                      the automated, incremental pipeline
   run_incremental.py         orchestrates one hourly run end-to-end
   state.py                   load/save for every data/*.json and *.csv state file
+  derivs.py                  funding / open-interest history + per-candle derivs fields
   build_site.py               renders site/index.html from template.html
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 
@@ -1713,6 +1755,8 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Reputation window for the parallel <a href="#long-term">30-day mainnet classification track</a> (default 180,000 blocks, ~30 days)</td></tr>
           <tr><td><code>HYDRA_BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Same, for the 30-day Base track (default 1,296,000 blocks, ~30 days on Base's own block grid)</td></tr>
           <tr><td><code>HYDRA_HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS</code></td><td>No</td><td>Same, for the 30-day Hyperliquid track (default 720.0 hours)</td></tr>
+          <tr><td><code>HYDRA_DERIVS_BACKFILL_DAYS</code></td><td>No</td><td>How many days of Hyperliquid funding history the first run pulls when <code>derivs_history.json</code> is empty (default 120; later runs only append what is new) — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
+          <tr><td><code>HYDRA_DERIVS_DISABLED</code></td><td>No</td><td>Any non-empty value switches the funding / open-interest step off entirely (no network call, candle fields stay <code>null</code>). The test suite sets it so tests never touch the network.</td></tr>
           <tr><td><code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code></td><td>No</td><td>Cloudflare R2 credentials for the <a href="#data-lake">raw trade archive</a>. Any one missing → archiving is safely skipped, logged, and everything else runs normally — same pattern as <code>ALCHEMY_BASE_RPC_URL</code> above.</td></tr>
           <tr><td><code>HYDRA_R2_BUCKET</code></td><td>No</td><td>R2 bucket name for the raw trade archive (default <code>hydra-terminal-lake</code>). Not secret — safe to set as a plain workflow variable rather than a GitHub secret.</td></tr>
         </table>
