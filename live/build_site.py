@@ -15,6 +15,105 @@ from pathlib import Path
 
 MAX_DISPLAY_CANDLES = 500
 
+# Karta "Rynek kontraktow ETH" (funding rate + open interest z Hyperliquid,
+# czysto informacyjna - nie wplywa na sygnal). Okno wykresow w dniach, oraz
+# stawka bazowa funding Hyperliquid: 1,25e-05 NA GODZINE (0,00125%/h, ok. 10,95%
+# rocznie) - w ~65% godzin funding stoi dokladnie na tej wartosci, wiec to ona
+# jest "norma" odniesienia dla opisu slownego i linii przerywanej na wykresie.
+DERIVS_DISPLAY_DAYS = 30
+FUNDING_BASELINE_RATE = 1.25e-05
+HOURS_PER_YEAR = 8760.0
+_HOUR_MS = 3_600_000
+_DAY_MS = 86_400_000
+
+
+def _funding_state(apr_pct: float) -> str:
+    """Slowny stan funding wg rocznej stopy w % (patrz `FUNDING_BASELINE_RATE`):
+    ujemny = shorty placa longom; ponizej normy; norma (okolice 11%); podwyzszony
+    = longi placa wiecej niz zwykle; wysoki. Progi czysto opisowe (nie sa
+    sygnalem handlowym)."""
+    if apr_pct < 0:
+        return "negative"
+    if apr_pct < 5:
+        return "low"
+    if apr_pct <= 20:
+        return "neutral"
+    if apr_pct <= 50:
+        return "elevated"
+    return "high"
+
+
+def _build_derivs_summary(derivs_history: dict | None) -> dict | None:
+    """Zbija `data/derivs_history.json` do malego slownika dla frontu (karta
+    "Rynek kontraktow ETH"): biezacy funding (rocznie w %) + jego slowny stan,
+    open interest (ETH, USD, zmiana 24h), oraz serie do dwoch wykresow z
+    ostatnich `DERIVS_DISPLAY_DAYS` dni. Zwraca None, gdy nie ma ZADNYCH danych
+    funding (front pokazuje wtedy "zbieramy dane"). Liczy WYLACZNIE z podanej
+    historii (zadnego zegara scian), wiec jest deterministyczne i testowalne."""
+    if not derivs_history:
+        return None
+    funding = derivs_history.get("funding") or []
+    snaps = derivs_history.get("snapshots") or []
+    if not funding and not snaps:
+        return None
+
+    last_f = funding[-1] if funding else None
+    last_s = snaps[-1] if snaps else None
+    as_of = max(x["t"] for x in (last_f, last_s) if x is not None)
+
+    # Biezacy funding: migawka (stopa trwajacego interwalu) jest swiezsza niz
+    # ostatni wiersz historii (interwal zamkniety), jesli jest od niego nowsza.
+    cur_rate = None
+    cur_t = None
+    if last_s is not None and last_s.get("funding") is not None and (last_f is None or last_s["t"] >= last_f["t"]):
+        cur_rate, cur_t = last_s["funding"], last_s["t"]
+    elif last_f is not None:
+        cur_rate, cur_t = last_f["rate"], last_f["t"]
+    funding_out = None
+    if cur_rate is not None:
+        apr = cur_rate * HOURS_PER_YEAR * 100.0
+        funding_out = {
+            "rate": cur_rate,
+            "apr": round(apr, 2),
+            "state": _funding_state(apr),
+            "t": cur_t,
+        }
+
+    oi_out = None
+    if last_s is not None and last_s.get("oi") is not None:
+        mark = last_s.get("mark")
+        change = None
+        target = last_s["t"] - _DAY_MS
+        older = [x for x in snaps if abs(x["t"] - target) <= 3 * _HOUR_MS and x.get("oi")]
+        if older:
+            ref = min(older, key=lambda x: abs(x["t"] - target))
+            if ref is not last_s:
+                change = round((last_s["oi"] / ref["oi"] - 1.0) * 100.0, 2)
+        oi_out = {
+            "eth": round(last_s["oi"], 1),
+            "usd": round(last_s["oi"] * mark, 0) if mark else None,
+            "change24h": change,
+            "t": last_s["t"],
+        }
+
+    cut = as_of - DERIVS_DISPLAY_DAYS * _DAY_MS
+    funding_series = [
+        [r["t"], round(r["rate"] * HOURS_PER_YEAR * 100.0, 2)] for r in funding if r["t"] >= cut
+    ]
+    oi_series = [
+        [x["t"], round(x["oi"] * x["mark"], 0)]
+        for x in snaps
+        if x["t"] >= cut and x.get("oi") is not None and x.get("mark")
+    ]
+    return {
+        "asOf": as_of,
+        "baselineApr": round(FUNDING_BASELINE_RATE * HOURS_PER_YEAR * 100.0, 2),
+        "funding": funding_out,
+        "oi": oi_out,
+        "fundingSeries": funding_series,
+        "oiSeries": oi_series,
+    }
+
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
 SITE_DIR = ROOT / "site"
@@ -126,7 +225,11 @@ def _build_daily_balance_candles(candles_history: list[dict]) -> list[dict]:
     ]
 
 
-def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
+def build_site(
+    candles_history: list[dict],
+    meta: dict | None = None,
+    derivs_history: dict | None = None,
+) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
     # budowane z PELNEJ historii, NIE z `display_candles` (naprawa
@@ -171,6 +274,10 @@ def build_site(candles_history: list[dict], meta: dict | None = None) -> None:
         "streaksLt": streaks_lt,
         "dailyBalanceCandles": daily_balance_candles,
         "meta": meta or {},
+        # Karta "Rynek kontraktow ETH" (funding + open interest) - czysto
+        # informacyjna; None, gdy jeszcze brak danych (front pokazuje stan
+        # "zbieramy dane").
+        "derivs": _build_derivs_summary(derivs_history),
     }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
@@ -212,5 +319,6 @@ if __name__ == "__main__":
             "lastRunUtc": last_run_utc,
             "statsResetFromBlock": stats_reset_from_block,
         },
+        derivs_history=st.load_derivs_history(),
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")
