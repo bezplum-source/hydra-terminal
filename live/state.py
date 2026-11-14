@@ -116,6 +116,10 @@ STATS_RESET_STATE_PATH = DATA_DIR / "stats_reset_state.json"
 BASE_SCORING_STATE_PATH = DATA_DIR / "base_scoring_state.json"
 BASE_WALLETS_SEEN_PATH = DATA_DIR / "base_wallets_seen.txt"
 SPOT_POOL_STATE_PATH = DATA_DIR / "spot_pool_state.json"
+# Funding rate + open interest series for the ETH perpetual (Hyperliquid), see
+# `live/derivs.py`. Small (hundreds of KB), committed to git like the other
+# state files.
+DERIVS_HISTORY_PATH = DATA_DIR / "derivs_history.json"
 
 # Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
 # liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
@@ -225,6 +229,29 @@ def save_candles_history(candles: list[dict]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CANDLES_HISTORY_PATH.write_text(
         json.dumps(candles, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
+
+def load_derivs_history() -> dict:
+    if not DERIVS_HISTORY_PATH.exists():
+        return {"version": 1, "funding": [], "snapshots": []}
+    try:
+        raw = json.loads(DERIVS_HISTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": 1, "funding": [], "snapshots": []}
+    if not isinstance(raw, dict):
+        return {"version": 1, "funding": [], "snapshots": []}
+    return {
+        "version": 1,
+        "funding": raw.get("funding") if isinstance(raw.get("funding"), list) else [],
+        "snapshots": raw.get("snapshots") if isinstance(raw.get("snapshots"), list) else [],
+    }
+
+
+def save_derivs_history(history: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DERIVS_HISTORY_PATH.write_text(
+        json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
 
 
