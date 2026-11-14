@@ -940,6 +940,61 @@
      ".tooltip .t-signal.long/.short" (inny kontekst, wykres ceny). */
   .tooltip .db-buy { color: var(--good-glow); }
   .tooltip .db-sell { color: var(--bad-glow); }
+
+  /* ---------- Karta "Rynek kontraktow ETH" (funding + open interest z
+     Hyperliquid) - czysto informacyjna, nie wplywa na sygnal. Prefiks "dv-"
+     na WSZYSTKICH nowych klasach (jak "db-" przy dziennym bilansie), zeby nic
+     nie trafilo przypadkiem w istniejace selektory. Reuzywa globalnych:
+     .card / .card-head / .card-title / .card-subnote / .info-tip /
+     .chart-wrap / .tooltip / .chart-axis-label. ---------- */
+  .dv-badge {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+  .dv-empty { font-size: 13px; color: var(--text-secondary); padding: 4px 0 2px; }
+  .dv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; }
+  .dv-panel {
+    background: var(--bg-elevated-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  }
+  .dv-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .dv-label {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px;
+  }
+  .dv-value {
+    font-family: var(--font-display); font-size: 38px; letter-spacing: 0.02em; line-height: 1.05;
+    color: var(--text-primary); font-variant-numeric: tabular-nums;
+  }
+  .dv-value small { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); letter-spacing: 0.03em; margin-left: 6px; }
+  .dv-sub { font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); min-height: 3em; }
+  .dv-pill {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.04); white-space: nowrap;
+  }
+  .dv-pill--neg { color: var(--bad-glow); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
+  .dv-pill--warm { color: var(--accent-glow); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .dv-chart { margin-top: 8px; }
+  .dv-chart svg { display: block; max-width: 100%; }
+  .dv-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dv-line--funding { stroke: var(--accent-glow); }
+  .dv-line--oi { stroke: var(--text-primary); }
+  .dv-end--funding { fill: var(--accent-glow); }
+  .dv-end--oi { fill: var(--text-primary); }
+  .dv-end { stroke: var(--bg-elevated-2); stroke-width: 2; }
+  .dv-grid-line { stroke: var(--border); stroke-width: 1; }
+  .dv-zero { stroke: var(--border-strong); stroke-width: 1.5; }
+  .dv-base { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+  .dv-cross { stroke: var(--text-muted); stroke-width: 1; }
+  .dv-dot { stroke: var(--bg-elevated-2); stroke-width: 2; }
+  .dv-chart-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 8px 0 0; }
+  .dv-foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; margin-top: 12px; }
+  .dv-explain { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+  .dv-explain summary { cursor: pointer; color: var(--text-primary); font-weight: 600; font-size: 13px; }
+  .dv-explain summary:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 3px; border-radius: 4px; }
+  .dv-explain p { margin: 10px 0 0; max-width: 72ch; }
+  .dv-explain strong { color: var(--text-primary); font-weight: 600; }
 </style>
 <div class="page">
 
@@ -1257,6 +1312,49 @@
 
     </div>
   </section>
+  <section class="card reveal reveal-4" id="derivsCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">Rynek kontraktów ETH</span>
+        <span class="info-tip" tabindex="0" data-tip="Dwa wskaźniki z rynku kontraktów terminowych na ETH (Hyperliquid, ETH-PERP): funding i open interest. Hydra je zbiera i pokazuje, ale na razie NIE wpływają na sygnał LONG/SHORT — sprawdzamy dopiero, czy cokolwiek mówią o przyszłej cenie.">ⓘ</span>
+      </div>
+      <span class="dv-badge">tylko informacyjnie</span>
+    </div>
+    <p class="card-subnote">Kontrakty terminowe pozwalają grać na wzrost lub spadek ceny ETH. Te dwa wskaźniki pokazują, jak mocno rynek jest nastawiony w jedną stronę i ile pieniędzy jest w grze. Nie wpływają na sygnał.</p>
+    <div class="dv-empty" id="dvEmpty" style="display:none;">Zbieramy dane — ta karta wypełni się po pierwszym udanym pobraniu z Hyperliquid.</div>
+    <div id="dvBody">
+      <div class="dv-grid">
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Funding<span class="info-tip" tabindex="0" data-tip="Opłata, którą co godzinę przekazują sobie gracze kontraktu: gdy dodatnia, grający na wzrost (long) płacą grającym na spadek (short); gdy ujemna, odwrotnie. Pokazana w przeliczeniu na rok. Na Hyperliquid stawka bazowa to ok. 11% rocznie i przez większość czasu funding stoi właśnie tam.">ⓘ</span></span>
+            <span class="dv-pill" id="dvFundingPill">-</span>
+          </div>
+          <div class="dv-value" id="dvFundingValue">-</div>
+          <div class="dv-sub" id="dvFundingSub">-</div>
+          <div class="chart-wrap dv-chart" id="dvFundingWrap"><svg class="dv-svg" role="img" aria-label="Wykres funding z ostatnich 30 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="dvFundingNote" style="display:none;"></p>
+        </div>
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Open interest<span class="info-tip" tabindex="0" data-tip="Łączna wartość wszystkich otwartych pozycji na kontrakcie ETH, w dolarach. Rośnie, gdy gracze otwierają nowe pozycje, spada, gdy je zamykają albo są likwidowani. To nie jest wolumen (ile się handluje), tylko ile pieniędzy jest zaangażowane w grę.">ⓘ</span></span>
+          </div>
+          <div class="dv-value" id="dvOiValue">-</div>
+          <div class="dv-sub" id="dvOiSub">-</div>
+          <div class="chart-wrap dv-chart" id="dvOiWrap"><svg class="dv-svg" role="img" aria-label="Wykres open interest z ostatnich 30 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="dvOiNote" style="display:none;"></p>
+        </div>
+      </div>
+      <details class="dv-explain">
+        <summary>Co to jest funding i open interest?</summary>
+        <p><strong>Kontrakt ETH-PERP</strong> (perpetual) to sposób, żeby grać na wzrost (long) albo spadek (short) ceny ETH bez wygasania kontraktu. Żeby jego cena nie odjechała od prawdziwej ceny ETH, giełda co godzinę przelicza opłatę między graczami. To jest <strong>funding</strong>.</p>
+        <p><strong>Funding dodatni:</strong> longi płacą shortom. Im wyższy, tym więcej osób obstawia wzrost. <strong>Funding ujemny:</strong> shorty płacą longom, czyli sporo osób obstawia spadek. Na Hyperliquid stawka bazowa to ok. 11% rocznie (linia przerywana na wykresie), a funding większość czasu stoi dokładnie tam.</p>
+        <p><strong>Open interest</strong> to łączna wartość otwartych pozycji na tym kontrakcie. Rośnie, gdy ludzie otwierają nowe pozycje, a spada, gdy je zamykają lub zostają zlikwidowani. To nie wolumen handlu, tylko ile pieniędzy „siedzi" w grze.</p>
+        <p><strong>Po co to Hydrze:</strong> sprawdzamy, czy te wskaźniki mówią coś o przyszłej cenie. Na razie tylko je zbieramy i pokazujemy. Jeśli okażą się przydatne, wejdą do sygnału. To narzędzie badawcze, nie porada inwestycyjna.</p>
+      </details>
+      <div class="dv-foot" id="dvFoot"></div>
+    </div>
+  </section>
+
   <section class="card reveal reveal-2">
     <div class="card-head">
       <span class="card-title">Historia sygnałów</span>
@@ -1864,6 +1962,199 @@ function renderRegimeCard() {
     document.getElementById('eventSub').textContent = evt.replace(/_/g, ' ') + (conf != null ? ' · pewność ' + conf.toFixed(0) + '%' : '');
   }
 }
+
+// =====================================================================
+// Karta "Rynek kontraktów ETH" (funding + open interest z Hyperliquid) -
+// czysto informacyjna, nie zależy od zakładki Main / Long term (to dane
+// rynkowe, nie wynik klasyfikacji portfeli), więc renderowana RAZ przy
+// starcie. Dane przychodzą gotowe z live/build_site.py::_build_derivs_summary
+// (DATA.derivs, albo null, gdy jeszcze nic nie zebrano).
+// =====================================================================
+const DV_STATES = {
+  negative: { pill: 'ujemny', cls: 'dv-pill--neg', text: 'Ujemny: to grający na spadek (short) płacą grającym na wzrost (long). Sporo osób obstawia spadek.' },
+  low: { pill: 'poniżej normy', cls: '', text: 'Poniżej normy: opłata longów jest mała, mniej osób niż zwykle chce grać na wzrost.' },
+  neutral: { pill: 'norma', cls: '', text: 'Norma: grający na wzrost (long) płacą standardową, niewielką opłatę grającym na spadek (short). Bez wyraźnego tłoku po żadnej stronie.' },
+  elevated: { pill: 'podwyższony', cls: 'dv-pill--warm', text: 'Podwyższony: longi płacą więcej niż zwykle. Wielu graczy obstawia wzrost.' },
+  high: { pill: 'wysoki', cls: 'dv-pill--warm', text: 'Wysoki: longi płacą bardzo dużo. Rynek jest mocno nastawiony na wzrost.' },
+};
+const DV_TIME_FMT = new Intl.DateTimeFormat('pl-PL', { timeZone: 'Europe/Warsaw', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const DV_DAY_FMT = new Intl.DateTimeFormat('pl-PL', { timeZone: 'Europe/Warsaw', day: '2-digit', month: '2-digit' });
+
+function dvNum(v, d) { return v.toFixed(d).replace('.', ','); }
+function dvUsd(v) {
+  if (v == null) return '-';
+  if (v >= 1e9) return '$' + dvNum(v / 1e9, 2) + ' mld';
+  if (v >= 1e6) return '$' + dvNum(v / 1e6, 0) + ' mln';
+  return '$' + Math.round(v).toLocaleString('en-US');
+}
+function dvUsdShort(v) {
+  if (v >= 1e9) return '$' + dvNum(v / 1e9, 2) + ' mld';
+  if (v >= 1e6) return '$' + dvNum(v / 1e6, 0) + ' mln';
+  return '$' + Math.round(v / 1e3) + ' tys.';
+}
+function dvNiceStep(range, n) {
+  const raw = range / n;
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+
+// Prosty wykres liniowy (jedna seria) z siatką, opcjonalną linią zera i linią
+// odniesienia, znacznikiem ostatniego punktu i tooltipem pod kursorem.
+function dvDrawLine(cfg) {
+  const wrap = document.getElementById(cfg.wrapId);
+  const note = document.getElementById(cfg.noteId);
+  const svg = wrap.querySelector('svg');
+  const tip = wrap.querySelector('.tooltip');
+  const pts = cfg.series || [];
+  const span = pts.length ? pts[pts.length - 1][0] - pts[0][0] : 0;
+  if (pts.length < cfg.minPoints || span < cfg.minSpanMs) {
+    wrap.style.display = 'none';
+    note.style.display = 'block';
+    note.textContent = cfg.emptyText.replace('{n}', String(pts.length));
+    return;
+  }
+  wrap.style.display = '';
+  note.style.display = 'none';
+
+  // Szerokość rysunku = realna szerokość kontenera w px (1 jednostka viewBox =
+  // 1 px), żeby podpisy osi miały stały, czytelny rozmiar także na telefonie
+  // (przy stałym viewBox 520 węższy ekran skalowałby je do ~6 px).
+  const W = Math.max(240, Math.round(wrap.clientWidth) || 520), H = 170;
+  const L = cfg.leftPad || 52, R = 12, T = 10, B = 24;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  const vals = pts.map((p) => p[1]);
+  let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (cfg.includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (cfg.baseline != null) { lo = Math.min(lo, cfg.baseline); hi = Math.max(hi, cfg.baseline); }
+  if (hi - lo < 1e-9) { hi = lo + 1; }
+  const pad = (hi - lo) * 0.1;
+  lo -= pad; hi += pad;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R);
+  const Y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+
+  let g = '';
+  const step = dvNiceStep(hi - lo, 4);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    const y = Y(v);
+    g += '<line class="dv-grid-line" x1="' + L + '" x2="' + (W - R) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '"></line>';
+    g += '<text class="chart-axis-label" x="' + (L - 6) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end">' + cfg.yFmt(v) + '</text>';
+  }
+  if (cfg.includeZero && lo < 0 && hi > 0) {
+    g += '<line class="dv-zero" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '"></line>';
+  }
+  if (cfg.baseline != null) {
+    const yb = Y(cfg.baseline);
+    g += '<line class="dv-base" x1="' + L + '" x2="' + (W - R) + '" y1="' + yb.toFixed(1) + '" y2="' + yb.toFixed(1) + '"></line>';
+    g += '<text class="chart-axis-label" x="' + (L + 4) + '" y="' + (yb - 5).toFixed(1) + '">' + cfg.baselineLabel + '</text>';
+  }
+  [[0, 'start'], [0.5, 'middle'], [1, 'end']].forEach((tk) => {
+    const t = t0 + tk[0] * (t1 - t0);
+    g += '<text class="chart-axis-label" x="' + (L + tk[0] * (W - L - R)).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + tk[1] + '">' + DV_DAY_FMT.format(new Date(t)) + '</text>';
+  });
+  let d = '';
+  pts.forEach((p, i) => { d += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); });
+  g += '<path class="dv-line ' + cfg.lineCls + '" d="' + d + '"></path>';
+  const last = pts[pts.length - 1];
+  g += '<circle class="dv-end ' + cfg.endCls + '" cx="' + X(last[0]).toFixed(1) + '" cy="' + Y(last[1]).toFixed(1) + '" r="4"></circle>';
+  g += '<line class="dv-cross" y1="' + T + '" y2="' + (H - B) + '" x1="0" x2="0" visibility="hidden"></line>';
+  g += '<circle class="dv-dot ' + cfg.endCls + '" r="4" cx="0" cy="0" visibility="hidden"></circle>';
+  svg.innerHTML = g;
+
+  const cross = svg.querySelector('.dv-cross');
+  const dot = svg.querySelector('.dv-dot');
+  svg.onpointermove = (ev) => {
+    const r = svg.getBoundingClientRect();
+    if (!r.width) return;
+    const x = (ev.clientX - r.left) * (W / r.width);
+    const t = t0 + ((x - L) / (W - L - R)) * (t1 - t0);
+    let a = 0, b = pts.length - 1;
+    while (b - a > 1) { const m = (a + b) >> 1; if (pts[m][0] < t) a = m; else b = m; }
+    const p = Math.abs(pts[a][0] - t) <= Math.abs(pts[b][0] - t) ? pts[a] : pts[b];
+    const px = X(p[0]), py = Y(p[1]);
+    cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('visibility', 'visible');
+    tip.innerHTML = cfg.tipHtml(p);
+    const left = Math.min(Math.max((px * r.width) / W, 70), r.width - 70);
+    tip.style.left = left + 'px';
+    tip.style.top = ((py * r.height) / H) + 'px';
+    tip.style.opacity = 1;
+  };
+  svg.onpointerleave = () => {
+    cross.setAttribute('visibility', 'hidden');
+    dot.setAttribute('visibility', 'hidden');
+    tip.style.opacity = 0;
+  };
+}
+
+function renderDerivsCard() {
+  const d = DATA.derivs;
+  const body = document.getElementById('dvBody');
+  const empty = document.getElementById('dvEmpty');
+  if (!d || (!d.funding && !d.oi)) {
+    body.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  body.style.display = '';
+
+  if (d.funding) {
+    const st = DV_STATES[d.funding.state] || DV_STATES.neutral;
+    const pill = document.getElementById('dvFundingPill');
+    pill.textContent = st.pill;
+    pill.className = 'dv-pill' + (st.cls ? ' ' + st.cls : '');
+    document.getElementById('dvFundingValue').innerHTML = dvNum(d.funding.apr, 1) + '%<small>rocznie</small>';
+    document.getElementById('dvFundingSub').textContent = st.text;
+  } else {
+    document.getElementById('dvFundingValue').textContent = '-';
+    document.getElementById('dvFundingSub').textContent = 'Brak danych o funding.';
+  }
+  dvDrawLine({
+    wrapId: 'dvFundingWrap', noteId: 'dvFundingNote', series: d.fundingSeries,
+    minPoints: 12, minSpanMs: 6 * 3600 * 1000,
+    emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n} pomiarów).',
+    includeZero: true, baseline: d.baselineApr, baselineLabel: 'norma ≈ ' + dvNum(d.baselineApr, 0) + '%',
+    yFmt: (v) => Math.round(v) + '%', lineCls: 'dv-line--funding', endCls: 'dv-end--funding',
+    tipHtml: (p) => '<strong>' + dvNum(p[1], 1) + '%</strong> rocznie<br>' + DV_TIME_FMT.format(new Date(p[0])),
+  });
+
+  if (d.oi) {
+    document.getElementById('dvOiValue').textContent = dvUsd(d.oi.usd);
+    const ch = d.oi.change24h;
+    const chText = ch == null ? 'zmiana w 24 h: pojawi się po dobie zbierania danych' : 'zmiana w 24 h: ' + (ch > 0 ? '+' : '') + dvNum(ch, 1) + '%';
+    document.getElementById('dvOiSub').textContent = 'Wartość otwartych pozycji na kontrakcie. ' + Math.round(d.oi.eth / 1000).toLocaleString('en-US') + ' tys. ETH, ' + chText + '.';
+  } else {
+    document.getElementById('dvOiValue').textContent = '-';
+    document.getElementById('dvOiSub').textContent = 'Brak danych o open interest.';
+  }
+  dvDrawLine({
+    wrapId: 'dvOiWrap', noteId: 'dvOiNote', series: d.oiSeries,
+    minPoints: 6, minSpanMs: 3 * 3600 * 1000,
+    emptyText: 'Wykres pojawi się, gdy zbierzemy więcej pomiarów (teraz: {n}, jeden na godzinę). Open interest zbieramy dopiero od niedawna.',
+    includeZero: false, baseline: null, baselineLabel: '',
+    yFmt: dvUsdShort, leftPad: 76, lineCls: 'dv-line--oi', endCls: 'dv-end--oi',
+    tipHtml: (p) => '<strong>' + dvUsd(p[1]) + '</strong><br>' + DV_TIME_FMT.format(new Date(p[0])),
+  });
+
+  document.getElementById('dvFoot').textContent = 'Dane z Hyperliquid, stan na ' + DV_TIME_FMT.format(new Date(d.asOf)) + ' (czas polski). Wykresy: ostatnie 30 dni.';
+}
+
+// Wykresy rysowane są w pikselach kontenera, więc po zmianie szerokości okna
+// (obrót telefonu, zmiana rozmiaru) trzeba je przerysować - z opóźnieniem, żeby
+// nie robić tego przy każdym pikselu przeciągania.
+let dvResizeTimer = null;
+let dvLastWidth = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(dvResizeTimer);
+  dvResizeTimer = setTimeout(() => {
+    const w = window.innerWidth;
+    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); }
+  }, 150);
+});
 
 function renderFreshness() {
   const candles = DATA.candles;
@@ -2729,6 +3020,7 @@ document.addEventListener('click', () => {
 
 renderHero();
 renderRegimeCard();
+renderDerivsCard();
 buildMainChart(filterCandlesByRange(currentRange));
 buildHistory();
 renderAggregateStats();
