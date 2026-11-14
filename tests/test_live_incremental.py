@@ -232,6 +232,7 @@ def _patch_all_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "DERIVS_HISTORY_PATH", tmp_path / "data" / "derivs_history.json")
     # Etap 1 planu "trend" - dopisane OD RAZU (patrz komentarze wyzej).
     monkeypatch.setattr(st, "RACE_STATE_PATH", tmp_path / "data" / "race_state.json")
+    monkeypatch.setattr(st, "MARKET_HISTORY_PATH", tmp_path / "data" / "market_history.json")
     # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
     # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
     # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
@@ -2280,7 +2281,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth"}
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2321,7 +2322,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert race2["lastBlock"] == new[-1]["block"]
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth"}
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)
@@ -2344,3 +2345,101 @@ def test_corrupted_race_state_does_not_break_the_run(tmp_path, monkeypatch):
     (tmp_path / "data" / "race_state.json").write_text("{zepsute", encoding="utf-8")
     assert ri.main() == 0
     assert st.load_race_state()["strategies"]
+
+
+# ---------------------------------------------------------------------------
+# Etap 2 planu "trend": BTC / ETH z Hyperliquid (live/market.py).
+# ---------------------------------------------------------------------------
+
+
+def _fake_market(monkeypatch, *, eth_price=3000.0, fail=False):
+    from hydra_signals.data_sources import hyperliquid_market as hm
+    from live import market as mk
+
+    monkeypatch.delenv("HYDRA_MARKET_DISABLED", raising=False)
+    monkeypatch.setattr(mk, "RETENTION_DAYS", 100_000)  # testowy lancuch ma daty z 2023 r.
+
+    def fake(coin, start_ms, now_ms, *a, **k):
+        if fail:
+            raise OSError("hyperliquid down")
+        base = (1_700_000_000 - 20 * 86400) * 1000
+        rows = []
+        for i in range(24 * 21):
+            t = base + i * 3_600_000
+            rows.append([t, 40_000.0 + 10 * i if coin == "BTC" else eth_price])
+        return rows
+
+    monkeypatch.setattr(hm, "fetch_closes", fake)
+
+
+def _run_env(monkeypatch, tmp_path, end_block=1000):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", str(end_block))
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=end_block)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+    return chain
+
+
+def test_market_features_on_candles_and_btc_strategies_join_existing_race(tmp_path, monkeypatch):
+    chain = _run_env(monkeypatch, tmp_path)
+    # wyscig z etapu 1 (tylko 3 strategie) - etap 2 ma do niego dolaczyc, nie zaczynac od nowa
+    assert ri.main() == 0
+    race1 = st.load_race_state()
+    for k in ("btc14", "ethbtc14"):
+        race1["strategies"].pop(k)
+    st.save_race_state(race1)
+    first_candles = st.load_candles_history()
+    for c in first_candles:  # stan sprzed etapu 2: swiece bez pol BTC
+        for k in ("btcPrice", "btcSma", "btcTrendDistPct", "btcSignal", "ethRefPrice", "ethBtc", "ethBtcSma", "ethBtcDistPct", "ethBtcSignal"):
+            c.pop(k, None)
+    st.save_candles_history(first_candles)
+
+    _fake_market(monkeypatch)
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    new = candles[len(first_candles):]
+    assert new
+    for c in candles:  # nowe swiece i dopelnione stare
+        assert c["btcSignal"] == "LONG" and c["ethRefPrice"] == 3000.0 and c["btcTrendDistPct"] > 0
+    assert all(c["priceSuspect"] is False for c in new)
+    race = st.load_race_state()
+    assert race["start"] == race1["start"]
+    assert race["strategies"]["btc14"]["startTime"] == new[0]["time"]
+    assert race["strategies"]["btc14"]["position"] == "LONG"
+    assert race["strategies"]["ethbtc14"]["position"] == "HOLD"  # trend ETH jeszcze HOLD (za malo historii)
+    m = st.load_latest_run_manifest()
+    assert m["market"]["enabled"] is True and m["market"]["BTC"]["new"] == 24 * 21
+    assert m["market_fill"] == len(first_candles)
+    assert len(st.load_market_history()["coins"]["ETH"]) == 24 * 21
+
+    # strona dostala dane karty BTC
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    s_idx = html.index(marker) + len(marker)
+    data = json.loads(html[s_idx : html.index(";", s_idx)])
+    assert data["market"]["btc"]["signal"] == "LONG" and data["market"]["ethBtc"]["signal"] == "SHORT"
+
+
+def test_pool_price_far_from_hyperliquid_is_suspect_and_skipped_by_race(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path, end_block=500)
+    _fake_market(monkeypatch, eth_price=2000.0)  # pula pokazuje ~3000 -> 50% odchylenia
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles and all(c["priceSuspect"] is True for c in candles)
+    race = st.load_race_state()
+    assert race == {} or race["lastBlock"] is None
+
+
+def test_market_source_down_never_breaks_the_run(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path, end_block=500)
+    _fake_market(monkeypatch, fail=True)
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles and all(c["btcSignal"] is None for c in candles)
+    m = st.load_latest_run_manifest()
+    assert any(w.startswith("market: BTC") for w in m["warnings"])
+    assert any(w.startswith("market: ETH") for w in m["warnings"])

@@ -1027,6 +1027,19 @@
   .rc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .rc-empty { font-size: 13px; color: var(--text-muted); padding: 6px 0 2px; }
   .rc-foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; margin-top: 10px; }
+
+  /* ---------- Etap 2 planu "trend": karta "BTC i siła ETH" (reużywa klas dv-),
+     dwie nowe strategie w wyścigu. ---------- */
+  .dv-overlay { fill: none; stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.9; }
+  .dv-line--btc { stroke: #E58FD8; }
+  .dv-end--btc { fill: #E58FD8; }
+  .dv-line--ratio { stroke: #4FD1C5; }
+  .dv-end--ratio { fill: #4FD1C5; }
+  .dv-pill--up { color: var(--good-glow); background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+  .dv-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+  .dv-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dv-legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--mk-c); }
+  .dv-legend i.dash { border-top-style: dashed; border-top-color: var(--text-secondary); }
 </style>
 <div class="page">
 
@@ -1412,6 +1425,45 @@
         <p><strong>Po co to Hydrze:</strong> sprawdzamy, czy te wskaźniki mówią coś o przyszłej cenie. Na razie tylko je zbieramy i pokazujemy. Jeśli okażą się przydatne, wejdą do sygnału. To narzędzie badawcze, nie porada inwestycyjna.</p>
       </details>
       <div class="dv-foot" id="dvFoot"></div>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4" id="marketCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">BTC i siła ETH</span>
+        <span class="info-tip" tabindex="0" data-tip="Ceny godzinowe BTC i ETH z Hyperliquid. ETH bardzo mocno chodzi za bitcoinem, a BTC często rusza pierwszy. Te dane nie zmieniają głównego sygnału, ale grają w Wyścigu strategii jako „Trend BTC” i „Trend ETH i BTC zgodne”. Cena ETH z Hyperliquid służy też do wyłapywania błędnych cen z puli.">ⓘ</span>
+      </div>
+      <span class="dv-badge">informacyjnie i w wyścigu</span>
+    </div>
+    <p class="card-subnote">Ta sama zasada co główny sygnał: trend wzrostowy, gdy cena jest nad średnią z 14 dni, spadkowy, gdy pod nią.</p>
+    <div class="dv-empty" id="mkEmpty" style="display:none;">Zbieramy dane — karta wypełni się po pierwszym pobraniu cen z Hyperliquid.</div>
+    <div id="mkBody">
+      <div class="dv-grid">
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Bitcoin (BTC)</span>
+            <span class="dv-pill" id="mkBtcPill">-</span>
+          </div>
+          <div class="dv-value" id="mkBtcValue">-</div>
+          <div class="dv-sub" id="mkBtcSub">-</div>
+          <div class="chart-wrap dv-chart" id="mkBtcWrap"><svg role="img" aria-label="Cena BTC z ostatnich 30 dni ze średnią 14 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="mkBtcNote" style="display:none;"></p>
+          <div class="dv-legend"><span><i style="--mk-c:#E58FD8"></i>cena BTC</span><span><i class="dash"></i>średnia 14 dni</span></div>
+        </div>
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">ETH względem BTC<span class="info-tip" tabindex="0" data-tip="Ile bitcoina kosztuje jeden ETH. Rośnie, gdy ETH radzi sobie lepiej niż BTC (rośnie mocniej albo spada słabiej), spada, gdy gorzej.">ⓘ</span></span>
+            <span class="dv-pill" id="mkRatioPill">-</span>
+          </div>
+          <div class="dv-value" id="mkRatioValue">-</div>
+          <div class="dv-sub" id="mkRatioSub">-</div>
+          <div class="chart-wrap dv-chart" id="mkRatioWrap"><svg role="img" aria-label="Stosunek ETH do BTC z ostatnich 30 dni ze średnią 14 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="mkRatioNote" style="display:none;"></p>
+          <div class="dv-legend"><span><i style="--mk-c:#4FD1C5"></i>ETH/BTC</span><span><i class="dash"></i>średnia 14 dni</span></div>
+        </div>
+      </div>
+      <div class="dv-foot" id="mkFoot"></div>
     </div>
   </section>
 
@@ -2111,7 +2163,8 @@ function dvDrawLine(cfg) {
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('width', W);
   svg.setAttribute('height', H);
-  const vals = pts.map((p) => p[1]);
+  const ov = cfg.overlay || [];
+  const vals = pts.map((p) => p[1]).concat(ov.map((p) => p[1]));
   let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
   if (cfg.includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
   if (cfg.baseline != null) { lo = Math.min(lo, cfg.baseline); hi = Math.max(hi, cfg.baseline); }
@@ -2141,6 +2194,11 @@ function dvDrawLine(cfg) {
     const t = t0 + tk[0] * (t1 - t0);
     g += '<text class="chart-axis-label" x="' + (L + tk[0] * (W - L - R)).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + tk[1] + '">' + DV_DAY_FMT.format(new Date(t)) + '</text>';
   });
+  if (ov.length > 1) {
+    let od = '';
+    ov.forEach((p, i) => { od += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); });
+    g += '<path class="dv-overlay" d="' + od + '"></path>';
+  }
   let d = '';
   pts.forEach((p, i) => { d += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); });
   g += '<path class="dv-line ' + cfg.lineCls + '" d="' + d + '"></path>';
@@ -2238,7 +2296,7 @@ window.addEventListener('resize', () => {
   clearTimeout(dvResizeTimer);
   dvResizeTimer = setTimeout(() => {
     const w = window.innerWidth;
-    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); }
+    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); renderMarketCard(); }
   }, 150);
 });
 
@@ -2251,7 +2309,10 @@ const RC_STRATS = [
   { key: 'trend14', name: 'Trend 14 dni', sub: 'główny sygnał', color: '#FFC94A', dash: false },
   { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
+  { key: 'btc14', name: 'Trend BTC', sub: 'ETH według trendu bitcoina', color: '#E58FD8', dash: false },
+  { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
 ];
+const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
@@ -2371,7 +2432,10 @@ function renderRaceCard() {
     const posCls = s.position === 'LONG' ? 'long' : s.position === 'SHORT' ? 'short' : 'hold';
     const res = '<td class="num ' + (s.resultPct > 0 ? 'rc-good' : s.resultPct < 0 ? 'rc-bad' : '') + '">' + rcPct(s.resultPct) + '</td>';
     const isEth = d.key === 'eth';
-    return '<tr><td><span class="rc-name"><span class="rc-swatch' + (d.dash ? ' rc-swatch--dash' : '') + '" style="--rc-c:' + d.color + ';background:' + d.color + '"></span><span>' + d.name + '<small>' + d.sub + '</small></span></span></td>' +
+    // strategie dołączone w późniejszych etapach mają własną datę startu
+    const lateStart = rcView === 'live' && s.startTime && live.start && s.startTime !== live.start.time;
+    const sub = d.sub + (lateStart ? ' · gra od ' + s.startTime.slice(0, 5) : '');
+    return '<tr><td><span class="rc-name"><span class="rc-swatch' + (d.dash ? ' rc-swatch--dash' : '') + '" style="--rc-c:' + d.color + ';background:' + d.color + '"></span><span>' + d.name + '<small>' + sub + '</small></span></span></td>' +
       '<td><span class="rc-pos ' + posCls + '">' + signalLabel(s.position) + '</span></td>' + res +
       '<td class="num">' + (isEth ? '–' : s.trades) + '</td>' +
       '<td class="num">' + (isEth || !s.trades ? '–' : s.wins + ' (' + Math.round((100 * s.wins) / s.trades) + '%)') + '</td>' +
@@ -2379,7 +2443,7 @@ function renderRaceCard() {
   });
   document.getElementById('rcRows').innerHTML = rows.join('');
   rcDrawChart(RC_STRATS.filter((d) => view.strategies[d.key]).map((d) => ({
-    color: d.color, dash: d.dash, short: d.key === 'trend14' ? 'Trend' : d.key === 'hydra' ? 'Hydra' : 'ETH',
+    color: d.color, dash: d.dash, short: RC_SHORT[d.key] || d.key,
     points: view.strategies[d.key].curve,
   })));
   document.getElementById('rcFoot').textContent = 'Prowizja ' + fee + '% za każde wejście i wyjście. Wynik bez dźwigni, cały kapitał w jednej pozycji. Najgorszy spadek = największa strata od szczytu kapitału.';
@@ -2387,6 +2451,63 @@ function renderRaceCard() {
 document.querySelectorAll('#rcSwitch .range-btn').forEach((b) => {
   b.addEventListener('click', () => { if (!b.disabled) { rcView = b.dataset.rc; renderRaceCard(); } });
 });
+
+// =====================================================================
+// Etap 2 planu "trend": karta "BTC i siła ETH" (DATA.market z
+// live/build_site.py::_build_market_summary). Niezależna od zakładek.
+// =====================================================================
+function mkTip(series, fmt) {
+  const sma = new Map(series.smaSeries.map((p) => [p[0], p[1]]));
+  return (p) => '<strong>' + fmt(p[1]) + '</strong>' + (sma.has(p[0]) ? '<br>średnia 14 dni: ' + fmt(sma.get(p[0])) : '') +
+    '<br>' + DV_TIME_FMT.format(new Date(p[0] * 1000));
+}
+function mkTrendText(distPct, sma, fmt) {
+  if (distPct == null || sma == null) return 'Za mało historii, żeby policzyć średnią z 14 dni.';
+  return 'Cena ' + dvNum(Math.abs(distPct), 1) + '% ' + (distPct >= 0 ? 'nad' : 'pod') + ' średnią z 14 dni (' + fmt(sma) + ').';
+}
+function renderMarketCard() {
+  const m = DATA.market;
+  const body = document.getElementById('mkBody');
+  const empty = document.getElementById('mkEmpty');
+  if (!m || !m.btc) { body.style.display = 'none'; empty.style.display = 'block'; return; }
+  empty.style.display = 'none'; body.style.display = '';
+  const usd0 = (v) => '$' + Math.round(v).toLocaleString('en-US');
+  const usdK = (v) => '$' + dvNum(v / 1000, 0) + 'k';
+  const ratioFmt = (v) => dvNum(v, 5);
+
+  const b = m.btc;
+  const bPill = document.getElementById('mkBtcPill');
+  bPill.textContent = b.signal === 'LONG' ? 'trend wzrostowy' : b.signal === 'SHORT' ? 'trend spadkowy' : 'brak trendu';
+  bPill.className = 'dv-pill' + (b.signal === 'LONG' ? ' dv-pill--up' : b.signal === 'SHORT' ? ' dv-pill--neg' : '');
+  document.getElementById('mkBtcValue').textContent = usd0(b.value);
+  document.getElementById('mkBtcSub').textContent = mkTrendText(b.distPct, b.sma, usd0) + ' BTC często rusza pierwszy, a ETH idzie za nim.';
+  dvDrawLine({
+    wrapId: 'mkBtcWrap', noteId: 'mkBtcNote', series: b.series.map((p) => [p[0] * 1000, p[1]]), overlay: b.smaSeries.map((p) => [p[0] * 1000, p[1]]),
+    minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+    includeZero: false, baseline: null, leftPad: 60, yFmt: usdK, lineCls: 'dv-line--btc', endCls: 'dv-end--btc',
+    tipHtml: (p) => mkTip(b, usd0)([p[0] / 1000, p[1]]),
+  });
+
+  const r = m.ethBtc;
+  const rPill = document.getElementById('mkRatioPill');
+  if (r) {
+    rPill.textContent = r.signal === 'LONG' ? 'ETH silniejszy od BTC' : r.signal === 'SHORT' ? 'ETH słabszy od BTC' : 'bez wyraźnej przewagi';
+    rPill.className = 'dv-pill' + (r.signal === 'LONG' ? ' dv-pill--up' : r.signal === 'SHORT' ? ' dv-pill--neg' : '');
+    document.getElementById('mkRatioValue').innerHTML = ratioFmt(r.value) + '<small>BTC</small>';
+    document.getElementById('mkRatioSub').textContent = mkTrendText(r.distPct, r.sma, ratioFmt);
+    dvDrawLine({
+      wrapId: 'mkRatioWrap', noteId: 'mkRatioNote', series: r.series.map((p) => [p[0] * 1000, p[1]]), overlay: r.smaSeries.map((p) => [p[0] * 1000, p[1]]),
+      minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+      includeZero: false, baseline: null, leftPad: 64, yFmt: (v) => dvNum(v, 4), lineCls: 'dv-line--ratio', endCls: 'dv-end--ratio',
+      tipHtml: (p) => mkTip(r, ratioFmt)([p[0] / 1000, p[1]]),
+    });
+  } else {
+    rPill.textContent = '-';
+    document.getElementById('mkRatioValue').textContent = '-';
+    document.getElementById('mkRatioSub').textContent = 'Brak danych.';
+  }
+  document.getElementById('mkFoot').textContent = 'Dane z Hyperliquid (świece godzinowe), stan na ' + DV_TIME_FMT.format(new Date(b.t * 1000)) + ' (czas polski). Wykresy: ostatnie 30 dni.';
+}
 
 function renderFreshness() {
   const candles = DATA.candles;
@@ -3270,6 +3391,7 @@ renderHero();
 renderRaceCard();
 renderRegimeCard();
 renderDerivsCard();
+renderMarketCard();
 buildMainChart(filterCandlesByRange(currentRange));
 buildHistory();
 renderAggregateStats();

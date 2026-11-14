@@ -13,3 +13,5 @@ import pytest
 @pytest.fixture(autouse=True)
 def _no_derivs_network(monkeypatch):
     monkeypatch.setenv("HYDRA_DERIVS_DISABLED", "1")
+    # Etap 2 planu "trend": ceny BTC/ETH z Hyperliquid - tak samo bez sieci w testach.
+    monkeypatch.setenv("HYDRA_MARKET_DISABLED", "1")

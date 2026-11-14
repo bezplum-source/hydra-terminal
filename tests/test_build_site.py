@@ -632,7 +632,9 @@ def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
     assert r["live"] is None
     lb = r["lookback"]
     assert lb["fromTime"] is not None and lb["fromPrice"] == 2000.0
-    assert set(lb["strategies"]) == {"trend14", "hydra", "eth"}
+    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
+    # brak pól BTC na świecach -> strategie BTC nigdy nie wchodzą w pozycję
+    assert lb["strategies"]["btc14"]["position"] == "HOLD" and lb["strategies"]["btc14"]["trades"] == 0
     # ETH rośnie od startu widoku wstecz -> kup i trzymaj na plusie, trend na plusie
     assert lb["strategies"]["eth"]["resultPct"] > 0
     assert lb["strategies"]["trend14"]["position"] == "LONG"
@@ -669,3 +671,44 @@ def test_build_site_embeds_race_section(tmp_path, monkeypatch):
     start = html.index(marker) + len(marker)
     data = json.loads(html[start : html.index(";", start)])
     assert data["race"]["live"] is None and data["race"]["lookback"]["strategies"]["eth"]["trades"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Etap 2 planu "trend": karta "BTC i ETH/BTC" i strategie BTC w widoku wstecz.
+# ---------------------------------------------------------------------------
+
+
+def _market_history(hours=24 * 40, btc=lambda i: 50_000.0 + 5 * i, eth=lambda i: 2000.0):
+    end = int(_LB * 1000) + 24 * 3600 * 1000 * 5
+    start = end - (hours - 1) * 3_600_000
+    return {
+        "version": 1,
+        "coins": {
+            "BTC": [[start + i * 3_600_000, btc(i)] for i in range(hours)],
+            "ETH": [[start + i * 3_600_000, eth(i)] for i in range(hours)],
+        },
+    }
+
+
+def test_market_summary_none_without_btc_data():
+    assert bs._build_market_summary(None) is None
+    assert bs._build_market_summary({"coins": {"BTC": [], "ETH": []}}) is None
+
+
+def test_market_summary_current_trend_and_30_day_series():
+    m = bs._build_market_summary(_market_history())
+    btc, ratio = m["btc"], m["ethBtc"]
+    assert btc["signal"] == "LONG" and btc["distPct"] > 0 and btc["value"] == 50_000.0 + 5 * (24 * 40 - 1)
+    assert ratio["signal"] == "SHORT"  # ETH stoi, BTC rośnie
+    assert 24 * bs.MARKET_DISPLAY_DAYS <= len(btc["series"]) <= 24 * bs.MARKET_DISPLAY_DAYS + 1
+    assert btc["series"][-1][0] == btc["t"] and 0 < len(btc["smaSeries"]) <= len(btc["series"])
+    assert btc["smaSeries"][-1][0] == btc["t"]  # średnia liczona do ostatniej świecy
+
+
+def test_lookback_btc_strategy_uses_candle_btc_signal():
+    candles = _race_candles()
+    for c in candles:
+        c["btcSignal"] = "LONG"
+    r = bs._build_race_summary(None, candles)["lookback"]["strategies"]
+    assert r["btc14"]["position"] == "LONG" and r["btc14"]["resultPct"] > 0
+    assert r["ethbtc14"]["position"] == "LONG"  # na końcu trend ETH też LONG

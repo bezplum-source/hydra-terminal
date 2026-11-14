@@ -55,6 +55,7 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
     fetch_trades_from_chain_batched,
 )
 from hydra_signals.data_sources import hyperliquid_derivs as hl_derivs  # noqa: E402
+from hydra_signals.data_sources import hyperliquid_market as hl_market  # noqa: E402
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws  # noqa: E402
 from hydra_signals.data_sources.pools import BASE_POOLS, POOLS  # noqa: E402
 from hydra_signals.hyperliquid_wallets import (  # noqa: E402
@@ -64,6 +65,7 @@ from hydra_signals.hyperliquid_wallets import (  # noqa: E402
 from hydra_signals.models import Signal  # noqa: E402
 from live import block_time as bt  # noqa: E402
 from live import derivs  # noqa: E402
+from live import market  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals import strategies as strat  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
@@ -107,6 +109,11 @@ HYPERLIQUID_PERP_WEIGHT = float(os.environ.get("HYDRA_PERP_WEIGHT", "0.5"))
 # nie dotykaly sieci). Glebokosc backfillu historii funding przy pierwszym
 # uruchomieniu (godzinowe wiersze, ~24/dobe).
 DERIVS_BACKFILL_DAYS = int(os.environ.get("HYDRA_DERIVS_BACKFILL_DAYS", "120"))
+
+# Etap 2 planu "trend" (14.11.2026): godzinowe ceny BTC i ETH z Hyperliquid
+# (trend BTC, ETH/BTC, cena odniesienia ETH do lapania blednych cen z puli) -
+# patrz live/market.py. HYDRA_MARKET_DISABLED=1 wylacza krok (testy).
+MARKET_BACKFILL_DAYS = int(os.environ.get("HYDRA_MARKET_BACKFILL_DAYS", "200"))
 
 # Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - stale CELOWO
 # ostrozne/male w porownaniu z odpowiednikami mainnetowymi wyzej. Powod:
@@ -351,16 +358,49 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
     return history
 
 
-RACE_STRATEGIES = ("trend14", "hydra", "eth")
+RACE_STRATEGIES = ("trend14", "hydra", "eth", "btc14", "ethbtc14")
 
 
-def _race_signals(candle: dict) -> dict[str, str]:
-    """Sygnal kazdej strategii wyscigu dla jednej swiecy."""
+def _race_signals(candle: dict) -> dict[str, str | None]:
+    """Sygnal kazdej strategii wyscigu dla jednej swiecy. None = brak danych
+    w tej swiecy -> strategia trzyma dotychczasowa pozycje."""
     return {
         "trend14": candle.get("signal", "HOLD"),
         "hydra": candle.get("signalHydra", "HOLD"),
         "eth": "LONG",  # punkt odniesienia: po prostu trzymanie ETH
+        # Etap 2: ETH grany wedlug trendu BTC (BTC czesto rusza pierwszy)
+        "btc14": candle.get("btcSignal"),
+        # Etap 2: tylko gdy trend ETH i trend BTC sie zgadzaja
+        "ethbtc14": market.combined_signal(candle.get("signal"), candle.get("btcSignal")),
     }
+
+
+def _update_market_history(manifest: dict, now: datetime.datetime) -> dict:
+    """Etap 2: odswieza `data/market_history.json` (godzinowe ceny BTC i ETH z
+    Hyperliquid). NIGDY nie przerywa uruchomienia."""
+    history = st.load_market_history()
+    if os.environ.get("HYDRA_MARKET_DISABLED"):
+        manifest["market"] = {"enabled": False}
+        return history
+    try:
+        counters = market.update_history(
+            history,
+            int(now.timestamp() * 1000),
+            fetch=lambda coin, start_ms, now_ms: hl_market.fetch_closes(coin, start_ms, now_ms),
+            backfill_days=MARKET_BACKFILL_DAYS,
+        )
+    except Exception as exc:  # noqa: BLE001
+        counters = {"errors": [f"{type(exc).__name__}: {exc}"]}
+    manifest["market"] = {"enabled": True, **counters}
+    for err in counters.get("errors", []):
+        log(f"UWAGA: market: {err}")
+        manifest["warnings"].append(f"market: {err}")
+    log(
+        "Ceny BTC/ETH z Hyperliquid: "
+        + ", ".join(f"{c} +{counters[c]['new']} (razem {counters[c]['total']})" for c in market.COINS if c in counters)
+    )
+    st.save_market_history(history)
+    return history
 
 
 def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
@@ -381,6 +421,11 @@ def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
                     start_ts=c.get("ts"),
                     start_price=c["price"],
                 )
+            # strategie dodane w kolejnych etapach dolaczaja do trwajacego
+            # wyscigu od tej swiecy (kazda ma wlasna date startu)
+            for name in RACE_STRATEGIES:
+                if name not in race["strategies"]:
+                    race["strategies"][name] = strat.new_strategy_book(c.get("time", ""), c["block"])
             strat.race_step(race, c, _race_signals(c))
         if race:
             st.save_race_state(race)
@@ -479,11 +524,19 @@ def main() -> int:
             "backfill_blocks": BACKFILL_BLOCKS,
             "perp_weight": HYPERLIQUID_PERP_WEIGHT,
             "derivs_backfill_days": DERIVS_BACKFILL_DAYS,
+            "market_backfill_days": MARKET_BACKFILL_DAYS,
         },
         "warnings": [],
         "lake_objects": [],
     }
     derivs_history = _update_derivs_history(manifest, run_started_at)
+    market_history = _update_market_history(manifest, run_started_at)
+    try:
+        market_lookups = market.build_lookups(market_history)
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: market: nie udalo sie policzyc trendow BTC/ETH ({exc}).")
+        manifest["warnings"].append(f"market: {type(exc).__name__}: {exc}")
+        market_lookups = None
 
     scoring_state = st.load_scoring_state()
     trade_buffer = st.load_trade_buffer()
@@ -999,7 +1052,7 @@ def main() -> int:
         for hc in candles_history:
             # ta sama ochrona przed blednymi cenami co w wyscigu (patrz
             # strat.PriceGuard) - odtwarzana z historii przy kazdym uruchomieniu
-            if price_guard.check(hc.get("price")) and hc.get("ts") is not None:
+            if price_guard.check(hc.get("price"), hc.get("ethRefPrice")) and hc.get("ts") is not None:
                 trend_window.add(hc["ts"], hc["price"])
         last_trend_signal = (
             candles_history[-1].get("signal", "HOLD")
@@ -1173,7 +1226,8 @@ def main() -> int:
                 composite_spot_combined_lt, threshold=signal_engine_lt.cfg.enter_threshold
             )
 
-            price_ok = price_guard.check(s.price_usd)
+            market_feats = market.features_at(market_lookups, ts)
+            price_ok = price_guard.check(s.price_usd, market_feats["ethRefPrice"])
             if ts is not None and price_ok:
                 trend_window.add(ts, s.price_usd)
                 trend_sig, trend_sma, trend_dist = trend_window.signal_at(ts, s.price_usd)
@@ -1331,6 +1385,9 @@ def main() -> int:
                 # Faza "funding + open interest" - pola zapisywane NA SWIECY
                 # (puste = None, gdy brak danych); NIE wchodza do composite.
                 **derivs.features_at(derivs_history, ts),
+                # Etap 2 planu "trend": BTC, ETH/BTC i cena odniesienia ETH
+                # z Hyperliquid (None, gdy brak danych).
+                **market_feats,
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
                 # Niezalezne od "signal"/"composite" powyzej - osobny,
                 # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
@@ -1497,12 +1554,25 @@ def main() -> int:
     # informacyjne `trendSma`/`trendDistPct` swiecom, ktore ich nie maja.
     # Sygnal (`signal`) starych swiec NIE jest zmieniany - historia zostaje taka,
     # jaka byla.
+    # Etap 2: pola BTC / ETH/BTC / ceny odniesienia dla swiec, ktore ich nie
+    # maja (cala historia przy pierwszym uruchomieniu po wdrozeniu - Hyperliquid
+    # daje ~208 dni swiec godzinowych). Tylko pola informacyjne; sygnal bez zmian.
+    if market_lookups is not None:
+        market_filled = 0
+        for c in candles_history:
+            if "btcSignal" not in c and c.get("ts") is not None:
+                feats = market.features_at(market_lookups, c["ts"])
+                if feats["btcPrice"] is not None or feats["ethRefPrice"] is not None:
+                    c.update(feats)
+                    market_filled += 1
+        manifest["market_fill"] = market_filled
+
     if any("trendSma" not in c for c in candles_history):
         fill_window = strat.TrendWindow()
         fill_guard = strat.PriceGuard()
         trend_filled = 0
         for c in candles_history:
-            if not fill_guard.check(c.get("price")) or c.get("ts") is None:
+            if not fill_guard.check(c.get("price"), c.get("ethRefPrice")) or c.get("ts") is None:
                 continue
             fill_window.add(c["ts"], c["price"])
             if "trendSma" not in c:
@@ -1563,6 +1633,7 @@ def main() -> int:
         },
         derivs_history=derivs_history,
         race_state=race_state,
+        market_history=market_history,
     )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 

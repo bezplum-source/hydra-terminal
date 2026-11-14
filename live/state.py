@@ -123,6 +123,8 @@ DERIVS_HISTORY_PATH = DATA_DIR / "derivs_history.json"
 # Etap 1 planu "trend": "wyscig strategii" (gra na papierze od dnia wdrozenia),
 # patrz hydra_signals/strategies.py i live/run_incremental.py::_update_race.
 RACE_STATE_PATH = DATA_DIR / "race_state.json"
+# Etap 2 planu "trend": godzinowe ceny BTC i ETH z Hyperliquid (live/market.py).
+MARKET_HISTORY_PATH = DATA_DIR / "market_history.json"
 
 # Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
 # liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
@@ -275,6 +277,28 @@ def load_race_state() -> dict:
 def save_race_state(race: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     RACE_STATE_PATH.write_text(json.dumps(race, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def load_market_history() -> dict:
+    empty = {"version": 1, "coins": {"BTC": [], "ETH": []}}
+    if not MARKET_HISTORY_PATH.exists():
+        return empty
+    try:
+        raw = json.loads(MARKET_HISTORY_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return empty
+    coins = raw.get("coins") if isinstance(raw, dict) else None
+    if not isinstance(coins, dict):
+        return empty
+    return {
+        "version": 1,
+        "coins": {c: coins.get(c) if isinstance(coins.get(c), list) else [] for c in ("BTC", "ETH")},
+    }
+
+
+def save_market_history(history: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MARKET_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def load_regime_state() -> dict:

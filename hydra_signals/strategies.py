@@ -47,6 +47,11 @@ _DIR = {LONG: 1, SHORT: -1, HOLD: 0}
 # zmieniana - to tylko decyzja, czy jej uzyc.
 PRICE_JUMP_MAX = 0.15
 PRICE_CONFIRM_TOL = 0.03
+# Etap 2: druga, niezależna kontrola - cena z puli nie może odbiegać o więcej
+# niż REF_MAX_DEV od ceny ETH z Hyperliquid z tej samej godziny (`ethRefPrice`
+# na świecy). Łapie też błędną cenę, której "skok" nie przekroczył 15%, albo
+# błąd powtórzony dwie świece z rzędu. Bez ceny odniesienia działa sam skok.
+REF_MAX_DEV = 0.05
 
 
 class PriceGuard:
@@ -54,9 +59,12 @@ class PriceGuard:
         self.last: float | None = None
         self.pending: float | None = None
 
-    def check(self, price: float | None) -> bool:
-        """True = cena wiarygodna (i staje sie nowym punktem odniesienia)."""
+    def check(self, price: float | None, ref: float | None = None) -> bool:
+        """True = cena wiarygodna (i staje sie nowym punktem odniesienia).
+        `ref` - opcjonalna cena odniesienia z innego źródła (patrz REF_MAX_DEV)."""
         if not price:
+            return False
+        if ref and abs(price / ref - 1.0) > REF_MAX_DEV:
             return False
         if self.last is None or abs(price / self.last - 1.0) <= PRICE_JUMP_MAX:
             self.last, self.pending = price, None
@@ -71,7 +79,7 @@ class PriceGuard:
 def price_flags(candles: Iterable[dict]) -> list[bool]:
     """Dla kazdej swiecy: czy jej cena jest wiarygodna (patrz `PriceGuard`)."""
     guard = PriceGuard()
-    return [guard.check(c.get("price")) for c in candles]
+    return [guard.check(c.get("price"), c.get("ethRefPrice")) for c in candles]
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +147,7 @@ def trend_series(candles: Iterable[dict], days: float = TREND_DAYS) -> list[str]
     last = HOLD
     for c in candles:
         ts, price = c.get("ts"), c.get("price")
-        ok = guard.check(price)
+        ok = guard.check(price, c.get("ethRefPrice"))
         if ts is None or not ok:
             out.append(last)
             continue
@@ -154,8 +162,12 @@ def trend_series(candles: Iterable[dict], days: float = TREND_DAYS) -> list[str]
 # ---------------------------------------------------------------------------
 
 
-def new_strategy_book() -> dict:
+def new_strategy_book(start_time: str | None = None, start_block: int | None = None) -> dict:
     return {
+        # od kiedy ta strategia gra (strategie dodawane w kolejnych etapach
+        # startują później niż sam wyścig)
+        "startTime": start_time,
+        "startBlock": start_block,
         "position": HOLD,
         "entryPrice": None,
         "entryTime": None,
@@ -174,7 +186,7 @@ def new_race(names: Iterable[str], *, start_block: int, start_time: str, start_t
         "version": 1,
         "start": {"block": start_block, "time": start_time, "ts": start_ts, "price": start_price},
         "lastBlock": None,
-        "strategies": {n: new_strategy_book() for n in names},
+        "strategies": {n: new_strategy_book(start_time, start_block) for n in names},
     }
 
 
@@ -202,7 +214,11 @@ def _close(book: dict, price: float, time: str, block: int, fee: float) -> None:
 
 def strategy_step(book: dict, *, signal: str, price: float, time: str, block: int, ts: int | None, fee: float = FEE_PER_SIDE) -> None:
     """Advance one strategy by one candle: mark the open position to `price`,
-    then switch position if `signal` differs (exit + entry fees)."""
+    then switch position if `signal` differs (exit + entry fees).
+    `signal=None` means "no opinion this candle" (e.g. missing BTC data): the
+    current position is kept, nothing is opened or closed."""
+    if signal is None:
+        signal = book["position"]
     if signal not in _DIR:
         signal = HOLD
     if book["lastPrice"] and book["position"] != HOLD:
@@ -231,7 +247,7 @@ def race_step(race: dict, candle: dict, signals: dict[str, str], fee: float = FE
     for name, book in race["strategies"].items():
         strategy_step(
             book,
-            signal=signals.get(name, HOLD),
+            signal=signals.get(name),
             price=candle["price"],
             time=candle.get("time", ""),
             block=block,
@@ -276,6 +292,7 @@ def summarize_book(book: dict) -> dict:
         "openSince": book["entryTime"],
         "openEntryPrice": round(book["entryPrice"], 2) if book["entryPrice"] else None,
         "openPct": open_pct,
+        "startTime": book.get("startTime"),
     }
 
 

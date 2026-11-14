@@ -237,6 +237,7 @@
       <a href="#mainnet">Ethereum mainnet</a>
       <a href="#hyperliquid">Hyperliquid (ETH-PERP)</a>
       <a href="#derivs">Funding &amp; open interest</a>
+      <a href="#market">BTC &amp; ETH prices</a>
       <a href="#base">Base L2</a>
       <a href="#long-term">Long term (30d) track</a>
       <a href="#automation">Automation &amp; state</a>
@@ -346,6 +347,11 @@
             <td><strong>Headline signal</strong><br>14-day price trend</td>
             <td><span class="pill long">live since 2026-11-14</span></td>
             <td>The big LONG/SHORT on the dashboard; the wallet signal plays alongside in the <a href="#race">strategy race</a></td>
+          </tr>
+          <tr>
+            <td><strong>BTC &amp; ETH hourly prices</strong><br>Hyperliquid, REST</td>
+            <td><span class="pill bull">informational · in race</span></td>
+            <td>BTC and ETH/BTC trends on every candle, two race strategies, reference price for the bad-price guard — see <a href="#market">BTC and ETH hourly prices</a></td>
           </tr>
           <tr>
             <td><strong>Funding &amp; open interest</strong><br>Hyperliquid ETH-PERP, REST</td>
@@ -764,7 +770,10 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             the next candle confirming the new level (<code>priceSuspect</code>, e.g. the
             pool read of $2,986.88 on 2026-10-29 between ~$2,316 and ~$2,239) neither moves
             the average nor values or opens a race position; it inherits the previous
-            trend signal.
+            trend signal. Since roadmap step 2 a candle is also suspect when its pool price
+            is more than 5% away from Hyperliquid's hourly ETH price at that time
+            (<code>ethRefPrice</code>), which also catches a bad price repeated on two
+            candles in a row.
           </p>
         </div>
         <p>
@@ -834,9 +843,14 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           price. Since 2026-11-14 the entrants are <strong>Trend 14 dni</strong> (the
           headline signal), <strong>Hydra — portfele</strong> (the wallet engine's
           <code>signalHydra</code>) and <strong>ETH kup i trzymaj</strong> as a reference.
-          Later steps of the roadmap add more entrants (BTC trend, a trend/range hybrid,
-          wallet-timed entries, …), each of which starts its own record on the day it is
-          added.
+          Since roadmap step 2 (2026-11-14) two more play: <strong>Trend BTC</strong> (ETH
+          traded by bitcoin's own 14-day trend, <code>btcSignal</code>) and <strong>Trend
+          ETH i BTC zgodne</strong> (LONG or SHORT only while the ETH and BTC trends agree,
+          out of the market otherwise). A strategy added to a race that is already running
+          gets its own start candle (<code>startTime</code> in its book, shown as "gra od …"
+          in the table). When a strategy's input is missing for a candle (no BTC data), it
+          keeps its current position instead of closing it. Later steps add more entrants
+          (a trend/range hybrid, wallet-timed entries, …) the same way.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by
@@ -969,6 +983,32 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           normally, logs a <code>derivs:</code> warning in the manifest, and the candle
           fields stay <code>null</code> (the dashboard card keeps showing the last
           stored values).
+        </p>
+        <h3 id="market">BTC and ETH hourly prices (roadmap step 2)</h3>
+        <p>
+          Every run also asks Hyperliquid's public <code>candleSnapshot</code> endpoint for
+          closed 1-hour candles of BTC and ETH
+          (<code>hydra_signals/data_sources/hyperliquid_market.py</code>, logic in
+          <code>live/market.py</code>). Hyperliquid serves the most recent 5,000 candles
+          per interval (~208 days), so the first run backfills 200 days and later runs
+          append only new closes; candles that are still open are never stored. They live
+          in <code>data/market_history.json</code> as <code>[close_ms, close]</code> pairs
+          (220 days kept).
+        </p>
+        <p>
+          The same 14-day trend rule as the headline signal is evaluated on three series —
+          BTC, ETH (the perp price) and the ETH/BTC ratio — and each new candle stores the
+          values known at its time (an hourly close at most 3 hours old):
+          <code>btcPrice</code>, <code>btcSma</code>, <code>btcTrendDistPct</code>,
+          <code>btcSignal</code>, <code>ethRefPrice</code>, <code>ethBtc</code>,
+          <code>ethBtcSma</code>, <code>ethBtcDistPct</code>, <code>ethBtcSignal</code>.
+          Older candles get the same fields filled in once (informational only — their
+          signal is never changed). <code>ethRefPrice</code> doubles as an independent
+          price check: a pool price more than 5% away from it is treated as suspect (see
+          <a href="#signal">the signal</a>). None of this changes the headline signal; it
+          feeds the two BTC strategies in the <a href="#race">strategy race</a> and the
+          "BTC i siła ETH" card. If the endpoint is unreachable the run carries on, logs a
+          <code>market:</code> warning, and the fields stay <code>null</code>.
         </p>
       </section>
 
@@ -1153,6 +1193,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/spot_pool_state.json</code></td><td>Shared SPOT-pool EMA (Uniswap + Base combined counts), plus a second, parallel volume-weighted EMA track (added 2026-09-11) — see <a href="#composite">Composite score</a></td></tr>
           <tr><td><code>data/candles_history.json</code></td><td>Full scored candle history rendered on the dashboard</td></tr>
           <tr><td><code>data/race_state.json</code></td><td>Strategy race, live part: start candle, last processed block, and per strategy the open position, equity, closed trades and equity curve — see <a href="#race">Strategy race</a></td></tr>
+          <tr><td><code>data/market_history.json</code></td><td>Closed 1-hour BTC and ETH candles from Hyperliquid (<code>[close_ms, close]</code>, ~200 days) — see <a href="#market">BTC and ETH hourly prices</a></td></tr>
           <tr><td><code>data/derivs_history.json</code></td><td>ETH-PERP funding rate history (backfilled, hourly) and open-interest snapshots (one per run) from Hyperliquid — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
           <tr><td><code>data/scoring_state_lt.json</code></td><td>Mainnet EMA state, last signal — same as <code>scoring_state.json</code> but for the parallel 30-day track, see <a href="#long-term">Long term (30d) classification track</a></td></tr>
@@ -1654,6 +1695,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             switch, a table (position, result, trades, winners, worst drawdown) and one
             equity chart with direct end labels and a shared hover tooltip; drawn in
             container pixels and redrawn on resize like the futures-market card.</li>
+          <li><strong>BTC i siła ETH</strong> — two panels like the futures-market card:
+            bitcoin's price with a "trend wzrostowy / spadkowy" pill, its distance from the
+            14-day average and a 30-day chart with the average dashed; and ETH/BTC (BTC per
+            1 ETH) with "ETH silniejszy / słabszy od BTC" and the same kind of chart. Built
+            from <code>DATA.market</code> (<code>build_site.py::_build_market_summary()</code>);
+            "Zbieramy dane" until the first fetch succeeds.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Since 2026-11-14 it
             also draws the 14-day average as a dashed line (Main tab only; toggle
@@ -1795,11 +1842,13 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
     pools.py                 verified pool addresses (mainnet + Base)
     onchain_rpc.py            JSON-RPC client, batching, Swap-log decoding
     hyperliquid_derivs.py      ETH-PERP funding history + open-interest snapshot (REST)
+    hyperliquid_market.py      BTC / ETH closed 1-hour candles (REST candleSnapshot)
 
 live/                      the automated, incremental pipeline
   run_incremental.py         orchestrates one hourly run end-to-end
   state.py                   load/save for every data/*.json and *.csv state file
   derivs.py                  funding / open-interest history + per-candle derivs fields
+  market.py                  BTC / ETH price history, BTC + ETH/BTC trends, per-candle fields
   build_site.py               renders site/index.html from template.html
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 
@@ -1884,6 +1933,8 @@ tests/                     pytest suite, one file per module/feature
           <tr><td><code>HYDRA_BASE_LT_CLASSIFICATION_LOOKBACK_BLOCKS</code></td><td>No</td><td>Same, for the 30-day Base track (default 1,296,000 blocks, ~30 days on Base's own block grid)</td></tr>
           <tr><td><code>HYDRA_HYPERLIQUID_LT_CLASSIFICATION_LOOKBACK_HOURS</code></td><td>No</td><td>Same, for the 30-day Hyperliquid track (default 720.0 hours)</td></tr>
           <tr><td><code>HYDRA_DERIVS_BACKFILL_DAYS</code></td><td>No</td><td>How many days of Hyperliquid funding history the first run pulls when <code>derivs_history.json</code> is empty (default 120; later runs only append what is new) — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
+          <tr><td><code>HYDRA_MARKET_BACKFILL_DAYS</code></td><td>No</td><td>How many days of BTC/ETH hourly candles the first run pulls when <code>market_history.json</code> is empty (default 200; Hyperliquid serves ~208 days of 1h candles)</td></tr>
+          <tr><td><code>HYDRA_MARKET_DISABLED</code></td><td>No</td><td>Any non-empty value switches the BTC/ETH price step off (no network call, candle fields stay <code>null</code>, BTC strategies keep their positions). Set by the test suite.</td></tr>
           <tr><td><code>HYDRA_DERIVS_DISABLED</code></td><td>No</td><td>Any non-empty value switches the funding / open-interest step off entirely (no network call, candle fields stay <code>null</code>). The test suite sets it so tests never touch the network.</td></tr>
           <tr><td><code>R2_ACCOUNT_ID</code>, <code>R2_ACCESS_KEY_ID</code>, <code>R2_SECRET_ACCESS_KEY</code></td><td>No</td><td>Cloudflare R2 credentials for the <a href="#data-lake">raw trade archive</a>. Any one missing → archiving is safely skipped, logged, and everything else runs normally — same pattern as <code>ALCHEMY_BASE_RPC_URL</code> above.</td></tr>
           <tr><td><code>HYDRA_R2_BUCKET</code></td><td>No</td><td>R2 bucket name for the raw trade archive (default <code>hydra-terminal-lake</code>). Not secret — safe to set as a plain workflow variable rather than a GitHub secret.</td></tr>

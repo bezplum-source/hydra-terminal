@@ -19,6 +19,7 @@ if str(ROOT_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(ROOT_FOR_IMPORT))
 
 from hydra_signals import strategies as strat  # noqa: E402
+from live import market as mkt  # noqa: E402
 
 MAX_DISPLAY_CANDLES = 500
 
@@ -277,6 +278,10 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
                     # przelaczeniu ten sam sygnal jest w `signalHydra`
                     "hydra": [c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") == "trend14" else c.get("signal", "HOLD") for c in sub],
                     "eth": ["LONG"] * len(sub),
+                    # Etap 2: pola BTC sa na swiecach (dopelnione wstecz z
+                    # historii Hyperliquid); brak danych = None = bez zmiany pozycji
+                    "btc14": [c.get("btcSignal") for c in sub],
+                    "ethbtc14": [mkt.combined_signal(t, c.get("btcSignal")) for t, c in zip(trend[start_i:], sub)],
                 },
             )
             lookback = {
@@ -287,11 +292,44 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
     return {"live": live, "lookback": lookback, "feePerSidePct": strat.FEE_PER_SIDE * 100}
 
 
+MARKET_DISPLAY_DAYS = 30
+
+
+def _build_market_summary(market_history: dict | None) -> dict | None:
+    """Karta "BTC i ETH/BTC" (Etap 2 planu "trend"): biezacy trend BTC i
+    stosunku ETH/BTC + serie z ostatnich `MARKET_DISPLAY_DAYS` dni (wartosc i
+    srednia 14 dni) do dwoch wykresow. None, gdy brak danych o BTC."""
+    if not market_history or not (market_history.get("coins") or {}).get("BTC"):
+        return None
+    lk = mkt.build_lookups(market_history)
+
+    def view(series: mkt.SeriesTrend, nd: int) -> dict | None:
+        if not series.t:
+            return None
+        i = len(series.t) - 1
+        cut = series.t[i] - MARKET_DISPLAY_DAYS * 86400
+        j = next(k for k, t in enumerate(series.t) if t >= cut)
+        return {
+            "value": round(series.v[i], nd),
+            "sma": round(series.sma[i], nd) if series.sma[i] is not None else None,
+            "distPct": round(series.dist[i], 2) if series.dist[i] is not None else None,
+            "signal": series.sig[i] if series.sma[i] is not None else None,
+            "t": int(series.t[i]),
+            "series": [[int(series.t[k]), round(series.v[k], nd)] for k in range(j, i + 1)],
+            "smaSeries": [
+                [int(series.t[k]), round(series.sma[k], nd)] for k in range(j, i + 1) if series.sma[k] is not None
+            ],
+        }
+
+    return {"btc": view(lk["BTC"], 2), "ethBtc": view(lk["ETHBTC"], 6)}
+
+
 def build_site(
     candles_history: list[dict],
     meta: dict | None = None,
     derivs_history: dict | None = None,
     race_state: dict | None = None,
+    market_history: dict | None = None,
 ) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
@@ -343,6 +381,8 @@ def build_site(
         "derivs": _build_derivs_summary(derivs_history),
         # Etap 1 planu "trend": karta "Wyscig strategii".
         "race": _build_race_summary(race_state, candles_history),
+        # Etap 2 planu "trend": karta "BTC i ETH/BTC".
+        "market": _build_market_summary(market_history),
     }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
@@ -386,5 +426,6 @@ if __name__ == "__main__":
         },
         derivs_history=st.load_derivs_history(),
         race_state=st.load_race_state(),
+        market_history=st.load_market_history(),
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")
