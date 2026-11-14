@@ -1448,6 +1448,7 @@ def main() -> int:
             "lastRunUtc": new_state["updated_at_utc"],
             "statsResetFromBlock": stats_reset_from_block,
         },
+        derivs_history=derivs_history,
     )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 
