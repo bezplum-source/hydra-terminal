@@ -358,6 +358,10 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
     return history
 
 
+# Zrodlo glownego sygnalu od 14.11.2026 (decyzja Jakuba, opcja 2 po etapie 3):
+# trend 14 dni wyznacza kierunek, portfele moment wejscia.
+HEADLINE_SOURCE = "trend_wallets"
+
 RACE_STRATEGIES = ("trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback")
 
 
@@ -366,18 +370,21 @@ def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | Non
     w tej swiecy -> strategia trzyma dotychczasowa pozycje. `race` potrzebny
     strategiom, ktore zaleza od wlasnej, biezacej pozycji (pullback)."""
     pullback_pos = (((race or {}).get("strategies") or {}).get("pullback") or {}).get("position", "HOLD")
+    # sam trend: od przelaczenia na "trend + portfele" w `signalTrend`, wczesniej w `signal`
+    trend = candle.get("signalTrend", candle.get("signal", "HOLD"))
     return {
         # Etap 3: w trendzie z trendem, w rynku bocznym za portfelami
-        "hybrid": strat.hybrid_signal(candle.get("signal"), candle.get("signalHydra"), candle.get("marketMode")),
-        # Etap 3: kierunek z trendu, moment wejscia z portfeli
-        "pullback": strat.pullback_signal(pullback_pos, candle.get("signal"), candle.get("composite")),
-        "trend14": candle.get("signal", "HOLD"),
+        "hybrid": strat.hybrid_signal(trend, candle.get("signalHydra"), candle.get("marketMode")),
+        # Etap 3: kierunek z trendu, moment wejscia z portfeli (od 14.11.2026
+        # to jest tez glowny sygnal - te same reguly, ta sama pozycja startowa)
+        "pullback": strat.pullback_signal(pullback_pos, trend, candle.get("composite")),
+        "trend14": trend,
         "hydra": candle.get("signalHydra", "HOLD"),
         "eth": "LONG",  # punkt odniesienia: po prostu trzymanie ETH
         # Etap 2: ETH grany wedlug trendu BTC (BTC czesto rusza pierwszy)
         "btc14": candle.get("btcSignal"),
         # Etap 2: tylko gdy trend ETH i trend BTC sie zgadzaja
-        "ethbtc14": market.combined_signal(candle.get("signal"), candle.get("btcSignal")),
+        "ethbtc14": market.combined_signal(trend, candle.get("btcSignal")),
     }
 
 
@@ -417,7 +424,7 @@ def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
     race = st.load_race_state()
     try:
         for c in new_candles:
-            if c.get("signalSource") != "trend14" or not c.get("price") or c.get("priceSuspect"):
+            if c.get("signalSource") not in ("trend14", HEADLINE_SOURCE) or not c.get("price") or c.get("priceSuspect"):
                 continue  # bledna cena nie moze ani wycenic pozycji, ani otworzyc transakcji
             if not race:
                 race = strat.new_race(
@@ -1065,11 +1072,18 @@ def main() -> int:
                 er_window.add(hc["ts"], hc["price"])
         last_er = candles_history[-1].get("trendEr14") if candles_history else None
         last_mode = candles_history[-1].get("marketMode") if candles_history else None
-        last_trend_signal = (
-            candles_history[-1].get("signal", "HOLD")
-            if candles_history and candles_history[-1].get("signalSource") == "trend14"
-            else "HOLD"
-        )
+        prev_c = candles_history[-1] if candles_history else {}
+        if prev_c.get("signalSource") == HEADLINE_SOURCE:
+            last_trend_signal = prev_c.get("signalTrend", "HOLD")
+            last_headline = prev_c.get("signal", "HOLD")
+        else:
+            last_trend_signal = prev_c.get("signal", "HOLD") if prev_c.get("signalSource") == "trend14" else "HOLD"
+            # Pierwsza swieca po przelaczeniu na "Trend + wejscie z portfeli":
+            # startujemy z pozycji, ktora ta sama strategia ma juz w wyscigu
+            # (gra od etapu 3), zeby glowny sygnal i strategia w wyscigu byly
+            # jednym i tym samym, a nie dwiema wersjami.
+            race_now = st.load_race_state()
+            last_headline = (((race_now.get("strategies") or {}).get("pullback") or {}).get("position")) or "HOLD"
 
         # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
         # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
@@ -1252,16 +1266,24 @@ def main() -> int:
                 # dziedzicza poprzedni sygnal trendu.
                 trend_sig, trend_sma, trend_dist = last_trend_signal, None, None
             last_trend_signal = trend_sig
+            # Glowny sygnal (decyzja Jakuba 14.11.2026, opcja 2): kierunek z
+            # trendu, moment wejscia z portfeli - patrz strat.pullback_signal.
+            # Swieca z bledna cena albo bez czasu nie zmienia pozycji.
+            if price_ok:
+                last_headline = strat.pullback_signal(last_headline, trend_sig, composite_final)
+            headline_sig = last_headline
 
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
-                "signal": trend_sig,
-                # Etap 1 planu "trend": skad pochodzi `signal` + dane trendu do
-                # pokazania na stronie, oraz sygnal dotychczasowego silnika
-                # portfeli (ten sam co wczesniej w `signal`), ktory gra dalej
-                # w wyscigu strategii.
-                "signalSource": "trend14",
+                "signal": headline_sig,
+                # Skad pochodzi `signal`: od 14.11.2026 (po etapie 3)
+                # "trend_wallets" = trend 14 dni + wejscie z portfeli. Wczesniej
+                # tego samego dnia "trend14" (sam trend), a przed etapem 1 brak
+                # pola (sygnal portfeli). `signalTrend` = sam trend 14 dni,
+                # `signalHydra` = sam silnik portfeli - oba graja dalej w wyscigu.
+                "signalSource": HEADLINE_SOURCE,
+                "signalTrend": trend_sig,
                 "trendSma": round(trend_sma, 2) if trend_sma is not None else None,
                 "trendDistPct": round(trend_dist, 2) if trend_dist is not None else None,
                 "signalHydra": final_signal.value,
@@ -1649,18 +1671,20 @@ def main() -> int:
     race_state = _update_race(manifest, new_candles_this_run)
     race_start_block = (race_state.get("start") or {}).get("block") if race_state else None
     stats_reset_from_block = st.load_stats_reset_state().get("reset_from_block")
-    # Etap 1 planu "trend": podsumowanie "Historii sygnalow" (wynik, win rate)
-    # liczy od momentu przelaczenia glownego sygnalu na trend - inaczej
-    # mieszaloby transakcje dwoch roznych systemow. Recznie ustawiony, pozniejszy
-    # reset (data/stats_reset_state.json) dalej ma pierwszenstwo.
-    if race_start_block is not None:
-        stats_reset_from_block = max(stats_reset_from_block or 0, race_start_block)
+    # Podsumowanie "Historii sygnalow" (wynik, win rate) liczy od momentu, gdy
+    # glowny sygnal zaczal pochodzic z obecnego zrodla (pierwsza swieca z
+    # `signalSource` == HEADLINE_SOURCE) - inaczej mieszaloby transakcje roznych
+    # systemow. Recznie ustawiony, pozniejszy reset (data/stats_reset_state.json)
+    # dalej ma pierwszenstwo.
+    switch_block = next((c["block"] for c in candles_history if c.get("signalSource") == HEADLINE_SOURCE), None)
+    if switch_block is not None:
+        stats_reset_from_block = max(stats_reset_from_block or 0, switch_block)
     build_site(
         candles_history,
         meta={
             "lastRunUtc": new_state["updated_at_utc"],
             "statsResetFromBlock": stats_reset_from_block,
-            "signalSwitchBlock": race_start_block,
+            "signalSwitchBlock": switch_block,
         },
         derivs_history=derivs_history,
         race_state=race_state,

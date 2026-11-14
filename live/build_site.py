@@ -285,7 +285,7 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
             sub = hist[start_i:]
             modes = strat.mode_series(hist)
             hydra_sigs = [
-                c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") == "trend14" else c.get("signal", "HOLD")
+                c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") in ("trend14", "trend_wallets") else c.get("signal", "HOLD")
                 for c in sub
             ]
             replay = strat.replay_race(

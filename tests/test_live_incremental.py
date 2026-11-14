@@ -469,7 +469,8 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
     assert candles[-1]["signalHydra"] == "HOLD"
     # Etap 1 planu "trend": glowny `signal` to trend 14 dni - przy kilku
     # godzinach historii (mniej niz TREND_MIN_COVERAGE_DAYS) to HOLD, nie zgadywanie.
-    assert candles[-1]["signal"] == "HOLD" and candles[-1]["signalSource"] == "trend14"
+    assert candles[-1]["signal"] == "HOLD" and candles[-1]["signalSource"] == "trend_wallets"
+    assert candles[-1]["signalTrend"] == "HOLD"
     assert candles[-1]["trendSma"] is None
     # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
     # nie mial "nowego okna" do policzenia (patrz HyperliquidScoringEngine.run).
@@ -2277,7 +2278,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     # Uruchomienie 1: za malo historii na trend -> HOLD; wyscig startuje
     assert ri.main() == 0
     run1 = st.load_candles_history()
-    assert run1 and all(c["signal"] == "HOLD" and c["signalSource"] == "trend14" for c in run1)
+    assert run1 and all(c["signal"] == "HOLD" and c["signalSource"] == "trend_wallets" and c["signalTrend"] == "HOLD" for c in run1)
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
@@ -2298,7 +2299,18 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
         for k in ("signalSource", "trendSma", "trendDistPct", "signalHydra", "trendEr14", "marketMode"):
             h.pop(k, None)
         history.append(h)
+    # Symulacja stanu sprzed przelaczenia glownego sygnalu na "trend + portfele":
+    # swiece z run1 maja jeszcze zrodlo "trend14", a strategia "pullback" w
+    # wyscigu jest juz w pozycji LONG. Pierwsza nowa swieca ma przejac te pozycje.
+    for c in run1:
+        c["signalSource"] = "trend14"
+        c.pop("signalTrend", None)
     st.save_candles_history(history + run1)
+    race_pre = st.load_race_state()
+    race_pre["strategies"]["pullback"]["position"] = "LONG"
+    race_pre["strategies"]["pullback"]["entryPrice"] = run1[-1]["price"]
+    race_pre["strategies"]["pullback"]["lastPrice"] = run1[-1]["price"]
+    st.save_race_state(race_pre)
 
     # Uruchomienie 2: nowe bloki -> trend LONG (cena ~3000 nad srednia), wyscig idzie dalej
     _seed_wallets(chain, start_block=1000, end_block=1500)
@@ -2307,7 +2319,10 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     new = after[len(history) + len(run1):]
     assert new
     for c in new:
-        assert c["signal"] == "LONG" and c["trendSma"] is not None and c["trendDistPct"] > 0
+        assert c["signalTrend"] == "LONG" and c["trendSma"] is not None and c["trendDistPct"] > 0
+        # glowny sygnal = "trend + wejscie z portfeli": przejal pozycje LONG z wyscigu
+        # i trzyma ja, dopoki trend jest wzrostowy
+        assert c["signal"] == "LONG" and c["signalSource"] == "trend_wallets"
         assert c["priceSuspect"] is False
         # Etap 3: 20 dni po 2000, potem ~3000 -> ruch "w jedna strone", czysty trend
         assert c["trendEr14"] == pytest.approx(1.0) and c["marketMode"] == "TREND"
@@ -2325,7 +2340,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     # Etap 3: hybryda w trendzie gra z trendem; "trend + wejscie z portfeli" wchodzi
     # dopiero, gdy portfele kupuja (zalezy od composite testowego lancucha)
     assert race2["strategies"]["hybrid"]["position"] == "LONG"
-    assert race2["strategies"]["pullback"]["position"] in ("LONG", "HOLD")
+    assert race2["strategies"]["pullback"]["position"] == "LONG" == new[-1]["signal"]
     assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
@@ -2338,7 +2353,9 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     start_idx = html.index(marker) + len(marker)
     data = json.loads(html[start_idx : html.index(";", start_idx)])
     assert data["race"]["live"]["strategies"]["trend14"]["position"] == "LONG"
-    assert data["meta"]["signalSwitchBlock"] == run1[0]["block"]
+    # przelaczenie na "trend + portfele" nastapilo przy pierwszej swiecy run2
+    assert data["meta"]["signalSwitchBlock"] == new[0]["block"]
+    assert data["meta"]["statsResetFromBlock"] == new[0]["block"]
 
 
 def test_corrupted_race_state_does_not_break_the_run(tmp_path, monkeypatch):

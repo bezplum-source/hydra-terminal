@@ -1893,27 +1893,50 @@ function renderHero() {
   // Etap 1 planu "trend": w zakladce Main glowny sygnal to trend 14 dni, a
   // kafelki portfeli sa juz tylko informacja (Hydra gra w "Wyscigu strategii").
   // W zakladce Long term sygnal dalej pochodzi z portfeli (30 dni).
-  const trendMode = CURRENT_TRACK === 'main' && latest && latest.signalSource === 'trend14';
+  // Główny sygnał w zakładce Main: od 14.11.2026 "trend + wejście z portfeli"
+  // (signalSource "trend_wallets"): trend 14 dni wyznacza kierunek, portfele
+  // moment wejścia. Wcześniej tego dnia sam trend ("trend14"). W zakładce Long
+  // term sygnał dalej pochodzi z samych portfeli (30 dni).
+  const trendMode = CURRENT_TRACK === 'main' && latest && (latest.signalSource === 'trend14' || latest.signalSource === 'trend_wallets');
+  const comboMode = trendMode && latest.signalSource === 'trend_wallets';
   const eyebrow = document.getElementById('heroEyebrow');
   const trendNote = document.getElementById('heroTrendNote');
   const walletsCaption = document.getElementById('heroWalletsCaption');
   if (trendMode) {
-    eyebrow.textContent = 'Aktywny sygnał · trend 14 dni';
+    eyebrow.textContent = comboMode ? 'Aktywny sygnał · trend + portfele' : 'Aktywny sygnał · trend 14 dni';
     trendNote.style.display = 'block';
+    const trendSig = comboMode ? latest.signalTrend : latest.signal;
+    let html = '';
     if (latest.trendSma != null && latest.trendDistPct != null) {
       const above = latest.trendDistPct >= 0;
-      trendNote.innerHTML = 'Cena <b>' + Math.abs(latest.trendDistPct).toFixed(1).replace('.', ',') + '% ' + (above ? 'nad' : 'pod') +
-        '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>). Sygnał zmieni się, gdy cena przetnie średnią.' +
-        // Etap 3: czy rynek jest w trendzie, czy chodzi bokiem
-        (latest.trendEr14 != null
-          ? '<br>Rynek: <b>' + (latest.marketMode === 'TREND' ? 'w wyraźnym trendzie' : 'bez wyraźnego kierunku') +
-            '</b> (czystość ruchu z 14 dni ' + latest.trendEr14.toFixed(2).replace('.', ',') + ' w skali 0–1).'
-          : '');
+      html = 'Trend 14 dni: <b>' + (trendSig === 'LONG' ? 'wzrostowy' : trendSig === 'SHORT' ? 'spadkowy' : 'brak') + '</b> — cena <b>' +
+        Math.abs(latest.trendDistPct).toFixed(1).replace('.', ',') + '% ' + (above ? 'nad' : 'pod') +
+        '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>).';
+      if (comboMode) {
+        const comp = latest.composite != null ? fmtSigned(latest.composite, 2).replace('.', ',') : '–';
+        if (latest.signal === trendSig && (trendSig === 'LONG' || trendSig === 'SHORT')) {
+          html += ' Pozycja otwarta zgodnie z trendem — trzymamy ją, dopóki trend się nie odwróci.';
+        } else if (trendSig === 'LONG') {
+          html += ' Czekamy na wejście: <b>LONG</b>, gdy portfele zaczną kupować (wskaźnik „Ogólnie” co najmniej +0,10, teraz ' + comp + ').';
+        } else if (trendSig === 'SHORT') {
+          html += ' Czekamy na wejście: <b>SHORT</b>, gdy portfele zaczną sprzedawać (wskaźnik „Ogólnie” najwyżej −0,10, teraz ' + comp + ').';
+        }
+      } else {
+        html += ' Sygnał zmieni się, gdy cena przetnie średnią.';
+      }
+      // Etap 3: czy rynek jest w trendzie, czy chodzi bokiem
+      if (latest.trendEr14 != null) {
+        html += '<br>Rynek: <b>' + (latest.marketMode === 'TREND' ? 'w wyraźnym trendzie' : 'bez wyraźnego kierunku') +
+          '</b> (czystość ruchu z 14 dni ' + latest.trendEr14.toFixed(2).replace('.', ',') + ' w skali 0–1).';
+      }
+      trendNote.innerHTML = html;
     } else {
       trendNote.textContent = 'Za mało historii cen, żeby policzyć średnią z 14 dni.';
     }
     walletsCaption.style.display = 'block';
-    walletsCaption.innerHTML = 'Presja portfeli (Hydra) — tylko informacyjnie, nie decyduje o sygnale. Hydra wskazuje teraz: <b>' +
+    walletsCaption.innerHTML = (comboMode
+      ? 'Presja portfeli (Hydra) — wyznacza moment wejścia w kierunku trendu. Sam silnik portfeli wskazuje teraz: <b>'
+      : 'Presja portfeli (Hydra) — tylko informacyjnie, nie decyduje o sygnale. Hydra wskazuje teraz: <b>') +
       signalLabel(latest.signalHydra || 'HOLD') + '</b>.';
   } else {
     eyebrow.textContent = CURRENT_TRACK === 'lt' ? 'Aktywny sygnał · portfele 30 dni' : 'Aktywny sygnał';
@@ -2311,13 +2334,13 @@ window.addEventListener('resize', () => {
 // Main / Long term - renderowana raz przy starcie i po zmianie zakresu.
 // =====================================================================
 const RC_STRATS = [
-  { key: 'trend14', name: 'Trend 14 dni', sub: 'główny sygnał', color: '#FFC94A', dash: false },
+  { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'główny sygnał: kierunek z trendu, wejście z portfeli', color: '#FF8A65', dash: false },
+  { key: 'trend14', name: 'Trend 14 dni', sub: 'sam trend', color: '#FFC94A', dash: false },
   { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
   { key: 'btc14', name: 'Trend BTC', sub: 'ETH według trendu bitcoina', color: '#E58FD8', dash: false },
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
   { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
-  { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'kierunek z trendu, wejście, gdy portfele kupują dołek', color: '#FF8A65', dash: false },
 ];
 const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele' };
 let rcView = null;
@@ -2430,7 +2453,7 @@ function renderRaceCard() {
   }
   body.style.display = '';
   if (rcView === 'live') {
-    note.textContent = 'Od przełączenia głównego sygnału na trend (' + (live.start && live.start.time ? live.start.time : '-') +
+    note.textContent = 'Od startu wyścigu (' + (live.start && live.start.time ? live.start.time : '-') +
       ', ETH ' + (live.start && live.start.price ? fmtUsd(live.start.price) : '-') + '). Liczy się tylko do przodu. Po 2–3 miesiącach wybierzemy na tej podstawie główny sygnał.' +
       (liveLen < 6 ? ' Wyścig dopiero wystartował — wyniki nabiorą sensu po kilku dniach.' : '');
   } else {

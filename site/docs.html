@@ -344,9 +344,9 @@
             <td>Independent wallet classification, pooled with mainnet's per-window counts into the combined "spot" value (proportional to actual window activity, not a fixed weight) — one run behind, see <a href="#base">Data source: Base L2</a></td>
           </tr>
           <tr>
-            <td><strong>Headline signal</strong><br>14-day price trend</td>
+            <td><strong>Headline signal</strong><br>14-day trend + wallet entry</td>
             <td><span class="pill long">live since 2026-11-14</span></td>
-            <td>The big LONG/SHORT on the dashboard; the wallet signal plays alongside in the <a href="#race">strategy race</a></td>
+            <td>The big LONG/SHORT on the dashboard: direction from the 14-day trend, entry when the wallets confirm; pure trend and pure wallets play alongside in the <a href="#race">strategy race</a></td>
           </tr>
           <tr>
             <td><strong>BTC &amp; ETH hourly prices</strong><br>Hyperliquid, REST</td>
@@ -737,7 +737,30 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
       <section id="signal">
         <h2>The signal: LONG / SHORT / HOLD</h2>
         <div class="callout">
-          <span class="label">Since 2026-11-14: the headline signal is the 14-day trend</span>
+          <span class="label">Since 2026-11-14 (after roadmap step 3): trend direction + wallet entry</span>
+          <p>
+            The project owner wanted the trend to be <em>part</em> of the tool rather than the
+            whole of it, so the same day the headline signal moved from the pure trend (below)
+            to the race strategy <strong>Trend + wejście z portfelami</strong>
+            (<code>strategies.pullback_signal</code>): the 14-day trend sets the direction,
+            the wallet composite sets the entry — LONG in an uptrend once the composite is
+            at least +0.1 (wallets buying a dip), SHORT in a downtrend once it is −0.1 or
+            lower — and the position is held until the trend turns; with no entry
+            confirmation yet the signal is HOLD. New candles carry
+            <code>signalSource: "trend_wallets"</code>, the pure trend in
+            <code>signalTrend</code> and the wallet engine's own signal in
+            <code>signalHydra</code>; both keep playing in the <a href="#race">race</a>. At the
+            switch the headline took over the position that strategy already held in the
+            race, so the two are one and the same from then on. Honest numbers on the
+            looking-back view (12.09–14.11, after fees): pure trend +13.4%, trend + wallet
+            entry +4.8%, wallets alone −15.4% — the forward race decides. The "Historia
+            sygnałów" summary counts from the first <code>trend_wallets</code> candle. The
+            hero explains the state in words: the trend, and either "position open with the
+            trend" or "waiting for entry" with the composite's current value.
+          </p>
+        </div>
+        <div class="callout">
+          <span class="label">Earlier on 2026-11-14 (roadmap step 1): the headline signal was the 14-day trend</span>
           <p>
             On the project owner's decision, the big signal at the top of the dashboard
             (the <code>signal</code> field of every new candle, <em>Main</em> tab) no
@@ -840,8 +863,8 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           The "Wyścig strategii" card shows several strategies trading the same candles
           on paper under identical rules: the whole (unit) capital LONG, SHORT or out, no
           leverage, a 0.05% fee on every entry and every exit, marked to each candle's
-          price. Since 2026-11-14 the entrants are <strong>Trend 14 dni</strong> (the
-          headline signal), <strong>Hydra — portfele</strong> (the wallet engine's
+          price. Since 2026-11-14 the entrants are <strong>Trend 14 dni</strong> (the pure
+          trend; the headline signal for a few hours on 2026-11-14), <strong>Hydra — portfele</strong> (the wallet engine's
           <code>signalHydra</code>) and <strong>ETH kup i trzymaj</strong> as a reference.
           Since roadmap step 2 (2026-11-14) two more play: <strong>Trend BTC</strong> (ETH
           traded by bitcoin's own 14-day trend, <code>btcSignal</code>) and <strong>Trend
