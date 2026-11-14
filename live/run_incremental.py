@@ -1670,15 +1670,14 @@ def main() -> int:
     # Base L2 nizej, tak jak reszta juz-zaufanej sciezki mainnet+Hyperliquid.
     race_state = _update_race(manifest, new_candles_this_run)
     race_start_block = (race_state.get("start") or {}).get("block") if race_state else None
+    # Podsumowanie "Historii sygnalow" (wynik, win rate) liczy od poczatku
+    # historii Hydry (decyzja Jakuba 14.11.2026: "licz od poczatku istnienia
+    # hydry. ZAWSZE - wszystko") - bez automatycznego resetu przy zmianie zrodla
+    # sygnalu. Jedynym punktem startu moze byc reczny reset w
+    # data/stats_reset_state.json (obecnie wylaczony: reset_from_block = null).
     stats_reset_from_block = st.load_stats_reset_state().get("reset_from_block")
-    # Podsumowanie "Historii sygnalow" (wynik, win rate) liczy od momentu, gdy
-    # glowny sygnal zaczal pochodzic z obecnego zrodla (pierwsza swieca z
-    # `signalSource` == HEADLINE_SOURCE) - inaczej mieszaloby transakcje roznych
-    # systemow. Recznie ustawiony, pozniejszy reset (data/stats_reset_state.json)
-    # dalej ma pierwszenstwo.
+    # blok, od ktorego glowny sygnal pochodzi z obecnego zrodla - tylko informacyjnie
     switch_block = next((c["block"] for c in candles_history if c.get("signalSource") == HEADLINE_SOURCE), None)
-    if switch_block is not None:
-        stats_reset_from_block = max(stats_reset_from_block or 0, switch_block)
     build_site(
         candles_history,
         meta={

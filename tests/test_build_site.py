@@ -608,7 +608,9 @@ def test_build_site_embeds_derivs_summary_or_null(tmp_path, monkeypatch):
 
 from hydra_signals import strategies as _strat  # noqa: E402
 
-_LB = int(bs.LOOKBACK_FROM.timestamp())
+# stały punkt czasu dla danych testowych (12.09.2026 00:00 czasu polskiego);
+# widok "od początku" i tak zaczyna się od pierwszej świecy historii
+_LB = 1_789_164_000
 
 
 def _race_candles():
@@ -644,9 +646,12 @@ def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
     assert r["feePerSidePct"] == _strat.FEE_PER_SIDE * 100
 
 
-def test_race_summary_lookback_none_when_history_ends_before_lookback_start():
-    old = [{**c, "ts": c["ts"] - 400 * 86400} for c in _race_candles()]
-    assert bs._build_race_summary(None, old)["lookback"] is None
+def test_race_summary_lookback_starts_at_first_candle_and_none_without_timestamps():
+    candles = _race_candles()
+    lb = bs._build_race_summary(None, candles)["lookback"]
+    assert lb["fromTime"] == candles[0]["time"]  # "licz od początku istnienia Hydry"
+    no_ts = [{**c, "ts": None} for c in candles]
+    assert bs._build_race_summary(None, no_ts)["lookback"] is None
     assert bs._build_race_summary(None, [])["lookback"] is None
 
 

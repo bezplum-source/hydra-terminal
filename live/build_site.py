@@ -233,11 +233,11 @@ def _build_daily_balance_candles(candles_history: list[dict]) -> list[dict]:
     ]
 
 
-# Etap 1 planu "trend": widok "wstecz" w karcie "Wyscig strategii" - te same
-# reguly gry na papierze odegrane na zapisanej historii od 12.09.2026 (od tej
-# daty dziala obecna architektura sygnalu portfeli). Tylko orientacyjnie: to
-# historia, na ktorej wybrano trend, wiec nie jest dowodem.
-LOOKBACK_FROM = datetime.datetime(2026, 9, 11, 22, 0, tzinfo=datetime.timezone.utc)  # 12.09.2026 00:00 czasu polskiego
+# Widok "od poczatku" w karcie "Wyscig strategii": te same reguly gry na
+# papierze odegrane na CALEJ zapisanej historii Hydry (od pierwszej swiecy,
+# 23.08.2026). Decyzja Jakuba 14.11.2026: "licz od poczatku istnienia hydry.
+# ZAWSZE - wszystko" (wczesniej od 12.09). Tylko orientacyjnie - to historia,
+# na ktorej wybieralismy strategie, wiec nie jest dowodem na przyszlosc.
 RACE_CURVE_POINTS = 400
 
 
@@ -267,7 +267,7 @@ def _pullback_series(trend: list[str], candles: list[dict]) -> list[str]:
 def _build_race_summary(race_state: dict | None, candles_history: list[dict]) -> dict:
     """Dane karty "Wyscig strategii": wyscig na zywo (od dnia wdrozenia, z
     `data/race_state.json`) i orientacyjna powtorka tych samych regul na
-    historii od `LOOKBACK_FROM`."""
+    calej historii od pierwszej swiecy ze znacznikiem czasu."""
     live = None
     if race_state and race_state.get("strategies"):
         live = {
@@ -279,8 +279,7 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
     hist = [c for c in candles_history if c.get("price")]
     if hist:
         trend = strat.trend_series(hist)
-        from_ts = LOOKBACK_FROM.timestamp()
-        start_i = next((i for i, c in enumerate(hist) if c.get("ts") is not None and c["ts"] >= from_ts), None)
+        start_i = next((i for i, c in enumerate(hist) if c.get("ts") is not None), None)
         if start_i is not None:
             sub = hist[start_i:]
             modes = strat.mode_series(hist)

@@ -752,9 +752,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             <code>signalHydra</code>; both keep playing in the <a href="#race">race</a>. At the
             switch the headline took over the position that strategy already held in the
             race, so the two are one and the same from then on. Honest numbers on the
-            looking-back view (12.09–14.11, after fees): pure trend +13.4%, trend + wallet
-            entry +4.8%, wallets alone −15.4% — the forward race decides. The "Historia
-            sygnałów" summary counts from the first <code>trend_wallets</code> candle. The
+            looking-back view over Hydra's whole history (23.08–14.11.2026, after fees):
+            pure trend +1.4%, trend + wallet entry −1.5%, wallets alone −12.8%, ETH −21.2%.
+            (Counted only from 12.09 the trend looked much better, +13.4% — the start date
+            alone changes the picture, which is why the project owner asked for everything
+            to be counted from Hydra's very first candle.) The forward race decides. The
+            "Historia sygnałów" summary counts the whole history too. The
             hero explains the state in words: the trend, and either "position open with the
             trend" or "waiting for entry" with the composite's current value.
           </p>
@@ -902,15 +905,23 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <code>run_incremental.py::_update_race()</code> on every run) starts at the first
           candle after the switch and only moves forward, so it cannot be fitted to the
           past — after 2–3 months it is what decides the headline signal. The
-          <em>looking back</em> view replays the same rules over stored candles from
-          2026-09-12 inside <code>build_site.py::_build_race_summary()</code>; it is shown
-          for orientation only, because it is the very history the trend rule was chosen
-          on. Suspect prices (see above) are skipped in both. For each strategy the card
+          <em>od początku</em> ("from the beginning") view replays the same rules over
+          Hydra's whole stored history, from its first candle (2026-08-23), inside
+          <code>build_site.py::_build_race_summary()</code>, and is the card's default view
+          — the project owner's standing rule since 2026-11-14 is that everything is counted
+          from the beginning of Hydra (for a few hours it started at 2026-09-12). It is shown
+          for orientation only, because it is the very history the strategies were chosen
+          on; the forward-only <em>na żywo</em> view is the real test. Suspect prices (see above) are skipped in both. For each strategy the card
           shows the current position, result, number of closed trades, winners, and the
           worst drawdown from its own equity peak, plus an equity chart with all of them.
-          The "Historia sygnałów" win-rate summary now counts from the switch block (or
-          from a later hand-set reset in <code>stats_reset_state.json</code>), so it never
-          mixes the two systems' trades.
+          The "Historia sygnałów" win-rate summary counts the whole history as well — the
+          automatic reset at each change of the headline signal's source (tried for a few
+          hours on 2026-11-14) was removed, and the hand-set reset in
+          <code>stats_reset_state.json</code> was switched off
+          (<code>"reset_from_block": null</code>). Because the headline signal changed
+          source over time (wallets until 2026-11-14, then briefly the pure trend, then
+          trend + wallet entry), that summary mixes trades of those systems; the strategy
+          race keeps each system separate.
         </p>
       </section>
 
@@ -1358,7 +1369,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           bug that corrupted past results — a sign error in how a SHORT streak's outcome
           was scored was exactly this kind of case earlier in the project's history — or
           simply to start a clean baseline from a chosen date. Delete the file, or omit
-          <code>reset_from_block</code>, to go back to counting the full history.
+          <code>reset_from_block</code>, to go back to counting the full history. Since
+          2026-11-14 the file holds <code>{"reset_from_block": null}</code> — the project
+          owner's rule is to count everything from the beginning of Hydra.
         </p>
       </section>
 
@@ -1738,7 +1751,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             page uses, carrying only the ~24 numeric fields the card actually needs per
             candle so the page doesn't balloon in size as history grows.</li>
           <li><strong>Wyścig strategii (strategy race)</strong> — placed right under the
-            hero; see <a href="#race">Strategy race</a>. A "Na żywo / Wstecz od 12.09"
+            hero; see <a href="#race">Strategy race</a>. A "Na żywo / Od początku" (default)
             switch, a table (position, result, trades, winners, worst drawdown) and one
             equity chart with direct end labels and a shared hover tooltip; drawn in
             container pixels and redrawn on resize like the futures-market card.</li>

@@ -1135,7 +1135,7 @@
       </div>
       <div class="rc-switch range-switch" id="rcSwitch" role="group" aria-label="Zakres wyścigu">
         <button type="button" class="range-btn" data-rc="live">Na żywo</button>
-        <button type="button" class="range-btn" data-rc="lookback">Wstecz od 12.09</button>
+        <button type="button" class="range-btn" data-rc="lookback">Od początku</button>
       </div>
     </div>
     <p class="rc-note" id="rcNote"></p>
@@ -2436,7 +2436,8 @@ function renderRaceCard() {
   const race = DATA.race || {};
   const live = race.live, lookback = race.lookback;
   const liveLen = live ? Math.max(0, ...Object.values(live.strategies).map((s) => s.curve.length)) : 0;
-  if (rcView === null) rcView = (live && liveLen >= 6) || !lookback ? 'live' : 'lookback';
+  // Domyślnie cała historia Hydry ("licz od początku. ZAWSZE - wszystko").
+  if (rcView === null) rcView = lookback ? 'lookback' : 'live';
   document.querySelectorAll('#rcSwitch .range-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.rc === rcView);
     b.disabled = (b.dataset.rc === 'live' && !live) || (b.dataset.rc === 'lookback' && !lookback);
@@ -2457,8 +2458,8 @@ function renderRaceCard() {
       ', ETH ' + (live.start && live.start.price ? fmtUsd(live.start.price) : '-') + '). Liczy się tylko do przodu. Po 2–3 miesiącach wybierzemy na tej podstawie główny sygnał.' +
       (liveLen < 6 ? ' Wyścig dopiero wystartował — wyniki nabiorą sensu po kilku dniach.' : '');
   } else {
-    note.textContent = 'Te same zasady odegrane na historii od ' + (lookback.fromTime || '12.09.2026') +
-      '. Tylko orientacyjnie: na tej historii wybraliśmy trend, więc nie jest to dowód, że będzie działał dalej.';
+    note.textContent = 'Te same zasady odegrane na całej historii Hydry, od pierwszej świecy (' + (lookback.fromTime || '-') +
+      '). Orientacyjnie: na tej historii wybieraliśmy strategie, więc nie jest to dowód, że będą działać dalej — to sprawdza widok „Na żywo”.';
   }
   const rows = RC_STRATS.filter((d) => view.strategies[d.key]).map((d) => {
     const s = view.strategies[d.key];

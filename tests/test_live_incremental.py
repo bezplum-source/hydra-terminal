@@ -742,12 +742,13 @@ def test_stats_reset_from_block_meta_is_embedded_in_generated_site(tmp_path, mon
     assert data["meta"]["statsResetFromBlock"] == 25878499
 
 
-def test_stats_reset_from_block_defaults_to_signal_switch_when_no_reset_state_file(tmp_path, monkeypatch):
-    """Bez pliku `data/stats_reset_state.json` `statsResetFromBlock` bylo
-    kiedys `None`. ZMIANA (Etap 1 planu "trend", 14.11.2026): podsumowanie
-    "Historii sygnalow" liczy od przelaczenia glownego sygnalu na trend, wiec
-    bez recznego resetu `statsResetFromBlock` == blok startu wyscigu
-    (`signalSwitchBlock`), czyli pierwszej swiecy z sygnalem trendu."""
+def test_stats_reset_from_block_is_none_without_reset_state_file(tmp_path, monkeypatch):
+    """Bez pliku `data/stats_reset_state.json` `statsResetFromBlock` == None:
+    podsumowanie "Historii sygnalow" liczy od poczatku historii Hydry. (Przez
+    kilka godzin 14.11.2026 liczylo od przelaczenia zrodla sygnalu - wycofane
+    decyzja Jakuba: "licz od poczatku istnienia hydry. ZAWSZE - wszystko".)
+    `signalSwitchBlock` zostaje jako informacja: pierwsza swieca z obecnym
+    zrodlem glownego sygnalu."""
     import json as json_module
 
     _patch_all_paths(monkeypatch, tmp_path)
@@ -767,9 +768,8 @@ def test_stats_reset_from_block_defaults_to_signal_switch_when_no_reset_state_fi
     start_idx = html.index(marker) + len(marker)
     end_idx = html.index(";", start_idx)
     data = json_module.loads(html[start_idx:end_idx])
-    first_block = st.load_candles_history()[0]["block"]
-    assert data["meta"]["signalSwitchBlock"] == first_block
-    assert data["meta"]["statsResetFromBlock"] == first_block
+    assert data["meta"]["statsResetFromBlock"] is None
+    assert data["meta"]["signalSwitchBlock"] == st.load_candles_history()[0]["block"]
 
 
 def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
@@ -2355,7 +2355,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert data["race"]["live"]["strategies"]["trend14"]["position"] == "LONG"
     # przelaczenie na "trend + portfele" nastapilo przy pierwszej swiecy run2
     assert data["meta"]["signalSwitchBlock"] == new[0]["block"]
-    assert data["meta"]["statsResetFromBlock"] == new[0]["block"]
+    assert data["meta"]["statsResetFromBlock"] is None  # podsumowanie liczy od poczatku historii
 
 
 def test_corrupted_race_state_does_not_break_the_run(tmp_path, monkeypatch):
