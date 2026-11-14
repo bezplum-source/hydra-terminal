@@ -230,6 +230,7 @@
       <a href="#windows">Candles &amp; windows</a>
       <a href="#signal">The signal: LONG / SHORT / HOLD</a>
       <a href="#race">Strategy race</a>
+      <a href="#wallet-timing">Wallets with timing</a>
       <a href="#regime">Market regime: BULL / BEAR</a>
     </div>
     <div class="navgroup">
@@ -898,7 +899,10 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           a pullback entry — LONG in an uptrend once the composite is at least +0.1
           (wallets buying a dip), SHORT in a downtrend once it is −0.1 or lower — and then
           holds until the trend turns (the 0.1 is the wallet engine's own exit threshold,
-          not a fitted value). Later steps add more entrants the same way.
+          not a fitted value). Step 5 adds <strong>Akumulacja portfeli z wyczuciem</strong>
+          and <strong>Przeciw portfelom bez wyczucia</strong> — see
+          <a href="#wallet-timing">Wallets with timing</a>. Later steps add more entrants the
+          same way.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by
@@ -922,6 +926,46 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           source over time (wallets until 2026-11-14, then briefly the pure trend, then
           trend + wallet entry), that summary mixes trades of those systems; the strategy
           race keeps each system separate.
+        </p>
+      </section>
+
+      <section id="wallet-timing">
+        <h2>Wallets with timing (roadmap step 5)</h2>
+        <p>
+          The GOOD/BAD classification described in <a href="#classification">Classifying
+          wallets</a> ranks wallets by realised profit and win rate, which turned out to
+          select profit-takers who sell rallies and buy dips (see <a href="#signal">the
+          signal</a>). Step 5 (2026-11-14, <code>live/wallet_timing.py</code>) adds a second,
+          independent definition that asks directly whether a wallet's trades point the
+          right way: for every mainnet trade of at least $1,000 it measures what the ETH
+          price (Hyperliquid's hourly close, see <a href="#market">BTC and ETH hourly
+          prices</a>) did over the next 24 hours, in the trade's direction — buying before
+          a rise or selling before a fall scores positive. A wallet's score is the sum of
+          those moves divided by (number of trades + 10), which pulls wallets with only a
+          few lucky trades towards zero; wallets with at least 5 trades are ranked, the top
+          10% are "z wyczuciem" (with timing), the bottom 10% "bez wyczucia". Only trades
+          whose 24-hour outcome was already known count, and the ranking is redone once per
+          UTC day, so nothing looks into the future.
+        </p>
+        <p>
+          On each candle the pipeline stores how much ETH each group bought net over the
+          previous 7 days — <code>walletSkilledNet7d</code>,
+          <code>walletUnskilledNet7d</code>, <code>walletSkilledCount</code> — and two race
+          signals: <code>signalSkilled</code> (LONG when the wallets with timing accumulate,
+          SHORT when they distribute) and <code>signalVsUnskilled</code> (the opposite of what
+          the wallets without timing do). They play in the <a href="#race">race</a> as
+          "Akumulacja portfeli z wyczuciem" and "Przeciw portfelom bez wyczucia" and are shown
+          in the "Portfele z wyczuciem" card; they do not touch the headline signal.
+        </p>
+        <p>
+          Limits, stated plainly: raw trades exist only in the mainnet trade buffer (about 30
+          days), so these fields are <code>null</code> for older candles and the strategies
+          only start playing once the buffer holds 7 days of scored trades plus a full 7-day
+          window (from 2026-10-29 on the first deployment). Base and Hyperliquid trades are not
+          used yet. The 7-day window was picked after a first test on 28.10–14.11 that tried
+          1, 3 and 7 days in a single falling market (wallets with timing accumulating:
+          −0.6% / −4.4% / −7.6%; against the wallets without timing: −13.8% / +8.7% / +15.3%;
+          ETH −19.8%) — that is a candidate for the forward race, not evidence.
         </p>
       </section>
 
@@ -1755,6 +1799,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             switch, a table (position, result, trades, winners, worst drawdown) and one
             equity chart with direct end labels and a shared hover tooltip; drawn in
             container pixels and redrawn on resize like the futures-market card.</li>
+          <li><strong>Portfele z wyczuciem</strong> — two panels: net ETH the wallets with
+            timing bought over the last 7 days (with how many wallets are in the group) and
+            the same for the wallets without timing, each with a "kupują / sprzedają netto"
+            pill, the current state of its race strategy and a chart over the candles on the
+            page. "Zbieramy dane" until the classification has enough history. See
+            <a href="#wallet-timing">Wallets with timing</a>.</li>
           <li><strong>BTC i siła ETH</strong> — two panels like the futures-market card:
             bitcoin's price with a "trend wzrostowy / spadkowy" pill, its distance from the
             14-day average and a 30-day chart with the average dashed; and ETH/BTC (BTC per
@@ -1909,6 +1959,7 @@ live/                      the automated, incremental pipeline
   state.py                   load/save for every data/*.json and *.csv state file
   derivs.py                  funding / open-interest history + per-candle derivs fields
   market.py                  BTC / ETH price history, BTC + ETH/BTC trends, per-candle fields
+  wallet_timing.py           wallets ranked by timing (24h outcome) + 7-day accumulation
   build_site.py               renders site/index.html from template.html
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 

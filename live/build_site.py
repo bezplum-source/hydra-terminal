@@ -302,6 +302,9 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
                     # Etap 3: tryb rynku liczony od nowa z cen (ta sama funkcja co w pipeline)
                     "hybrid": [strat.hybrid_signal(t, h, m[1]) for t, h, m in zip(trend[start_i:], hydra_sigs, modes[start_i:])],
                     "pullback": _pullback_series(trend[start_i:], sub),
+                    # Etap 5: tylko tam, gdzie bufor transakcji ma dane (None = brak gry)
+                    "skilled7": [c.get("signalSkilled") for c in sub],
+                    "antiweak7": [c.get("signalVsUnskilled") for c in sub],
                 },
             )
             lookback = {

@@ -66,6 +66,7 @@ from hydra_signals.models import Signal  # noqa: E402
 from live import block_time as bt  # noqa: E402
 from live import derivs  # noqa: E402
 from live import market  # noqa: E402
+from live import wallet_timing as wt  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals import strategies as strat  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
@@ -362,7 +363,11 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
 # trend 14 dni wyznacza kierunek, portfele moment wejscia.
 HEADLINE_SOURCE = "trend_wallets"
 
-RACE_STRATEGIES = ("trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback")
+RACE_STRATEGIES = (
+    "trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback",
+    # Etap 5: nowa definicja dobrego portfela (wyczucie) + akumulacja
+    "skilled7", "antiweak7",
+)
 
 
 def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | None]:
@@ -385,7 +390,23 @@ def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | Non
         "btc14": candle.get("btcSignal"),
         # Etap 2: tylko gdy trend ETH i trend BTC sie zgadzaja
         "ethbtc14": market.combined_signal(trend, candle.get("btcSignal")),
+        # Etap 5: LONG, gdy portfele z wyczuciem kupuja netto przez 7 dni
+        "skilled7": candle.get("signalSkilled"),
+        # Etap 5: SHORT, gdy portfele bez wyczucia kupuja netto przez 7 dni
+        "antiweak7": candle.get("signalVsUnskilled"),
     }
+
+
+def _build_wallet_timing(manifest: dict, trades: list, anchors: list, market_history: dict):
+    """Etap 5: klasyfikacja portfeli po "wyczuciu" i akumulacja (live/wallet_timing.py).
+    Nigdy nie przerywa uruchomienia - przy bledzie zwraca None (cechy = None)."""
+    try:
+        eth = ((market_history or {}).get("coins") or {}).get("ETH") or []
+        return wt.WalletTiming(trades, anchors, eth)
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: wallet_timing: {exc}")
+        manifest["warnings"].append(f"wallet_timing: {type(exc).__name__}: {exc}")
+        return None
 
 
 def _update_market_history(manifest: dict, now: datetime.datetime) -> dict:
@@ -1018,6 +1039,7 @@ def main() -> int:
 
     new_scores = []
     new_candles_this_run: list[dict] = []
+    wallet_timing = None
     new_scores_lt = []
     if scoreable_trades:
         new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
@@ -1053,6 +1075,8 @@ def main() -> int:
         # udalo sie pobrac znacznika czasu (patrz `live/block_time.py`) -
         # prawdziwe pomiary z tego uruchomienia + ze zapisanej historii.
         ts_anchors = bt.build_anchors(candles_history, extra=list(block_ts.items()))
+        # Etap 5: portfele z wyczuciem / bez wyczucia - z calego bufora transakcji
+        wallet_timing = _build_wallet_timing(manifest, combined_buffer, ts_anchors, market_history)
 
         # Etap 1 planu "trend" (decyzja Jakuba 14.11.2026): GLOWNY sygnal
         # (`signal`) to od teraz trend - LONG, gdy cena jest nad srednia z
@@ -1429,6 +1453,8 @@ def main() -> int:
                 # Etap 2 planu "trend": BTC, ETH/BTC i cena odniesienia ETH
                 # z Hyperliquid (None, gdy brak danych).
                 **market_feats,
+                # Etap 5: akumulacja portfeli z wyczuciem / bez wyczucia (7 dni)
+                **(wallet_timing.features_at(ts) if wallet_timing is not None else wt.empty_features()),
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
                 # Niezalezne od "signal"/"composite" powyzej - osobny,
                 # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
@@ -1607,6 +1633,28 @@ def main() -> int:
                     c.update(feats)
                     market_filled += 1
         manifest["market_fill"] = market_filled
+
+    # Etap 5: cechy "portfeli z wyczuciem" dla swiec, ktore ich nie maja
+    # (informacyjnie; dla swiec starszych niz bufor transakcji zostaja None).
+    if any("walletSkilledNet7d" not in c for c in candles_history):
+        if wallet_timing is None:
+            wallet_timing = _build_wallet_timing(
+                manifest, combined_buffer, bt.build_anchors(candles_history), market_history
+            )
+        wt_filled = 0
+        if wallet_timing is not None:
+            for c in candles_history:
+                if "walletSkilledNet7d" not in c:
+                    c.update(wallet_timing.features_at(c.get("ts")))
+                    wt_filled += 1
+        manifest["wallet_timing_fill"] = wt_filled
+    if candles_history and candles_history[-1].get("walletSkilledCount") is not None:
+        last = candles_history[-1]
+        manifest["wallet_timing"] = {
+            "skilled": last["walletSkilledCount"],
+            "skilled_net7d": last["walletSkilledNet7d"],
+            "unskilled_net7d": last["walletUnskilledNet7d"],
+        }
 
     # Etap 3: czystosc ruchu i tryb rynku dla swiec, ktore ich nie maja
     # (informacyjnie - sygnal bez zmian).

@@ -1040,6 +1040,12 @@
   .dv-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .dv-legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--mk-c); }
   .dv-legend i.dash { border-top-style: dashed; border-top-color: var(--text-secondary); }
+
+  /* ---------- Etap 5 planu "trend": karta "Portfele z wyczuciem" (reużywa dv-). ---------- */
+  .dv-line--skilled { stroke: #68D391; }
+  .dv-end--skilled { fill: #68D391; }
+  .dv-line--unskilled { stroke: #A8A6B0; }
+  .dv-end--unskilled { fill: #A8A6B0; }
 </style>
 <div class="page">
 
@@ -1425,6 +1431,43 @@
         <p><strong>Po co to Hydrze:</strong> sprawdzamy, czy te wskaźniki mówią coś o przyszłej cenie. Na razie tylko je zbieramy i pokazujemy. Jeśli okażą się przydatne, wejdą do sygnału. To narzędzie badawcze, nie porada inwestycyjna.</p>
       </details>
       <div class="dv-foot" id="dvFoot"></div>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4" id="skillCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">Portfele z wyczuciem</span>
+        <span class="info-tip" tabindex="0" data-tip="Nowa definicja dobrego portfela: liczy się, co cena ETH zrobiła w ciągu 24 godzin po każdej transakcji portfela (kupno przed wzrostem albo sprzedaż przed spadkiem to plus). Górne 10% portfeli to „z wyczuciem”, dolne 10% „bez wyczucia”. Klasyfikacja raz na dobę, tylko z transakcji, których wynik był już znany, i tylko z Uniswap+Pancake na Ethereum (min. 5 transakcji po co najmniej $1000). Dane z ostatnich ~30 dni.">ⓘ</span>
+      </div>
+      <span class="dv-badge">w wyścigu</span>
+    </div>
+    <p class="card-subnote">Czy portfele, które najlepiej trafiają z kierunkiem, przez ostatni tydzień kupują, czy sprzedają ETH — i co robią te, które trafiają najgorzej. To „trend z portfeli”: na razie gra tylko w wyścigu strategii, nie wpływa na główny sygnał.</p>
+    <div class="dv-empty" id="skEmpty" style="display:none;">Zbieramy dane — klasyfikacja potrzebuje co najmniej 7 dni ocenionych transakcji i pełnego tygodnia na akumulację.</div>
+    <div id="skBody">
+      <div class="dv-grid">
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label" id="skLabel">Z wyczuciem</span>
+            <span class="dv-pill" id="skPill">-</span>
+          </div>
+          <div class="dv-value" id="skValue">-</div>
+          <div class="dv-sub" id="skSub">-</div>
+          <div class="chart-wrap dv-chart" id="skWrap"><svg role="img" aria-label="Akumulacja portfeli z wyczuciem w czasie"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="skNote" style="display:none;"></p>
+        </div>
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Bez wyczucia</span>
+            <span class="dv-pill" id="unPill">-</span>
+          </div>
+          <div class="dv-value" id="unValue">-</div>
+          <div class="dv-sub" id="unSub">-</div>
+          <div class="chart-wrap dv-chart" id="unWrap"><svg role="img" aria-label="Akumulacja portfeli bez wyczucia w czasie"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="unNote" style="display:none;"></p>
+        </div>
+      </div>
+      <div class="dv-foot" id="skFoot"></div>
     </div>
   </section>
 
@@ -2324,7 +2367,7 @@ window.addEventListener('resize', () => {
   clearTimeout(dvResizeTimer);
   dvResizeTimer = setTimeout(() => {
     const w = window.innerWidth;
-    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); renderMarketCard(); }
+    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); renderMarketCard(); renderSkillCard(); }
   }, 150);
 });
 
@@ -2335,6 +2378,8 @@ window.addEventListener('resize', () => {
 // =====================================================================
 const RC_STRATS = [
   { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'główny sygnał: kierunek z trendu, wejście z portfeli', color: '#FF8A65', dash: false },
+  { key: 'skilled7', name: 'Akumulacja portfeli z wyczuciem', sub: 'LONG, gdy przez 7 dni kupują netto (nowa definicja dobrego portfela)', color: '#68D391', dash: false },
+  { key: 'antiweak7', name: 'Przeciw portfelom bez wyczucia', sub: 'SHORT, gdy przez 7 dni kupują netto', color: '#68D391', dash: true },
   { key: 'trend14', name: 'Trend 14 dni', sub: 'sam trend', color: '#FFC94A', dash: false },
   { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
@@ -2342,7 +2387,7 @@ const RC_STRATS = [
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
   { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
 ];
-const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele' };
+const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
@@ -2541,6 +2586,45 @@ function renderMarketCard() {
     document.getElementById('mkRatioSub').textContent = 'Brak danych.';
   }
   document.getElementById('mkFoot').textContent = 'Dane z Hyperliquid (świece godzinowe), stan na ' + DV_TIME_FMT.format(new Date(b.t * 1000)) + ' (czas polski). Wykresy: ostatnie 30 dni.';
+}
+
+// =====================================================================
+// Etap 5 planu "trend": karta "Portfele z wyczuciem" - z pól świec
+// (walletSkilledNet7d / walletUnskilledNet7d), niezależna od zakładek.
+// =====================================================================
+function renderSkillCard() {
+  const rows = DATA.candles.filter((c) => c.walletSkilledNet7d != null && c.ts != null);
+  const body = document.getElementById('skBody');
+  const empty = document.getElementById('skEmpty');
+  if (!rows.length) { body.style.display = 'none'; empty.style.display = 'block'; return; }
+  empty.style.display = 'none'; body.style.display = '';
+  const last = rows[rows.length - 1];
+  const eth = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.round(Math.abs(v)).toLocaleString('en-US') + ' ETH';
+  const ethShort = (v) => (v < 0 ? '−' : '') + (Math.abs(v) >= 1000 ? dvNum(Math.abs(v) / 1000, 0) + 'k' : Math.round(Math.abs(v)));
+  const setPill = (id, v, buyText, sellText) => {
+    const el = document.getElementById(id);
+    el.textContent = v > 0 ? buyText : v < 0 ? sellText : 'bez zmian';
+    el.className = 'dv-pill' + (v > 0 ? ' dv-pill--up' : v < 0 ? ' dv-pill--neg' : '');
+  };
+  document.getElementById('skLabel').textContent = 'Z wyczuciem (' + last.walletSkilledCount + ' portfeli)';
+  setPill('skPill', last.walletSkilledNet7d, 'kupują netto', 'sprzedają netto');
+  document.getElementById('skValue').innerHTML = eth(last.walletSkilledNet7d) + '<small>w 7 dni</small>';
+  document.getElementById('skSub').textContent = 'Strategia „Akumulacja portfeli z wyczuciem” jest teraz: ' + signalLabel(last.signalSkilled) + '.';
+  setPill('unPill', last.walletUnskilledNet7d, 'kupują netto', 'sprzedają netto');
+  document.getElementById('unValue').innerHTML = eth(last.walletUnskilledNet7d) + '<small>w 7 dni</small>';
+  document.getElementById('unSub').textContent = 'Strategia „Przeciw portfelom bez wyczucia” jest teraz: ' + signalLabel(last.signalVsUnskilled) + '.';
+  const tip = (p) => '<strong>' + eth(p[1]) + '</strong> w 7 dni<br>' + DV_TIME_FMT.format(new Date(p[0]));
+  dvDrawLine({
+    wrapId: 'skWrap', noteId: 'skNote', series: rows.map((c) => [c.ts * 1000, c.walletSkilledNet7d]),
+    minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+    includeZero: true, baseline: null, leftPad: 56, yFmt: ethShort, lineCls: 'dv-line--skilled', endCls: 'dv-end--skilled', tipHtml: tip,
+  });
+  dvDrawLine({
+    wrapId: 'unWrap', noteId: 'unNote', series: rows.map((c) => [c.ts * 1000, c.walletUnskilledNet7d]),
+    minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+    includeZero: true, baseline: null, leftPad: 56, yFmt: ethShort, lineCls: 'dv-line--unskilled', endCls: 'dv-end--unskilled', tipHtml: tip,
+  });
+  document.getElementById('skFoot').textContent = 'Netto = ETH kupione minus sprzedane w ostatnich 7 dniach, stan na ' + DV_TIME_FMT.format(new Date(last.ts * 1000)) + ' (czas polski). Wykres: ostatnie świece na stronie.';
 }
 
 function renderFreshness() {
@@ -3426,6 +3510,7 @@ renderRaceCard();
 renderRegimeCard();
 renderDerivsCard();
 renderMarketCard();
+renderSkillCard();
 buildMainChart(filterCandlesByRange(currentRange));
 buildHistory();
 renderAggregateStats();

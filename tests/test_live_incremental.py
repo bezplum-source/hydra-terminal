@@ -2282,7 +2282,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2344,7 +2344,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)
@@ -2467,3 +2467,38 @@ def test_market_source_down_never_breaks_the_run(tmp_path, monkeypatch):
     m = st.load_latest_run_manifest()
     assert any(w.startswith("market: BTC") for w in m["warnings"])
     assert any(w.startswith("market: ETH") for w in m["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Etap 5 planu "trend": portfele z wyczuciem (live/wallet_timing.py).
+# ---------------------------------------------------------------------------
+
+
+def test_wallet_timing_fields_exist_and_short_history_gives_none(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path, end_block=1000)
+    _fake_market(monkeypatch)
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    # testowy lancuch to kilka godzin transakcji - za malo na klasyfikacje
+    # (7 dni ocenionych transakcji) i okno akumulacji: pola sa, ale None
+    for c in candles:
+        for k in ("walletSkilledNet7d", "walletUnskilledNet7d", "walletSkilledCount", "signalSkilled", "signalVsUnskilled"):
+            assert k in c and c[k] is None
+    race = st.load_race_state()
+    assert race["strategies"]["skilled7"]["position"] == "HOLD"
+    assert race["strategies"]["antiweak7"]["trades"] == []
+
+
+def test_wallet_timing_failure_never_breaks_the_run(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path, end_block=500)
+    from live import wallet_timing as wtm
+
+    class Boom:
+        def __init__(self, *a, **k):
+            raise RuntimeError("zepsute")
+
+    monkeypatch.setattr(wtm, "WalletTiming", Boom)
+    assert ri.main() == 0
+    m = st.load_latest_run_manifest()
+    assert any(w.startswith("wallet_timing: RuntimeError") for w in m["warnings"])
+    assert all(c["signalSkilled"] is None for c in st.load_candles_history())

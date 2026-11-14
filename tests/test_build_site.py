@@ -634,7 +634,7 @@ def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
     assert r["live"] is None
     lb = r["lookback"]
     assert lb["fromTime"] is not None and lb["fromPrice"] == 2000.0
-    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
+    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7"}
     # brak pól BTC na świecach -> strategie BTC nigdy nie wchodzą w pozycję
     assert lb["strategies"]["btc14"]["position"] == "HOLD" and lb["strategies"]["btc14"]["trades"] == 0
     # ETH rośnie od startu widoku wstecz -> kup i trzymaj na plusie, trend na plusie
