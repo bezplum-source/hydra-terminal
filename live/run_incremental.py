@@ -358,13 +358,19 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
     return history
 
 
-RACE_STRATEGIES = ("trend14", "hydra", "eth", "btc14", "ethbtc14")
+RACE_STRATEGIES = ("trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback")
 
 
-def _race_signals(candle: dict) -> dict[str, str | None]:
+def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | None]:
     """Sygnal kazdej strategii wyscigu dla jednej swiecy. None = brak danych
-    w tej swiecy -> strategia trzyma dotychczasowa pozycje."""
+    w tej swiecy -> strategia trzyma dotychczasowa pozycje. `race` potrzebny
+    strategiom, ktore zaleza od wlasnej, biezacej pozycji (pullback)."""
+    pullback_pos = (((race or {}).get("strategies") or {}).get("pullback") or {}).get("position", "HOLD")
     return {
+        # Etap 3: w trendzie z trendem, w rynku bocznym za portfelami
+        "hybrid": strat.hybrid_signal(candle.get("signal"), candle.get("signalHydra"), candle.get("marketMode")),
+        # Etap 3: kierunek z trendu, moment wejscia z portfeli
+        "pullback": strat.pullback_signal(pullback_pos, candle.get("signal"), candle.get("composite")),
         "trend14": candle.get("signal", "HOLD"),
         "hydra": candle.get("signalHydra", "HOLD"),
         "eth": "LONG",  # punkt odniesienia: po prostu trzymanie ETH
@@ -426,7 +432,7 @@ def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
             for name in RACE_STRATEGIES:
                 if name not in race["strategies"]:
                     race["strategies"][name] = strat.new_strategy_book(c.get("time", ""), c["block"])
-            strat.race_step(race, c, _race_signals(c))
+            strat.race_step(race, c, _race_signals(c, race))
         if race:
             st.save_race_state(race)
             manifest["race"] = {
@@ -1048,12 +1054,17 @@ def main() -> int:
         # sie dalej bez zadnej zmiany i trafia do `signalHydra` (gra w
         # "wyscigu strategii" obok). Okno cen budowane z calej historii swiec.
         trend_window = strat.TrendWindow()
+        # Etap 3: "czystosc ruchu" (czy rynek jest w trendzie, czy chodzi bokiem)
+        er_window = strat.EfficiencyWindow()
         price_guard = strat.PriceGuard()
         for hc in candles_history:
             # ta sama ochrona przed blednymi cenami co w wyscigu (patrz
             # strat.PriceGuard) - odtwarzana z historii przy kazdym uruchomieniu
             if price_guard.check(hc.get("price"), hc.get("ethRefPrice")) and hc.get("ts") is not None:
                 trend_window.add(hc["ts"], hc["price"])
+                er_window.add(hc["ts"], hc["price"])
+        last_er = candles_history[-1].get("trendEr14") if candles_history else None
+        last_mode = candles_history[-1].get("marketMode") if candles_history else None
         last_trend_signal = (
             candles_history[-1].get("signal", "HOLD")
             if candles_history and candles_history[-1].get("signalSource") == "trend14"
@@ -1231,6 +1242,9 @@ def main() -> int:
             if ts is not None and price_ok:
                 trend_window.add(ts, s.price_usd)
                 trend_sig, trend_sma, trend_dist = trend_window.signal_at(ts, s.price_usd)
+                er_window.add(ts, s.price_usd)
+                last_er = er_window.er_at(ts)
+                last_mode = strat.market_mode(last_er, last_mode)
             else:
                 # Swieca bez znacznika czasu nie ma miejsca w czasie, a swieca z
                 # podejrzana cena (skok > 15% bez potwierdzenia) moze byc
@@ -1252,6 +1266,11 @@ def main() -> int:
                 "trendDistPct": round(trend_dist, 2) if trend_dist is not None else None,
                 "signalHydra": final_signal.value,
                 "priceSuspect": not price_ok,
+                # Etap 3 planu "trend": czystosc ruchu z 14 dni i tryb rynku
+                # (TREND / RANGE) - swieca z bledna cena albo bez czasu
+                # dziedziczy poprzednia wartosc.
+                "trendEr14": round(last_er, 3) if last_er is not None else None,
+                "marketMode": last_mode,
                 "composite": round(composite_final, 3),
                 # Faza "sygnał z histerezą" - front-end (template.html) dalej
                 # czyta TO SAMO pole (`signalThreshold`) do kolorowania
@@ -1566,6 +1585,18 @@ def main() -> int:
                     c.update(feats)
                     market_filled += 1
         manifest["market_fill"] = market_filled
+
+    # Etap 3: czystosc ruchu i tryb rynku dla swiec, ktore ich nie maja
+    # (informacyjnie - sygnal bez zmian).
+    if any("trendEr14" not in c for c in candles_history):
+        modes = strat.mode_series(candles_history)
+        er_filled = 0
+        for c, (er_v, mode_v) in zip(candles_history, modes):
+            if "trendEr14" not in c:
+                c["trendEr14"] = round(er_v, 3) if er_v is not None else None
+                c["marketMode"] = mode_v
+                er_filled += 1
+        manifest["er_fill"] = er_filled
 
     if any("trendSma" not in c for c in candles_history):
         fill_window = strat.TrendWindow()

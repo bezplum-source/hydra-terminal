@@ -175,3 +175,70 @@ def test_trend_series_ignores_glitch_price():
     out = s.trend_series(candles)
     assert out[-2] == out[-3]  # błędna świeca dziedziczy poprzedni sygnał zamiast skakać na LONG
     assert out[-1] == "SHORT"
+
+
+# ---------- etap 3: czystość ruchu, hybryda, wejście z portfelami ----------
+
+
+def _er_window(prices_daily):
+    w = s.EfficiencyWindow()
+    for i, p in enumerate(prices_daily):
+        w.add(T0 + i * DAY, p)
+    return w, T0 + (len(prices_daily) - 1) * DAY
+
+
+def test_efficiency_ratio_straight_line_zigzag_and_coverage():
+    w, last = _er_window([2000.0 + 10 * i for i in range(15)])
+    assert w.er_at(last) == pytest.approx(1.0)
+    w, last = _er_window([2000.0 if i % 2 == 0 else 2100.0 for i in range(15)])
+    assert w.er_at(last) == pytest.approx(0.0)  # kręci się w miejscu: 15 dni, start = koniec
+    w, last = _er_window([2000.0] * 10)  # za krótka historia
+    assert w.er_at(last) is None
+    w, last = _er_window([2000.0] * 15)
+    assert w.er_at(last) == 0.0  # zero ruchu = brak trendu
+    # dziura w danych dłuższa niż tolerancja -> brak oceny
+    w2 = s.EfficiencyWindow()
+    for i in range(15):
+        if i != 7:
+            w2.add(T0 + i * DAY, 2000.0 + i)
+    assert w2.er_at(T0 + 14 * DAY) is None  # brak dnia 7 - cena z dnia 6 jest o dobę za stara
+    w3 = s.EfficiencyWindow()
+    for i in range(15):
+        w3.add(T0 + i * DAY + (5 * 3600 if i == 7 else 0), 2000.0 + i)
+    assert w3.er_at(T0 + 14 * DAY) is None
+
+
+def test_market_mode_and_hybrid_signal():
+    assert s.market_mode(None) is None
+    assert s.market_mode(0.29) == "RANGE" and s.market_mode(0.3) == "TREND"
+    assert s.hybrid_signal("LONG", "SHORT", "TREND") == "LONG"
+    assert s.hybrid_signal("LONG", "SHORT", "RANGE") == "SHORT"
+    assert s.hybrid_signal("LONG", "SHORT", None) is None
+
+
+def test_pullback_signal_state_machine():
+    p = s.pullback_signal
+    assert p("HOLD", "LONG", 0.0) == "HOLD"  # trend w górę, ale portfele nie kupują - czekamy
+    assert p("HOLD", "LONG", 0.15) == "LONG"  # portfele kupują dołek - wchodzimy
+    assert p("LONG", "LONG", -0.9) == "LONG"  # w pozycji trzymamy, dopóki trend trwa
+    assert p("LONG", "SHORT", 0.5) == "HOLD"  # trend się odwrócił, portfele nie sprzedają - wychodzimy
+    assert p("LONG", "SHORT", -0.2) == "SHORT"  # odwrócenie i portfele sprzedają odbicie
+    assert p("SHORT", "HOLD", -0.5) == "HOLD"
+    assert p("HOLD", "SHORT", None) == "HOLD"
+
+
+def test_mode_series_inherits_on_glitch_price():
+    candles = [{"ts": T0 + i * DAY, "price": 2000.0 + 10 * i} for i in range(16)]
+    candles.insert(15, {"ts": T0 + 14 * DAY + 3600, "price": 9000.0})  # błąd odczytu
+    out = s.mode_series(candles)
+    assert out[14][1] == "TREND" and out[15] == out[14]
+
+
+def test_market_mode_hysteresis_band():
+    m = s.market_mode
+    assert m(0.31) == "TREND"  # bez poprzedniego trybu - zwykły próg 0,3
+    assert m(0.32, "RANGE") == "RANGE"  # z rynku bocznego do trendu dopiero od 0,35
+    assert m(0.35, "RANGE") == "TREND"
+    assert m(0.27, "TREND") == "TREND"  # z trendu wychodzimy dopiero poniżej 0,25
+    assert m(0.24, "TREND") == "RANGE"
+    assert m(None, "TREND") == "TREND" and m(None, None) is None

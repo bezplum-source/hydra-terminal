@@ -1903,7 +1903,12 @@ function renderHero() {
     if (latest.trendSma != null && latest.trendDistPct != null) {
       const above = latest.trendDistPct >= 0;
       trendNote.innerHTML = 'Cena <b>' + Math.abs(latest.trendDistPct).toFixed(1).replace('.', ',') + '% ' + (above ? 'nad' : 'pod') +
-        '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>). Sygnał zmieni się, gdy cena przetnie średnią.';
+        '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>). Sygnał zmieni się, gdy cena przetnie średnią.' +
+        // Etap 3: czy rynek jest w trendzie, czy chodzi bokiem
+        (latest.trendEr14 != null
+          ? '<br>Rynek: <b>' + (latest.marketMode === 'TREND' ? 'w wyraźnym trendzie' : 'bez wyraźnego kierunku') +
+            '</b> (czystość ruchu z 14 dni ' + latest.trendEr14.toFixed(2).replace('.', ',') + ' w skali 0–1).'
+          : '');
     } else {
       trendNote.textContent = 'Za mało historii cen, żeby policzyć średnią z 14 dni.';
     }
@@ -2311,8 +2316,10 @@ const RC_STRATS = [
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
   { key: 'btc14', name: 'Trend BTC', sub: 'ETH według trendu bitcoina', color: '#E58FD8', dash: false },
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
+  { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
+  { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'kierunek z trendu, wejście, gdy portfele kupują dołek', color: '#FF8A65', dash: false },
 ];
-const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC' };
+const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
@@ -2332,8 +2339,8 @@ function rcDrawChart(series) {
   }
   wrap.style.display = '';
   note.style.display = 'none';
-  const W = Math.max(260, Math.round(wrap.clientWidth) || 900), H = 220;
-  const L = 52, R = 104, T = 12, B = 24;
+  const W = Math.max(260, Math.round(wrap.clientWidth) || 900), H = 260;
+  const L = 52, R = 118, T = 12, B = 24;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   svg.setAttribute('width', W);
   svg.setAttribute('height', H);
@@ -2367,6 +2374,9 @@ function rcDrawChart(series) {
   });
   ends.sort((a, b) => a.y - b.y);
   for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 14) ends[k].y = ends[k - 1].y + 14;
+  // jeśli etykiety zjechały poniżej wykresu, przesuń całą kolumnę w górę
+  const overflow = ends.length ? ends[ends.length - 1].y - (H - B) : 0;
+  if (overflow > 0) ends.forEach((e) => { e.y = Math.max(T + 4, e.y - overflow); });
   ends.forEach((e) => {
     g += '<text class="chart-axis-label" x="' + (W - R + 8) + '" y="' + (e.y + 3.5).toFixed(1) + '" fill="' + e.color + '" style="fill:' + e.color + '">' + e.name + ' ' + e.text + '</text>';
   });

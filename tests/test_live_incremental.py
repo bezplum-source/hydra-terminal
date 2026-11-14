@@ -2281,7 +2281,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2295,7 +2295,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
         h = dict(template)
         h.update({"ts": first_ts - i * 3600, "price": 2000.0, "block": -i, "time": "historia", "signal": "SHORT"})
         # swiece sprzed przelaczenia nie mialy pol trendu ani `signalHydra`
-        for k in ("signalSource", "trendSma", "trendDistPct", "signalHydra"):
+        for k in ("signalSource", "trendSma", "trendDistPct", "signalHydra", "trendEr14", "marketMode"):
             h.pop(k, None)
         history.append(h)
     st.save_candles_history(history + run1)
@@ -2309,6 +2309,8 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     for c in new:
         assert c["signal"] == "LONG" and c["trendSma"] is not None and c["trendDistPct"] > 0
         assert c["priceSuspect"] is False
+        # Etap 3: 20 dni po 2000, potem ~3000 -> ruch "w jedna strone", czysty trend
+        assert c["trendEr14"] == pytest.approx(1.0) and c["marketMode"] == "TREND"
     # stare swiece dostaly tylko informacyjne pola trendu (linia sredniej na
     # wykresie); ich sygnal zostal taki, jaki byl
     for old_c, new_c in zip(history, after[: len(history)]):
@@ -2320,9 +2322,14 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert race2["start"]["block"] == run1[0]["block"]  # start sie nie przesuwa
     assert race2["strategies"]["trend14"]["position"] == "LONG"
     assert race2["lastBlock"] == new[-1]["block"]
+    # Etap 3: hybryda w trendzie gra z trendem; "trend + wejscie z portfeli" wchodzi
+    # dopiero, gdy portfele kupuja (zalezy od composite testowego lancucha)
+    assert race2["strategies"]["hybrid"]["position"] == "LONG"
+    assert race2["strategies"]["pullback"]["position"] in ("LONG", "HOLD")
+    assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)

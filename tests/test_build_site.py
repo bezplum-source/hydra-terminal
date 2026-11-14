@@ -632,7 +632,7 @@ def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
     assert r["live"] is None
     lb = r["lookback"]
     assert lb["fromTime"] is not None and lb["fromPrice"] == 2000.0
-    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14"}
+    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback"}
     # brak pól BTC na świecach -> strategie BTC nigdy nie wchodzą w pozycję
     assert lb["strategies"]["btc14"]["position"] == "HOLD" and lb["strategies"]["btc14"]["trades"] == 0
     # ETH rośnie od startu widoku wstecz -> kup i trzymaj na plusie, trend na plusie
@@ -712,3 +712,22 @@ def test_lookback_btc_strategy_uses_candle_btc_signal():
     r = bs._build_race_summary(None, candles)["lookback"]["strategies"]
     assert r["btc14"]["position"] == "LONG" and r["btc14"]["resultPct"] > 0
     assert r["ethbtc14"]["position"] == "LONG"  # na końcu trend ETH też LONG
+
+
+# ---------------------------------------------------------------------------
+# Etap 3 planu "trend": hybryda i "trend + wejście z portfeli" w widoku wstecz.
+# ---------------------------------------------------------------------------
+
+
+def test_pullback_series_enters_only_when_wallets_buy_and_holds_through_trend():
+    trend = ["LONG", "LONG", "LONG", "LONG", "SHORT"]
+    comps = [0.0, 0.2, -0.5, -0.5, -0.5]
+    candles = [{"price": 100.0 + i, "composite": v} for i, v in enumerate(comps)]
+    assert bs._pullback_series(trend, candles) == ["HOLD", "LONG", "LONG", "LONG", "SHORT"]
+
+
+def test_lookback_has_hybrid_and_pullback():
+    lb = bs._build_race_summary(None, _race_candles())["lookback"]["strategies"]
+    assert "hybrid" in lb and "pullback" in lb
+    # w _race_candles cena rośnie prosto w górę po LOOKBACK_FROM -> tryb TREND -> hybryda gra z trendem
+    assert lb["hybrid"]["position"] == "LONG"

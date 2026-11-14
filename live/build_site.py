@@ -251,6 +251,19 @@ def _race_view(race: dict) -> dict:
     return out
 
 
+def _pullback_series(trend: list[str], candles: list[dict]) -> list[str]:
+    """Sygnaly strategii "Trend + wejscie z portfeli" po kolei (zalezy od
+    wlasnej pozycji). Swieca z bledna cena nie zmienia pozycji - tak jak w
+    samym wyscigu, ktory ja pomija."""
+    out: list[str] = []
+    pos = strat.HOLD
+    for t, c, ok in zip(trend, candles, strat.price_flags(candles)):
+        if ok:
+            pos = strat.pullback_signal(pos, t, c.get("composite"))
+        out.append(pos)
+    return out
+
+
 def _build_race_summary(race_state: dict | None, candles_history: list[dict]) -> dict:
     """Dane karty "Wyscig strategii": wyscig na zywo (od dnia wdrozenia, z
     `data/race_state.json`) i orientacyjna powtorka tych samych regul na
@@ -270,18 +283,26 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
         start_i = next((i for i, c in enumerate(hist) if c.get("ts") is not None and c["ts"] >= from_ts), None)
         if start_i is not None:
             sub = hist[start_i:]
+            modes = strat.mode_series(hist)
+            hydra_sigs = [
+                c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") == "trend14" else c.get("signal", "HOLD")
+                for c in sub
+            ]
             replay = strat.replay_race(
                 sub,
                 {
                     "trend14": trend[start_i:],
                     # przed przelaczeniem `signal` BYL sygnalem portfeli; po
                     # przelaczeniu ten sam sygnal jest w `signalHydra`
-                    "hydra": [c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") == "trend14" else c.get("signal", "HOLD") for c in sub],
+                    "hydra": hydra_sigs,
                     "eth": ["LONG"] * len(sub),
                     # Etap 2: pola BTC sa na swiecach (dopelnione wstecz z
                     # historii Hyperliquid); brak danych = None = bez zmiany pozycji
                     "btc14": [c.get("btcSignal") for c in sub],
                     "ethbtc14": [mkt.combined_signal(t, c.get("btcSignal")) for t, c in zip(trend[start_i:], sub)],
+                    # Etap 3: tryb rynku liczony od nowa z cen (ta sama funkcja co w pipeline)
+                    "hybrid": [strat.hybrid_signal(t, h, m[1]) for t, h, m in zip(trend[start_i:], hydra_sigs, modes[start_i:])],
+                    "pullback": _pullback_series(trend[start_i:], sub),
                 },
             )
             lookback = {

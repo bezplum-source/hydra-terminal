@@ -304,3 +304,119 @@ def downsample_curve(curve: list[list], max_points: int = 400) -> list[list]:
     step = n / max_points
     idx = sorted({int(i * step) for i in range(max_points)} | {n - 1})
     return [curve[i] for i in idx]
+
+
+# ---------------------------------------------------------------------------
+# Etap 3 planu "trend": czy rynek jest w trendzie, czy chodzi bokiem
+# ---------------------------------------------------------------------------
+
+# "Czystość ruchu" (efficiency ratio Kaufmana) z cen dziennych z ostatnich
+# 14 dni: |cena teraz - cena 14 dni temu| / suma |zmian dzień do dnia|.
+# 1 = cena szła prosto w jedną stronę, 0 = kręciła się w miejscu. Próg 0,3
+# przyjęty Z GÓRY (wartość podręcznikowa), nie dopasowany do historii: na
+# 23.08-14.11.2026 rynek był powyżej niego przez ~41% czasu (mediana 0,26).
+ER_DAYS = 14
+MODE_TREND_MIN_ER = 0.3
+# Pasmo przeciw migotaniu: bez niego tryb przełączał się 139 razy na
+# 12.09-14.11.2026 (miara krąży wokół 0,3), co dawało hybrydzie 127 ze 155 zmian
+# sygnału. Wejście w TREND dopiero od 0,35, wyjście z niego poniżej 0,25
+# (symetrycznie wokół 0,3; mechaniczna poprawka, nie strojenie pod wynik).
+MODE_ENTER_TREND_ER = 0.35
+MODE_LEAVE_TREND_ER = 0.25
+ER_SAMPLE_TOLERANCE_S = 3 * 3600
+TREND, RANGE = "TREND", "RANGE"
+
+# Strategia "Trend + wejście z portfelami": próg composite, od którego uznajemy,
+# że portfele kupują dołek (albo sprzedają odbicie). To ten sam próg, którego
+# silnik portfeli używa do wyjścia z pozycji (SignalConfig.exit_threshold) -
+# też nie dopasowany do historii.
+PULLBACK_COMPOSITE_MIN = 0.1
+
+
+class EfficiencyWindow:
+    """Ceny w czasie (tylko wiarygodne) do liczenia czystości ruchu."""
+
+    def __init__(self, days: int = ER_DAYS):
+        self.days = days
+        self.ts: list[int] = []
+        self.px: list[float] = []
+
+    def add(self, ts: int, price: float) -> None:
+        if self.ts and ts < self.ts[-1]:
+            return
+        self.ts.append(int(ts))
+        self.px.append(float(price))
+
+    def er_at(self, ts: int) -> float | None:
+        pts = []
+        for k in range(self.days + 1):
+            target = ts - k * DAY_S
+            j = bisect.bisect_right(self.ts, target) - 1
+            if j < 0 or target - self.ts[j] > ER_SAMPLE_TOLERANCE_S:
+                return None
+            pts.append(self.px[j])
+        path = sum(abs(a - b) for a, b in zip(pts, pts[1:]))
+        if path <= 0:
+            return 0.0
+        return abs(pts[0] - pts[-1]) / path
+
+
+def market_mode(er: float | None, prev_mode: str | None = None) -> str | None:
+    """Tryb rynku z czystości ruchu. Z poprzednim trybem działa pasmo przeciw
+    migotaniu (MODE_ENTER_TREND_ER / MODE_LEAVE_TREND_ER); bez niego - sam próg
+    0,3. Brak miary = tryb bez zmian (albo None, gdy nie było poprzedniego)."""
+    if er is None:
+        return prev_mode
+    if prev_mode == TREND:
+        return TREND if er >= MODE_LEAVE_TREND_ER else RANGE
+    if prev_mode == RANGE:
+        return TREND if er >= MODE_ENTER_TREND_ER else RANGE
+    return TREND if er >= MODE_TREND_MIN_ER else RANGE
+
+
+def hybrid_signal(trend_sig: str | None, hydra_sig: str | None, mode: str | None) -> str | None:
+    """Hybryda: w trendzie gramy z trendem, w rynku bocznym słuchamy portfeli
+    (kontrariańsko - tam to podejście ma sens). Brak oceny rynku = bez zmiany."""
+    if mode == TREND:
+        return trend_sig
+    if mode == RANGE:
+        return hydra_sig
+    return None
+
+
+def pullback_signal(position: str, trend_sig: str | None, composite: float | None,
+                    threshold: float = PULLBACK_COMPOSITE_MIN) -> str:
+    """Trend wyznacza kierunek, portfele moment wejścia. Wchodzimy LONG w
+    trendzie wzrostowym dopiero, gdy portfele kupują (composite >= próg, czyli
+    zwykle po chwilowym spadku), SHORT w spadkowym, gdy sprzedają (composite
+    <= -próg). Pozycję trzymamy, dopóki trend się nie odwróci."""
+    if trend_sig not in (LONG, SHORT):
+        return HOLD
+    if position == trend_sig:
+        return trend_sig
+    if composite is None:
+        return HOLD
+    if trend_sig == LONG and composite >= threshold:
+        return LONG
+    if trend_sig == SHORT and composite <= -threshold:
+        return SHORT
+    return HOLD
+
+
+def mode_series(candles: list[dict]) -> list[tuple[float | None, str | None]]:
+    """(czystość ruchu, tryb rynku) dla każdej świecy - z tą samą ochroną przed
+    błędnymi cenami co trend."""
+    win = EfficiencyWindow()
+    guard = PriceGuard()
+    out: list[tuple[float | None, str | None]] = []
+    mode: str | None = None
+    for c in candles:
+        ts = c.get("ts")
+        if guard.check(c.get("price"), c.get("ethRefPrice")) and ts is not None:
+            win.add(ts, c["price"])
+            er = win.er_at(ts)
+            mode = market_mode(er, mode)
+            out.append((er, mode))
+        else:
+            out.append(out[-1] if out else (None, None))
+    return out

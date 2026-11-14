@@ -849,8 +849,30 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           out of the market otherwise). A strategy added to a race that is already running
           gets its own start candle (<code>startTime</code> in its book, shown as "gra od …"
           in the table). When a strategy's input is missing for a candle (no BTC data), it
-          keeps its current position instead of closing it. Later steps add more entrants
-          (a trend/range hybrid, wallet-timed entries, …) the same way.
+          keeps its current position instead of closing it.
+        </p>
+        <p>
+          Roadmap step 3 (2026-11-14) adds a <strong>market mode</strong> and two more
+          entrants. The mode comes from the price alone: the Kaufman efficiency ratio over
+          the last 14 days of daily prices (<code>|price now − price 14 days ago|</code>
+          divided by the sum of the 14 day-to-day moves; 1 = a straight line, 0 = going
+          round in circles), stored on each candle as <code>trendEr14</code>, and
+          <code>marketMode</code> = <code>TREND</code> or <code>RANGE</code>. The central
+          cut-off of 0.30 is the textbook value, fixed in advance rather than fitted — on
+          23.08–14.11.2026 the ratio was above it about 41% of the time (median 0.26). Because
+          the ratio hovers around that line, a plain cut-off flipped the mode 139 times on
+          12.09–14.11; the mode therefore uses a band — it enters TREND at 0.35 and leaves
+          it below 0.25 (45 flips on the same period). On the looking-back view the hybrid
+          below still did poorly (−28.2%, 38 trades, vs the trend's +13.4%); it stays in the
+          race unchanged so the forward record decides, rather than being re-tuned to the
+          past. <strong>Hybryda: trend albo portfele</strong> follows the 14-day trend in
+          TREND mode and the wallet engine (<code>signalHydra</code>) in RANGE mode, where
+          its contrarian reading makes sense. <strong>Trend + wejście z portfelami</strong>
+          takes the direction from the trend but only enters when the wallets agree with
+          a pullback entry — LONG in an uptrend once the composite is at least +0.1
+          (wallets buying a dip), SHORT in a downtrend once it is −0.1 or lower — and then
+          holds until the trend turns (the 0.1 is the wallet engine's own exit threshold,
+          not a fitted value). Later steps add more entrants the same way.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by
@@ -1577,7 +1599,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             the active signal entered and at what price (fixed until the signal
             closes). Since 2026-11-14 the Main tab's eyebrow reads "trend 14 dni" and a
             line under the pill says how far the price is above or below its 14-day
-            average (and that the signal flips when the price crosses it); the wallet
+            average (and that the signal flips when the price crosses it), plus the
+            market mode ("w wyraźnym trendzie" / "bez wyraźnego kierunku" with the
+            efficiency ratio — see <a href="#race">Strategy race</a>); the wallet
             meters on the right carry a caption that they are informational only and
             name the wallet engine's own current signal (<code>signalHydra</code>). The
             divergence banner described next applies only to the wallet signal (Long
