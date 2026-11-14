@@ -20,6 +20,8 @@ from __future__ import annotations
 import datetime
 import json
 
+import pytest
+
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws
 from hydra_signals.data_sources.onchain_rpc import JsonRpcClient, SWAP_TOPIC0
 from hydra_signals.data_sources.pools import BASE_UNISWAP_V3_WETH_USDC_005, UNISWAP_V3_USDC_WETH_005
@@ -226,6 +228,8 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # sie stalo przy pierwszym uruchomieniu pytest po dodaniu tej sciezki -
     # zauwazone i naprawione od razu, przed dostawa).
     monkeypatch.setattr(st, "SPOT_POOL_STATE_PATH", tmp_path / "data" / "spot_pool_state.json")
+    # Faza "funding + open interest" - dopisane OD RAZU (patrz komentarze wyzej).
+    monkeypatch.setattr(st, "DERIVS_HISTORY_PATH", tmp_path / "data" / "derivs_history.json")
     # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
     # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
     # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
@@ -2129,3 +2133,117 @@ def test_unfetchable_new_candle_timestamp_gets_estimated_label_not_question_mark
     for c in new_candles:
         assert c["ts"] is None
         assert c["time"].startswith("~"), c["time"]
+
+
+# ---------------------------------------------------------------------------
+# Faza "funding + open interest" (Hyperliquid ETH-PERP) - krok ZAPISUJACY dane
+# (live/derivs.py), nie wplywajacy na sygnal.
+# ---------------------------------------------------------------------------
+
+
+def _fake_derivs_sources(monkeypatch, *, funding_fail=False, ctx_fail=False):
+    """Podmienia siec Hyperliquid na deterministyczne dane i znosi przycinanie
+    retencji (fikcyjny lancuch ma znaczniki czasu z 2023, a "teraz" w teście to
+    prawdziwy zegar - bez tego retencja wycinalaby wszystko)."""
+    from hydra_signals.data_sources import hyperliquid_derivs as hd
+    from live import derivs as dv
+
+    monkeypatch.delenv("HYDRA_DERIVS_DISABLED", raising=False)
+    monkeypatch.setattr(dv, "FUNDING_RETENTION_DAYS", 100_000)
+    monkeypatch.setattr(dv, "SNAPSHOT_RETENTION_DAYS", 100_000)
+
+    def fake_funding(start_ms, *a, **k):
+        if funding_fail:
+            raise OSError("hyperliquid down")
+        base = 1_700_000_000_000 - 48 * 3_600_000
+        return [{"t": base + i * 3_600_000, "rate": 0.0001, "premium": 0.0002} for i in range(24 * 14)]
+
+    def fake_ctx(*a, **k):
+        if ctx_fail:
+            return None
+        return {"funding": 0.0001, "openInterest": 500.0, "markPx": 2000.0, "oraclePx": 2000.0, "premium": 0.0, "dayNtlVlm": 1.0}
+
+    monkeypatch.setattr(hd, "fetch_funding_history", fake_funding)
+    monkeypatch.setattr(hd, "fetch_asset_ctx", fake_ctx)
+
+
+def test_derivs_fields_are_recorded_on_candles_and_do_not_touch_the_signal(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=1000)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+
+    # Uruchomienie 1: derivs WYLACZONE (stan "sprzed wdrozenia") - swiece bez danych
+    assert ri.main() == 0
+    before = st.load_candles_history()
+    assert before and all(c["fundingRate"] is None and c["openInterest"] is None for c in before)
+    assert not (tmp_path / "data" / "derivs_history.json").exists() or st.load_derivs_history()["funding"] == []
+
+    # Uruchomienie 2: derivs WLACZONE, doszlo troche nowych blokow
+    _fake_derivs_sources(monkeypatch)
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+    after = st.load_candles_history()
+    assert len(after) > len(before)
+
+    hist = st.load_derivs_history()
+    assert len(hist["funding"]) == 24 * 14 and len(hist["snapshots"]) == 1
+    manifest = st.load_latest_run_manifest()
+    assert manifest["derivs"]["enabled"] is True
+    assert manifest["derivs"]["funding_new"] == 24 * 14 and manifest["derivs"]["snapshot_added"] is True
+    assert manifest["derivs"]["candles_filled"] >= len(before)
+
+    # stare swiece z uruchomienia 1 DOSTALY funding (znany dokladnie w czasie),
+    # a wszystko inne - w tym sygnal i composite - zostalo nietkniete
+    for old, new in zip(before, after):
+        assert new["fundingRate"] == 0.0001 and new["fundingApr"] == pytest.approx(0.0001 * 8760 * 100, abs=0.01)
+        for key in old:
+            if key not in ("fundingRate", "fundingApr", "fundingZ", "openInterest", "openInterestUsd", "oiChange24h", "perpPremium"):
+                assert new[key] == old[key], key
+    # open interest to snapshot "z teraz" (2026), swiece sa z 2023 -> brak OI, i to jest poprawne
+    assert all(c["openInterest"] is None for c in after)
+
+    # Uruchomienie 3: te same wiersze funding z serwera NIE dubluja sie
+    assert ri.main() == 0
+    assert len(st.load_derivs_history()["funding"]) == 24 * 14
+
+
+def test_derivs_source_down_never_breaks_the_run(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+    _fake_derivs_sources(monkeypatch, funding_fail=True, ctx_fail=True)
+
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles and all(c["fundingRate"] is None for c in candles)
+    manifest = st.load_latest_run_manifest()
+    assert manifest["derivs"]["enabled"] is True
+    assert any(w.startswith("derivs:") for w in manifest["warnings"])
+
+
+def test_derivs_disabled_by_env_skips_the_step_entirely(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+
+    def must_not_be_called(*a, **k):
+        raise AssertionError("siec Hyperliquid nie powinna byc dotykana przy HYDRA_DERIVS_DISABLED")
+
+    from hydra_signals.data_sources import hyperliquid_derivs as hd
+
+    monkeypatch.setattr(hd, "fetch_funding_history", must_not_be_called)
+    monkeypatch.setattr(hd, "fetch_asset_ctx", must_not_be_called)
+    assert ri.main() == 0
+    assert st.load_latest_run_manifest()["derivs"] == {"enabled": False}
