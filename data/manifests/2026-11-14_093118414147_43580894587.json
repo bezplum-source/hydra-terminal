@@ -1,0 +1,86 @@
+{
+  "run_id": "43580894587",
+  "trigger": "workflow_dispatch",
+  "commit_sha": "1ebfd1c26165c493a02414ca258247094f95d418",
+  "started_at_utc": "2026-11-14T09:31:18.414147+00:00",
+  "finished_at_utc": "2026-11-14T09:33:06.980495+00:00",
+  "duration_s": 108.6,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26412288,
+    "to_block": 26412342,
+    "new_trades": 283,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 57288401,
+    "to_block": 57291721,
+    "new_trades": 0,
+    "capped": false
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 0
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 4000,
+    "base_max_lag_blocks": 10800,
+    "base_fastforward_keep_blocks": 6000,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5,
+    "derivs_backfill_days": 120,
+    "market_backfill_days": 200
+  },
+  "warnings": [],
+  "lake_objects": [
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-11-14/part-43580894587.parquet",
+      "rows": 283
+    }
+  ],
+  "derivs": {
+    "enabled": true,
+    "funding_new": 0,
+    "funding_total": 2882,
+    "snapshot_added": true,
+    "snapshot_total": 7,
+    "errors": [],
+    "candles_filled": 0
+  },
+  "market": {
+    "enabled": true,
+    "errors": [],
+    "BTC": {
+      "new": 0,
+      "total": 4800
+    },
+    "ETH": {
+      "new": 0,
+      "total": 4800
+    }
+  },
+  "ts_repair": {
+    "missing_before": 0,
+    "fetched": 0,
+    "still_missing": 0,
+    "estimated": 0
+  },
+  "market_fill": 0,
+  "wallet_timing_fill": 2378,
+  "wallet_timing": {
+    "skilled": 325,
+    "skilled_net7d": -10722.96,
+    "unskilled_net7d": 3376.3
+  },
+  "trend_fill": 0,
+  "race": {
+    "trend14": -0.13,
+    "hydra": 0.0,
+    "eth": 0.03,
+    "btc14": -0.05,
+    "ethbtc14": -0.05
+  }
+}
