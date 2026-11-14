@@ -420,3 +420,54 @@ def mode_series(candles: list[dict]) -> list[tuple[float | None, str | None]]:
         else:
             out.append(out[-1] if out else (None, None))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Glowny sygnal od 14.11.2026 (decyzja Jakuba po etapach 6-7): glosowanie
+# wszystkich strategii z wyscigu.
+# ---------------------------------------------------------------------------
+
+# Kto NIE glosuje: "eth" (kup i trzymaj - punkt odniesienia, zawsze LONG) i
+# samo glosowanie.
+VOTE_EXCLUDED = ("eth", "vote")
+
+
+class VoteBook:
+    """Pamieta ostatnie stanowisko kazdej strategii (sygnal None = brak danych
+    = strategia zostaje przy dotychczasowej pozycji, dokladnie jak w wyscigu)."""
+
+    def __init__(self, positions: dict[str, str] | None = None):
+        self.last: dict[str, str] = {k: v for k, v in (positions or {}).items() if v in _DIR}
+
+    def vote(self, signals: dict[str, str | None], voters: Iterable[str]) -> tuple[str, dict[str, str]]:
+        """Prosta wiekszosc: wiecej LONG niz SHORT -> LONG, wiecej SHORT niz
+        LONG -> SHORT, remis -> HOLD (neutralni sie nie licza do wiekszosci,
+        ale sa widoczni w wyniku). Zwraca (sygnal, stanowiska wszystkich)."""
+        votes: dict[str, str] = {}
+        for k in voters:
+            if k in VOTE_EXCLUDED:
+                continue
+            s = signals.get(k)
+            if s not in _DIR:
+                s = self.last.get(k, HOLD)
+            self.last[k] = s
+            votes[k] = s
+        return vote_result(votes), votes
+
+
+def vote_result(votes: dict[str, str]) -> str:
+    n_long = sum(1 for v in votes.values() if v == LONG)
+    n_short = sum(1 for v in votes.values() if v == SHORT)
+    if n_long > n_short:
+        return LONG
+    if n_short > n_long:
+        return SHORT
+    return HOLD
+
+
+def vote_series(signal_lists: dict[str, list[str | None]]) -> list[str]:
+    """Glosowanie po kolei dla widoku "od poczatku" (te same reguly co w pipeline)."""
+    keys = [k for k in signal_lists if k not in VOTE_EXCLUDED]
+    n = len(next(iter(signal_lists.values()))) if signal_lists else 0
+    book = VoteBook()
+    return [book.vote({k: signal_lists[k][i] for k in keys}, keys)[0] for i in range(n)]

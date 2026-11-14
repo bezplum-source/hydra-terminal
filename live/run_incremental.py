@@ -370,11 +370,19 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
     return history
 
 
-# Zrodlo glownego sygnalu od 14.11.2026 (decyzja Jakuba, opcja 2 po etapie 3):
-# trend 14 dni wyznacza kierunek, portfele moment wejscia.
-HEADLINE_SOURCE = "trend_wallets"
+# Zrodlo glownego sygnalu. 14.11.2026 rano: "trend14" (sam trend), potem
+# "trend_wallets" (trend 14 dni + wejscie z portfeli, opcja 2 po etapie 3), od
+# 14.11.2026 po etapach 6-7 (decyzja Jakuba: "zastapic od razu"): "vote" -
+# prosta wiekszosc glosow wszystkich strategii z wyscigu (bez "ETH kup i
+# trzymaj"), patrz strat.VoteBook. "Trend + wejscie z portfeli" gra dalej w
+# wyscigu i glosuje jak kazda inna strategia.
+HEADLINE_SOURCE = "vote"
+# zrodla, z ktorych swiece biora udzial w wyscigu (sygnal z nowych regul)
+RACE_SOURCES = ("trend14", "trend_wallets", "vote")
 
 RACE_STRATEGIES = (
+    # glowny sygnal od 14.11.2026: glosowanie wszystkich pozostalych
+    "vote",
     "trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback",
     # Etap 5: nowa definicja dobrego portfela (wyczucie) + akumulacja
     "skilled7", "antiweak7",
@@ -395,6 +403,8 @@ def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | Non
     # sam trend: od przelaczenia na "trend + portfele" w `signalTrend`, wczesniej w `signal`
     trend = candle.get("signalTrend", candle.get("signal", "HOLD"))
     return {
+        # glowny sygnal (glosowanie) - tylko na swiecach, ktore go maja
+        "vote": candle.get("signal") if candle.get("signalSource") == "vote" else None,
         # Etap 3: w trendzie z trendem, w rynku bocznym za portfelami
         "hybrid": strat.hybrid_signal(trend, candle.get("signalHydra"), candle.get("marketMode")),
         # Etap 3: kierunek z trendu, moment wejscia z portfeli (od 14.11.2026
@@ -517,7 +527,7 @@ def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
     race = st.load_race_state()
     try:
         for c in new_candles:
-            if c.get("signalSource") not in ("trend14", HEADLINE_SOURCE) or not c.get("price") or c.get("priceSuspect"):
+            if c.get("signalSource") not in RACE_SOURCES or not c.get("price") or c.get("priceSuspect"):
                 continue  # bledna cena nie moze ani wycenic pozycji, ani otworzyc transakcji
             if not race:
                 race = strat.new_race(
@@ -1192,7 +1202,12 @@ def main() -> int:
         last_er = candles_history[-1].get("trendEr14") if candles_history else None
         last_mode = candles_history[-1].get("marketMode") if candles_history else None
         prev_c = candles_history[-1] if candles_history else {}
-        if prev_c.get("signalSource") == HEADLINE_SOURCE:
+        race_now = st.load_race_state()
+        race_positions = {k: b.get("position") for k, b in (race_now.get("strategies") or {}).items()}
+        if prev_c.get("signalSource") == "vote":
+            last_trend_signal = prev_c.get("signalTrend", "HOLD")
+            last_headline = prev_c.get("signalPullback", "HOLD")
+        elif prev_c.get("signalSource") == "trend_wallets":
             last_trend_signal = prev_c.get("signalTrend", "HOLD")
             last_headline = prev_c.get("signal", "HOLD")
         else:
@@ -1201,8 +1216,12 @@ def main() -> int:
             # startujemy z pozycji, ktora ta sama strategia ma juz w wyscigu
             # (gra od etapu 3), zeby glowny sygnal i strategia w wyscigu byly
             # jednym i tym samym, a nie dwiema wersjami.
-            race_now = st.load_race_state()
-            last_headline = (((race_now.get("strategies") or {}).get("pullback") or {}).get("position")) or "HOLD"
+            last_headline = race_positions.get("pullback") or "HOLD"
+        # Glosowanie: ostatnie stanowisko kazdej strategii - z poprzedniej
+        # swiecy, a gdy jej brak (pierwsza swieca z glosowaniem), z pozycji w
+        # wyscigu na zywo.
+        vote_book = strat.VoteBook(prev_c.get("votes") or race_positions)
+        last_vote = prev_c.get("signal", "HOLD") if prev_c.get("signalSource") == "vote" else None
 
         # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
         # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
@@ -1391,7 +1410,7 @@ def main() -> int:
             # Swieca z bledna cena albo bez czasu nie zmienia pozycji.
             if price_ok:
                 last_headline = strat.pullback_signal(last_headline, trend_sig, composite_final)
-            headline_sig = last_headline
+            headline_sig = last_headline  # nadpisane glosowaniem nizej, gdy swieca ma juz wszystkie cechy
 
             candle = {
                 "block": s.window_end_block,
@@ -1404,6 +1423,8 @@ def main() -> int:
                 # `signalHydra` = sam silnik portfeli - oba graja dalej w wyscigu.
                 "signalSource": HEADLINE_SOURCE,
                 "signalTrend": trend_sig,
+                # "Trend + wejscie z portfeli" (glowny sygnal przed glosowaniem)
+                "signalPullback": last_headline,
                 "trendSma": round(trend_sma, 2) if trend_sma is not None else None,
                 "trendDistPct": round(trend_dist, 2) if trend_dist is not None else None,
                 "signalHydra": final_signal.value,
@@ -1666,6 +1687,21 @@ def main() -> int:
             regime_out_lt = regime_engine_lt.process_candle(synthetic_now_lt)
             for key, value in regime_out_lt.items():
                 candle[f"{key}Lt"] = value
+
+            # Glowny sygnal: glosowanie wszystkich strategii wyscigu (sygnaly z
+            # tej samej funkcji co wyscig; "pullback" = pozycja policzona wyzej).
+            # Swieca z bledna cena nie zmienia ani glosow, ani sygnalu.
+            if price_ok or last_vote is None:
+                sigs = _race_signals(candle)
+                sigs["pullback"] = last_headline
+                last_vote, votes = vote_book.vote(sigs, RACE_STRATEGIES)
+            else:
+                votes = dict(vote_book.last)
+            candle["signal"] = last_vote
+            candle["votes"] = votes
+            candle["voteLong"] = sum(1 for v in votes.values() if v == "LONG")
+            candle["voteShort"] = sum(1 for v in votes.values() if v == "SHORT")
+            candle["voteHold"] = sum(1 for v in votes.values() if v == "HOLD")
 
             candles_history.append(candle)
             new_candles_this_run.append(candle)

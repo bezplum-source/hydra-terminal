@@ -242,3 +242,29 @@ def test_market_mode_hysteresis_band():
     assert m(0.27, "TREND") == "TREND"  # z trendu wychodzimy dopiero poniżej 0,25
     assert m(0.24, "TREND") == "RANGE"
     assert m(None, "TREND") == "TREND" and m(None, None) is None
+
+
+# ---------------------------------------------------------------------------
+# Glowny sygnal od 14.11.2026: glosowanie wszystkich strategii.
+# ---------------------------------------------------------------------------
+
+
+def test_vote_simple_majority_ignores_eth_and_neutral_votes():
+    book = s.VoteBook()
+    sig, votes = book.vote({"a": "SHORT", "b": "SHORT", "c": "LONG", "d": "HOLD", "eth": "LONG"}, ["a", "b", "c", "d", "eth", "vote"])
+    assert sig == "SHORT" and set(votes) == {"a", "b", "c", "d"}
+    assert book.vote({"a": "LONG", "b": "SHORT", "c": "HOLD", "d": "HOLD"}, ["a", "b", "c", "d"])[0] == "HOLD"  # remis
+
+
+def test_vote_none_keeps_last_stance_and_starts_from_given_positions():
+    book = s.VoteBook({"a": "LONG", "b": "LONG", "c": "SHORT", "x": "bzdura"})
+    sig, votes = book.vote({"a": None, "b": None, "c": "SHORT"}, ["a", "b", "c"])
+    assert sig == "LONG" and votes == {"a": "LONG", "b": "LONG", "c": "SHORT"}
+    # strategia bez danych i bez historii = neutralna
+    assert s.VoteBook().vote({"a": None}, ["a"]) == ("HOLD", {"a": "HOLD"})
+
+
+def test_vote_series_matches_step_by_step_votes():
+    lists = {"a": ["LONG", None, "SHORT"], "b": ["SHORT", "SHORT", None], "c": [None, "LONG", "SHORT"], "eth": ["LONG"] * 3}
+    assert s.vote_series(lists) == ["HOLD", "LONG", "SHORT"]
+    assert s.vote_series({}) == []

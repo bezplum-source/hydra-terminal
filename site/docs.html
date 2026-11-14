@@ -741,7 +741,38 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
       <section id="signal">
         <h2>The signal: LONG / SHORT / HOLD</h2>
         <div class="callout">
-          <span class="label">Since 2026-11-14 (after roadmap step 3): trend direction + wallet entry</span>
+          <span class="label">Since 2026-11-14 (after roadmap steps 6–7): a vote of all race strategies</span>
+          <p>
+            The project owner asked for the headline to be a combined indicator of all
+            strategies, replacing the single rule below. Every new candle now carries
+            <code>signalSource: "vote"</code>: each strategy in the <a href="#race">race</a>
+            except <strong>ETH kup i trzymaj</strong> (a reference that is always LONG)
+            casts its current stance — 14 votes — and the <strong>simple majority of LONG
+            versus SHORT</strong> decides; a tie is HOLD, neutral votes do not count towards
+            either side (<code>strategies.VoteBook</code>). A strategy without data on a
+            candle keeps its previous stance, exactly as it keeps its position in the race;
+            on the first voting candle the stances come from the live race. The candle stores
+            <code>votes</code> (each strategy's stance), <code>voteLong</code>,
+            <code>voteShort</code>, <code>voteHold</code> and <code>signalPullback</code>
+            (the previous headline rule, which keeps playing and voting); a suspect-price
+            candle changes neither the votes nor the signal. The vote also runs in the race
+            as <strong>Głosowanie wszystkich strategii</strong> (<code>vote</code>), so its
+            forward record is measured like any other entrant. The hero lists who votes what.
+          </p>
+          <p>
+            Honest caveats, stated when the switch was made. Most entrants are variants of
+            the same 14-day trend, so the vote leans on the trend; weak entrants (the wallet
+            engine, the hybrid) vote too, with the same weight. On the looking-back view over
+            Hydra's whole history (23.08–14.11.2026, after fees) the simple majority made
+            +11.9% (42 trades), against +1.4% for the trend alone and −1.5% for the previous
+            headline — but the same vote requiring a one-third margin made −2.0% and a
+            one-half margin −10.1%: the result is very sensitive to the rule. Simple majority
+            was kept because it has no parameter to tune, not because it scored best, and the
+            history behind these numbers is mostly one falling market. The live race decides.
+          </p>
+        </div>
+        <div class="callout">
+          <span class="label">Earlier on 2026-11-14 (after roadmap step 3): trend direction + wallet entry</span>
           <p>
             The project owner wanted the trend to be <em>part</em> of the tool rather than the
             whole of it, so the same day the headline signal moved from the pure trend (below)
@@ -871,7 +902,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           on paper under identical rules: the whole (unit) capital LONG, SHORT or out, no
           leverage, a 0.05% fee on every entry and every exit, marked to each candle's
           price. Since 2026-11-14 the entrants are <strong>Trend 14 dni</strong> (the pure
-          trend; the headline signal for a few hours on 2026-11-14), <strong>Hydra — portfele</strong> (the wallet engine's
+          trend; the headline signal for a few hours on 2026-11-14), <strong>Głosowanie
+          wszystkich strategii</strong> (the headline signal since 2026-11-14, after roadmap steps 6–7 —
+          see <a href="#signal">the signal</a>), <strong>Hydra — portfele</strong> (the wallet engine's
           <code>signalHydra</code>) and <strong>ETH kup i trzymaj</strong> as a reference.
           Since roadmap step 2 (2026-11-14) two more play: <strong>Trend BTC</strong> (ETH
           traded by bitcoin's own 14-day trend, <code>btcSignal</code>) and <strong>Trend
@@ -910,7 +943,8 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           adds <strong>Napływ stablecoinów</strong> and <strong>Trend potwierdzony przez
           stablecoiny</strong> (see <a href="#stables">Stablecoin supply</a>), step 7
           <strong>Trend w spokojnym rynku</strong> and <strong>Skew opcji</strong> (see
-          <a href="#options">ETH options</a>) — fifteen entrants in all.
+          <a href="#options">ETH options</a>) — fifteen entrants, plus the vote of all of them
+          (the headline signal) as the sixteenth.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by

@@ -286,38 +286,38 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
             sub = hist[start_i:]
             modes = strat.mode_series(hist)
             hydra_sigs = [
-                c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") in ("trend14", "trend_wallets") else c.get("signal", "HOLD")
+                c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") in ("trend14", "trend_wallets", "vote") else c.get("signal", "HOLD")
                 for c in sub
             ]
-            replay = strat.replay_race(
-                sub,
-                {
-                    "trend14": trend[start_i:],
-                    # przed przelaczeniem `signal` BYL sygnalem portfeli; po
-                    # przelaczeniu ten sam sygnal jest w `signalHydra`
-                    "hydra": hydra_sigs,
-                    "eth": ["LONG"] * len(sub),
-                    # Etap 2: pola BTC sa na swiecach (dopelnione wstecz z
-                    # historii Hyperliquid); brak danych = None = bez zmiany pozycji
-                    "btc14": [c.get("btcSignal") for c in sub],
-                    "ethbtc14": [mkt.combined_signal(t, c.get("btcSignal")) for t, c in zip(trend[start_i:], sub)],
-                    # Etap 3: tryb rynku liczony od nowa z cen (ta sama funkcja co w pipeline)
-                    "hybrid": [strat.hybrid_signal(t, h, m[1]) for t, h, m in zip(trend[start_i:], hydra_sigs, modes[start_i:])],
-                    "pullback": _pullback_series(trend[start_i:], sub),
-                    # Etap 5: tylko tam, gdzie bufor transakcji ma dane (None = brak gry)
-                    "skilled7": [c.get("signalSkilled") for c in sub],
-                    "antiweak7": [c.get("signalVsUnskilled") for c in sub],
-                    # Etap 4: agresorzy (zasieg bufora Hyperliquid) i trend + OI (od 14.11)
-                    "taker24": [c.get("signalTaker") for c in sub],
-                    "trendoi": [c.get("signalTrendOi") for c in sub],
-                    # Etap 6: stablecoiny (DefiLlama - historia od poczatku Hydry)
-                    "stables7": [c.get("signalStables") for c in sub],
-                    "trendstables": [c.get("signalTrendStables") for c in sub],
-                    # Etap 7: DVOL z historia od poczatku; skew opcji dopiero od 14.11
-                    "trendcalm": [c.get("signalTrendCalm") for c in sub],
-                    "optskew": [c.get("signalOptSkew") for c in sub],
-                },
-            )
+            lists = {
+                "trend14": trend[start_i:],
+                # przed przelaczeniem `signal` BYL sygnalem portfeli; po
+                # przelaczeniu ten sam sygnal jest w `signalHydra`
+                "hydra": hydra_sigs,
+                "eth": ["LONG"] * len(sub),
+                # Etap 2: pola BTC sa na swiecach (dopelnione wstecz z
+                # historii Hyperliquid); brak danych = None = bez zmiany pozycji
+                "btc14": [c.get("btcSignal") for c in sub],
+                "ethbtc14": [mkt.combined_signal(t, c.get("btcSignal")) for t, c in zip(trend[start_i:], sub)],
+                # Etap 3: tryb rynku liczony od nowa z cen (ta sama funkcja co w pipeline)
+                "hybrid": [strat.hybrid_signal(t, h, m[1]) for t, h, m in zip(trend[start_i:], hydra_sigs, modes[start_i:])],
+                "pullback": _pullback_series(trend[start_i:], sub),
+                # Etap 5: tylko tam, gdzie bufor transakcji ma dane (None = brak gry)
+                "skilled7": [c.get("signalSkilled") for c in sub],
+                "antiweak7": [c.get("signalVsUnskilled") for c in sub],
+                # Etap 4: agresorzy (zasieg bufora Hyperliquid) i trend + OI (od 14.11)
+                "taker24": [c.get("signalTaker") for c in sub],
+                "trendoi": [c.get("signalTrendOi") for c in sub],
+                # Etap 6: stablecoiny (DefiLlama - historia od poczatku Hydry)
+                "stables7": [c.get("signalStables") for c in sub],
+                "trendstables": [c.get("signalTrendStables") for c in sub],
+                # Etap 7: DVOL z historia od poczatku; skew opcji dopiero od 14.11
+                "trendcalm": [c.get("signalTrendCalm") for c in sub],
+                "optskew": [c.get("signalOptSkew") for c in sub],
+            }
+            # glowny sygnal od 14.11.2026: glosowanie wszystkich powyzszych (bez
+            # "ETH kup i trzymaj") - te same reguly co w pipeline
+            replay = strat.replay_race(sub, {"vote": strat.vote_series(lists), **lists})
             lookback = {
                 "fromTime": sub[0].get("time"),
                 "fromPrice": sub[0]["price"],

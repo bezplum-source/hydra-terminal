@@ -472,7 +472,7 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
     assert candles[-1]["signalHydra"] == "HOLD"
     # Etap 1 planu "trend": glowny `signal` to trend 14 dni - przy kilku
     # godzinach historii (mniej niz TREND_MIN_COVERAGE_DAYS) to HOLD, nie zgadywanie.
-    assert candles[-1]["signal"] == "HOLD" and candles[-1]["signalSource"] == "trend_wallets"
+    assert candles[-1]["signal"] == "HOLD" and candles[-1]["signalSource"] == "vote"
     assert candles[-1]["signalTrend"] == "HOLD"
     assert candles[-1]["trendSma"] is None
     # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
@@ -2281,11 +2281,14 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     # Uruchomienie 1: za malo historii na trend -> HOLD; wyscig startuje
     assert ri.main() == 0
     run1 = st.load_candles_history()
-    assert run1 and all(c["signal"] == "HOLD" and c["signalSource"] == "trend_wallets" and c["signalTrend"] == "HOLD" for c in run1)
+    assert run1 and all(c["signal"] == "HOLD" and c["signalSource"] == "vote" and c["signalTrend"] == "HOLD" for c in run1)
+    # glosowanie: nikt nie ma jeszcze zdania (za malo historii, brak danych rynkowych w testach)
+    assert all(c["voteLong"] == 0 and c["voteShort"] == 0 and c["voteHold"] == len(c["votes"]) == 14 for c in run1)
+    assert "eth" not in run1[0]["votes"] and "vote" not in run1[0]["votes"]
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
+    assert set(race["strategies"]) == {"vote", "trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2323,9 +2326,12 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert new
     for c in new:
         assert c["signalTrend"] == "LONG" and c["trendSma"] is not None and c["trendDistPct"] > 0
-        # glowny sygnal = "trend + wejscie z portfeli": przejal pozycje LONG z wyscigu
-        # i trzyma ja, dopoki trend jest wzrostowy
-        assert c["signal"] == "LONG" and c["signalSource"] == "trend_wallets"
+        # "trend + wejscie z portfeli" przejal pozycje LONG z wyscigu i trzyma ja,
+        # dopoki trend jest wzrostowy; glowny sygnal = glosowanie -> wiekszosc LONG
+        # (trend, pullback, hybryda), reszta bez danych w testach = neutralnie
+        assert c["signalPullback"] == "LONG"
+        assert c["signal"] == "LONG" and c["signalSource"] == "vote"
+        assert c["voteLong"] > c["voteShort"] and c["votes"]["trend14"] == "LONG"
         assert c["priceSuspect"] is False
         # Etap 3: 20 dni po 2000, potem ~3000 -> ruch "w jedna strone", czysty trend
         assert c["trendEr14"] == pytest.approx(1.0) and c["marketMode"] == "TREND"
@@ -2343,11 +2349,13 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     # Etap 3: hybryda w trendzie gra z trendem; "trend + wejscie z portfeli" wchodzi
     # dopiero, gdy portfele kupuja (zalezy od composite testowego lancucha)
     assert race2["strategies"]["hybrid"]["position"] == "LONG"
-    assert race2["strategies"]["pullback"]["position"] == "LONG" == new[-1]["signal"]
+    assert race2["strategies"]["pullback"]["position"] == "LONG" == new[-1]["signalPullback"]
+    # glosowanie dolaczylo do wyscigu jako strategia i gra glownym sygnalem
+    assert race2["strategies"]["vote"]["position"] == "LONG" == new[-1]["signal"]
     assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
+    assert set(manifest["race"]) == {"vote", "trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)

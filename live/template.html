@@ -1058,6 +1058,11 @@
   .dv-end--dvol { fill: #FC8181; }
   .lq-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .lq-facts b { color: var(--text-primary); font-weight: 600; }
+  /* Główny sygnał = głosowanie strategii: kto jak głosuje (hero). */
+  .hero-meta .hero-votes { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 4px; font-family: inherit; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+  .hero-meta .hero-votes .hv { font-family: inherit; color: var(--text-secondary); }
+  .hero-meta .hero-votes .hv--short { color: var(--bad-glow); }
+  .hero-meta .hero-votes .hv--long { color: var(--good-glow); }
 </style>
 <div class="page">
 
@@ -2001,19 +2006,33 @@ function renderHero() {
   // (signalSource "trend_wallets"): trend 14 dni wyznacza kierunek, portfele
   // moment wejścia. Wcześniej tego dnia sam trend ("trend14"). W zakładce Long
   // term sygnał dalej pochodzi z samych portfeli (30 dni).
-  const trendMode = CURRENT_TRACK === 'main' && latest && (latest.signalSource === 'trend14' || latest.signalSource === 'trend_wallets');
+  // Od 14.11.2026 (po etapach 6-7, decyzja Jakuba) główny sygnał to głosowanie
+  // wszystkich strategii z wyścigu (signalSource "vote"): większość decyduje.
+  const trendMode = CURRENT_TRACK === 'main' && latest && (latest.signalSource === 'trend14' || latest.signalSource === 'trend_wallets' || latest.signalSource === 'vote');
   const comboMode = trendMode && latest.signalSource === 'trend_wallets';
+  const voteMode = trendMode && latest.signalSource === 'vote';
   const eyebrow = document.getElementById('heroEyebrow');
   const trendNote = document.getElementById('heroTrendNote');
   const walletsCaption = document.getElementById('heroWalletsCaption');
   if (trendMode) {
-    eyebrow.textContent = comboMode ? 'Aktywny sygnał · trend + portfele' : 'Aktywny sygnał · trend 14 dni';
+    eyebrow.textContent = voteMode ? 'Aktywny sygnał · głosowanie strategii' : comboMode ? 'Aktywny sygnał · trend + portfele' : 'Aktywny sygnał · trend 14 dni';
     trendNote.style.display = 'block';
-    const trendSig = comboMode ? latest.signalTrend : latest.signal;
+    const trendSig = (comboMode || voteMode) ? latest.signalTrend : latest.signal;
     let html = '';
+    if (voteMode && latest.votes) {
+      const names = (sig) => Object.keys(latest.votes).filter((k) => latest.votes[k] === sig).map((k) => VOTE_NAMES[k] || k);
+      const n = Object.keys(latest.votes).length;
+      const longs = names('LONG'), shorts = names('SHORT'), holds = names('HOLD');
+      html = 'Głosowanie ' + n + ' strategii z wyścigu: <b>' + shorts.length + ' SHORT</b>, <b>' + longs.length + ' LONG</b>, ' + holds.length + ' neutralnie — decyduje przewaga LONG nad SHORT (remis = neutralnie).' +
+        '<span class="hero-votes">' +
+        (shorts.length ? '<span class="hv hv--short">SHORT: ' + shorts.join(', ') + '</span>' : '') +
+        (longs.length ? '<span class="hv hv--long">LONG: ' + longs.join(', ') + '</span>' : '') +
+        (holds.length ? '<span class="hv">neutralnie: ' + holds.join(', ') + '</span>' : '') +
+        '</span>';
+    }
     if (latest.trendSma != null && latest.trendDistPct != null) {
       const above = latest.trendDistPct >= 0;
-      html = 'Trend 14 dni: <b>' + (trendSig === 'LONG' ? 'wzrostowy' : trendSig === 'SHORT' ? 'spadkowy' : 'brak') + '</b> — cena <b>' +
+      html += 'Trend 14 dni: <b>' + (trendSig === 'LONG' ? 'wzrostowy' : trendSig === 'SHORT' ? 'spadkowy' : 'brak') + '</b> — cena <b>' +
         Math.abs(latest.trendDistPct).toFixed(1).replace('.', ',') + '% ' + (above ? 'nad' : 'pod') +
         '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>).';
       if (comboMode) {
@@ -2025,7 +2044,7 @@ function renderHero() {
         } else if (trendSig === 'SHORT') {
           html += ' Czekamy na wejście: <b>SHORT</b>, gdy portfele zaczną sprzedawać (wskaźnik „Ogólnie” najwyżej −0,10, teraz ' + comp + ').';
         }
-      } else {
+      } else if (!voteMode) {
         html += ' Sygnał zmieni się, gdy cena przetnie średnią.';
       }
       // Etap 3: czy rynek jest w trendzie, czy chodzi bokiem
@@ -2034,11 +2053,15 @@ function renderHero() {
           '</b> (czystość ruchu z 14 dni ' + latest.trendEr14.toFixed(2).replace('.', ',') + ' w skali 0–1).';
       }
       trendNote.innerHTML = html;
-    } else {
+    } else if (!voteMode) {
       trendNote.textContent = 'Za mało historii cen, żeby policzyć średnią z 14 dni.';
+    } else {
+      trendNote.innerHTML = html;
     }
     walletsCaption.style.display = 'block';
-    walletsCaption.innerHTML = (comboMode
+    walletsCaption.innerHTML = (voteMode
+      ? 'Presja portfeli (Hydra) — jeden z głosów w głosowaniu. Sam silnik portfeli wskazuje teraz: <b>'
+      : comboMode
       ? 'Presja portfeli (Hydra) — wyznacza moment wejścia w kierunku trendu. Sam silnik portfeli wskazuje teraz: <b>'
       : 'Presja portfeli (Hydra) — tylko informacyjnie, nie decyduje o sygnale. Hydra wskazuje teraz: <b>') +
       signalLabel(latest.signalHydra || 'HOLD') + '</b>.';
@@ -2472,7 +2495,8 @@ window.addEventListener('resize', () => {
 // Main / Long term - renderowana raz przy starcie i po zmianie zakresu.
 // =====================================================================
 const RC_STRATS = [
-  { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'główny sygnał: kierunek z trendu, wejście z portfeli', color: '#FF8A65', dash: false },
+  { key: 'vote', name: 'Głosowanie wszystkich strategii', sub: 'główny sygnał: przewaga głosów LONG / SHORT pozostałych strategii', color: '#F5F5F7', dash: false },
+  { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'kierunek z trendu, wejście z portfeli (główny sygnał do 14.11)', color: '#FF8A65', dash: false },
   { key: 'skilled7', name: 'Akumulacja portfeli z wyczuciem', sub: 'LONG, gdy przez 7 dni kupują netto (nowa definicja dobrego portfela)', color: '#68D391', dash: false },
   { key: 'antiweak7', name: 'Przeciw portfelom bez wyczucia', sub: 'SHORT, gdy przez 7 dni kupują netto', color: '#68D391', dash: true },
   { key: 'taker24', name: 'Agresorzy 24 h', sub: 'LONG, gdy na Hyperliquid przeważają agresywni kupujący', color: '#F6E05E', dash: false },
@@ -2488,7 +2512,9 @@ const RC_STRATS = [
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
   { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
 ];
-const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI', stables7: 'Stable', trendstables: 'T+stable', trendcalm: 'Trend+DVOL', optskew: 'Skew' };
+// nazwy w liście głosów w hero (krótkie, ale czytelne bez legendy)
+const VOTE_NAMES = { trend14: 'trend 14 dni', hydra: 'Hydra (portfele)', btc14: 'trend BTC', ethbtc14: 'ETH i BTC zgodne', hybrid: 'hybryda', pullback: 'trend + portfele', skilled7: 'portfele z wyczuciem', antiweak7: 'przeciw słabym portfelom', taker24: 'agresorzy 24 h', trendoi: 'trend + OI', stables7: 'stablecoiny', trendstables: 'trend + stablecoiny', trendcalm: 'trend w spokojnym rynku', optskew: 'skew opcji' };
+const RC_SHORT = { vote: 'Głosowanie', trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI', stables7: 'Stable', trendstables: 'T+stable', trendcalm: 'Trend+DVOL', optskew: 'Skew' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
