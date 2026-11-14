@@ -15,3 +15,6 @@ def _no_derivs_network(monkeypatch):
     monkeypatch.setenv("HYDRA_DERIVS_DISABLED", "1")
     # Etap 2 planu "trend": ceny BTC/ETH z Hyperliquid - tak samo bez sieci w testach.
     monkeypatch.setenv("HYDRA_MARKET_DISABLED", "1")
+    # Etap 6 i 7: stablecoiny (DefiLlama) i opcje (Deribit) - bez sieci w testach.
+    monkeypatch.setenv("HYDRA_STABLES_DISABLED", "1")
+    monkeypatch.setenv("HYDRA_OPTIONS_DISABLED", "1")

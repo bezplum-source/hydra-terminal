@@ -125,6 +125,9 @@ DERIVS_HISTORY_PATH = DATA_DIR / "derivs_history.json"
 RACE_STATE_PATH = DATA_DIR / "race_state.json"
 # Etap 2 planu "trend": godzinowe ceny BTC i ETH z Hyperliquid (live/market.py).
 MARKET_HISTORY_PATH = DATA_DIR / "market_history.json"
+# Etap 6 i 7 planu "trend": podaż stablecoinów (DefiLlama) i opcje ETH (Deribit).
+STABLES_HISTORY_PATH = DATA_DIR / "stables_history.json"
+OPTIONS_HISTORY_PATH = DATA_DIR / "options_history.json"
 
 # Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
 # liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
@@ -299,6 +302,43 @@ def load_market_history() -> dict:
 def save_market_history(history: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     MARKET_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def _load_json_dict(path: Path, empty: dict, list_keys: tuple[str, ...]) -> dict:
+    """Wspolny odczyt malych plikow historii: brak / uszkodzony plik = pusta
+    historia, pola listowe zawsze sa listami."""
+    if not path.exists():
+        return {**empty}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {**empty}
+    if not isinstance(raw, dict):
+        return {**empty}
+    out = {**empty}
+    for k in list_keys:
+        out[k] = raw.get(k) if isinstance(raw.get(k), list) else []
+    return out
+
+
+def load_stables_history() -> dict:
+    return _load_json_dict(STABLES_HISTORY_PATH, {"version": 1, "total": []}, ("total",))
+
+
+def save_stables_history(history: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    STABLES_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def load_options_history() -> dict:
+    return _load_json_dict(
+        OPTIONS_HISTORY_PATH, {"version": 1, "dvol": [], "snapshots": []}, ("dvol", "snapshots")
+    )
+
+
+def save_options_history(history: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    OPTIONS_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def load_regime_state() -> dict:

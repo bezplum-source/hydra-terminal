@@ -20,6 +20,8 @@ if str(ROOT_FOR_IMPORT) not in sys.path:
 
 from hydra_signals import strategies as strat  # noqa: E402
 from live import market as mkt  # noqa: E402
+from live import options as opt  # noqa: E402
+from live import stables as stb  # noqa: E402
 
 MAX_DISPLAY_CANDLES = 500
 
@@ -308,6 +310,12 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
                     # Etap 4: agresorzy (zasieg bufora Hyperliquid) i trend + OI (od 14.11)
                     "taker24": [c.get("signalTaker") for c in sub],
                     "trendoi": [c.get("signalTrendOi") for c in sub],
+                    # Etap 6: stablecoiny (DefiLlama - historia od poczatku Hydry)
+                    "stables7": [c.get("signalStables") for c in sub],
+                    "trendstables": [c.get("signalTrendStables") for c in sub],
+                    # Etap 7: DVOL z historia od poczatku; skew opcji dopiero od 14.11
+                    "trendcalm": [c.get("signalTrendCalm") for c in sub],
+                    "optskew": [c.get("signalOptSkew") for c in sub],
                 },
             )
             lookback = {
@@ -350,12 +358,74 @@ def _build_market_summary(market_history: dict | None) -> dict | None:
     return {"btc": view(lk["BTC"], 2), "ethBtc": view(lk["ETHBTC"], 6)}
 
 
+STABLES_DISPLAY_DAYS = 90
+OPTIONS_DISPLAY_DAYS = 30
+
+
+def _build_stables_summary(stables_history: dict | None) -> dict | None:
+    """Karta "Stablecoiny i opcje ETH", panel stablecoinow (etap 6): ostatni
+    PELNY dzien podazy, zmiana 7 i 30 dni, seria z ostatnich 90 dni."""
+    rows = sorted((stables_history or {}).get("total") or [], key=lambda r: r[0])
+    if len(rows) < 2:
+        return None
+    # ostatni punkt w API bywa niepelnym dniem - pokazujemy przedostatni, tak
+    # jak liczone sa pola na swiecach (patrz live/stables.py)
+    series = stb.StablesSeries(rows[:-1])
+    i = len(series.days) - 1
+    ch7 = series.change(i, 7)
+    ch30 = series.change(i, 30)
+    cut = series.days[i] - STABLES_DISPLAY_DAYS * 86400
+    return {
+        "day": series.days[i],
+        "supplyUsd": round(series.vals[i], 0),
+        "change7dUsd": round(ch7[0], 0) if ch7 else None,
+        "change7dPct": round(ch7[1], 3) if ch7 else None,
+        "change30dPct": round(ch30[1], 3) if ch30 else None,
+        "series": [[d, round(v, 0)] for d, v in zip(series.days, series.vals) if d >= cut],
+    }
+
+
+def _build_options_summary(options_history: dict | None) -> dict | None:
+    """Karta "Stablecoiny i opcje ETH", panel opcji (etap 7): DVOL ze srednia
+    z 14 dni (30 dni na wykresie) + ostatnia migawka put/call i skew."""
+    if not options_history or not (options_history.get("dvol") or options_history.get("snapshots")):
+        return None
+    lk = opt.OptionsLookup(options_history)
+    d = lk.dvol
+    dvol = None
+    if d.t:
+        i = len(d.t) - 1
+        cut = d.t[i] - OPTIONS_DISPLAY_DAYS * 86400
+        j = next(k for k, t in enumerate(d.t) if t >= cut)
+        dvol = {
+            "value": round(d.v[i], 2),
+            "sma": round(d.sma[i], 2) if d.sma[i] is not None else None,
+            "distPct": round(d.dist[i], 2) if d.dist[i] is not None else None,
+            "t": int(d.t[i]),
+            "series": [[int(d.t[k]), round(d.v[k], 2)] for k in range(j, i + 1)],
+            "smaSeries": [[int(d.t[k]), round(d.sma[k], 2)] for k in range(j, i + 1) if d.sma[k] is not None],
+        }
+    snap = lk.snaps[-1] if lk.snaps else None
+    skew_series = []
+    if snap is not None:
+        cut_ms = snap["t"] - OPTIONS_DISPLAY_DAYS * 86_400_000
+        skew_series = [[s["t"], s["skew"]] for s in lk.snaps if s["t"] >= cut_ms and s.get("skew") is not None]
+    return {
+        "dvol": dvol,
+        "snapshot": snap,
+        "skewBand": opt.SKEW_BAND,
+        "skewSeries": skew_series,
+    }
+
+
 def build_site(
     candles_history: list[dict],
     meta: dict | None = None,
     derivs_history: dict | None = None,
     race_state: dict | None = None,
     market_history: dict | None = None,
+    stables_history: dict | None = None,
+    options_history: dict | None = None,
 ) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
@@ -409,6 +479,9 @@ def build_site(
         "race": _build_race_summary(race_state, candles_history),
         # Etap 2 planu "trend": karta "BTC i ETH/BTC".
         "market": _build_market_summary(market_history),
+        # Etap 6 i 7 planu "trend": karta "Stablecoiny i opcje ETH".
+        "stables": _build_stables_summary(stables_history),
+        "options": _build_options_summary(options_history),
     }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
@@ -453,5 +526,7 @@ if __name__ == "__main__":
         derivs_history=st.load_derivs_history(),
         race_state=st.load_race_state(),
         market_history=st.load_market_history(),
+        stables_history=st.load_stables_history(),
+        options_history=st.load_options_history(),
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")

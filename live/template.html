@@ -1050,6 +1050,14 @@
   /* ---------- Etap 4 planu "trend": panel "Agresorzy (24 h)" w karcie kontraktów. ---------- */
   .dv-line--taker { stroke: #F6E05E; }
   .dv-end--taker { fill: #F6E05E; }
+
+  /* ---------- Etap 6 i 7 planu "trend": karta "Stablecoiny i opcje ETH". ---------- */
+  .dv-line--stables { stroke: #63B3ED; }
+  .dv-end--stables { fill: #63B3ED; }
+  .dv-line--dvol { stroke: #FC8181; }
+  .dv-end--dvol { fill: #FC8181; }
+  .lq-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .lq-facts b { color: var(--text-primary); font-weight: 600; }
 </style>
 <div class="page">
 
@@ -1521,6 +1529,45 @@
         </div>
       </div>
       <div class="dv-foot" id="mkFoot"></div>
+    </div>
+  </section>
+
+  <section class="card reveal reveal-4" id="liqCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">Stablecoiny i opcje ETH</span>
+        <span class="info-tip" tabindex="0" data-tip="Dwa źródła spoza łańcucha Hydry. Stablecoiny: łączna podaż wszystkich stablecoinów ze wszystkich sieci (DefiLlama, dane dzienne) - rośnie, gdy wybija się nowe (napływ dolarów do krypto), spada, gdy są spalane. Opcje: rynek opcji ETH na Deribit - DVOL to oczekiwana zmienność ETH na 30 dni, skew porównuje cenę ochrony przed spadkiem (puty) z ceną zakładów na wzrost (calle). Nie wpływają na główny sygnał; grają w Wyścigu strategii.">ⓘ</span>
+      </div>
+      <span class="dv-badge">w wyścigu</span>
+    </div>
+    <p class="card-subnote">Czy do krypto wpływają nowe dolary i jak bardzo nerwowy jest rynek opcji. Na razie tylko w wyścigu strategii, nie w głównym sygnale.</p>
+    <div class="dv-empty" id="lqEmpty" style="display:none;">Zbieramy dane — karta wypełni się po pierwszym pobraniu z DefiLlama i Deribit.</div>
+    <div id="lqBody">
+      <div class="dv-grid">
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Podaż stablecoinów</span>
+            <span class="dv-pill" id="lqStPill">-</span>
+          </div>
+          <div class="dv-value" id="lqStValue">-</div>
+          <div class="dv-sub" id="lqStSub">-</div>
+          <div class="chart-wrap dv-chart" id="lqStWrap"><svg role="img" aria-label="Łączna podaż stablecoinów z ostatnich 90 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="lqStNote" style="display:none;"></p>
+        </div>
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Zmienność z opcji (DVOL)<span class="info-tip" tabindex="0" data-tip="DVOL: ile zmienności ETH rynek opcji wycenia na najbliższe 30 dni, w % w skali roku. Wysoki i rosnący = rynek spodziewa się gwałtownych ruchów (strach). Strategia „Trend w spokojnym rynku” gra trend tylko, gdy DVOL nie jest wyżej niż jego średnia z 14 dni.">ⓘ</span></span>
+            <span class="dv-pill" id="lqDvPill">-</span>
+          </div>
+          <div class="dv-value" id="lqDvValue">-</div>
+          <div class="dv-sub" id="lqDvSub">-</div>
+          <div class="chart-wrap dv-chart" id="lqDvWrap"><svg role="img" aria-label="DVOL ETH z ostatnich 30 dni ze średnią 14 dni"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="lqDvNote" style="display:none;"></p>
+          <div class="dv-legend"><span><i style="--mk-c:#FC8181"></i>DVOL</span><span><i class="dash"></i>średnia 14 dni</span></div>
+          <div class="lq-facts" id="lqOpt"></div>
+        </div>
+      </div>
+      <div class="dv-foot" id="lqFoot"></div>
     </div>
   </section>
 
@@ -2415,7 +2462,7 @@ window.addEventListener('resize', () => {
   clearTimeout(dvResizeTimer);
   dvResizeTimer = setTimeout(() => {
     const w = window.innerWidth;
-    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); renderMarketCard(); renderSkillCard(); }
+    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); renderMarketCard(); renderSkillCard(); renderLiquidityCard(); }
   }, 150);
 });
 
@@ -2430,6 +2477,10 @@ const RC_STRATS = [
   { key: 'antiweak7', name: 'Przeciw portfelom bez wyczucia', sub: 'SHORT, gdy przez 7 dni kupują netto', color: '#68D391', dash: true },
   { key: 'taker24', name: 'Agresorzy 24 h', sub: 'LONG, gdy na Hyperliquid przeważają agresywni kupujący', color: '#F6E05E', dash: false },
   { key: 'trendoi', name: 'Trend potwierdzony przez OI', sub: 'kierunek z trendu tylko, gdy open interest rośnie', color: '#FFC94A', dash: true },
+  { key: 'stables7', name: 'Napływ stablecoinów', sub: 'LONG, gdy podaż stablecoinów przez 7 dni rośnie, SHORT, gdy spada', color: '#63B3ED', dash: false },
+  { key: 'trendstables', name: 'Trend potwierdzony przez stablecoiny', sub: 'kierunek z trendu tylko, gdy stablecoiny płyną w tę samą stronę', color: '#63B3ED', dash: true },
+  { key: 'trendcalm', name: 'Trend w spokojnym rynku', sub: 'kierunek z trendu tylko, gdy zmienność z opcji (DVOL) nie skacze', color: '#FC8181', dash: false },
+  { key: 'optskew', name: 'Skew opcji', sub: 'SHORT, gdy puty droższe od calli; LONG, gdy odwrotnie', color: '#FC8181', dash: true },
   { key: 'trend14', name: 'Trend 14 dni', sub: 'sam trend', color: '#FFC94A', dash: false },
   { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
@@ -2437,7 +2488,7 @@ const RC_STRATS = [
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
   { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
 ];
-const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI' };
+const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI', stables7: 'Stable', trendstables: 'T+stable', trendcalm: 'Trend+DVOL', optskew: 'Skew' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
@@ -2675,6 +2726,85 @@ function renderSkillCard() {
     includeZero: true, baseline: null, leftPad: 56, yFmt: ethShort, lineCls: 'dv-line--unskilled', endCls: 'dv-end--unskilled', tipHtml: tip,
   });
   document.getElementById('skFoot').textContent = 'Netto = ETH kupione minus sprzedane w ostatnich 7 dniach, stan na ' + DV_TIME_FMT.format(new Date(last.ts * 1000)) + ' (czas polski). Wykres: ostatnie świece na stronie.';
+}
+
+// =====================================================================
+// Etap 6 i 7 planu "trend": karta "Stablecoiny i opcje ETH"
+// (DATA.stables / DATA.options z live/build_site.py).
+// =====================================================================
+function renderLiquidityCard() {
+  const s = DATA.stables, o = DATA.options;
+  const body = document.getElementById('lqBody');
+  const empty = document.getElementById('lqEmpty');
+  if (!s && !o) { body.style.display = 'none'; empty.style.display = 'block'; return; }
+  empty.style.display = 'none'; body.style.display = '';
+  const bn = (v) => '$' + dvNum(v / 1e9, 1) + ' mld';
+  const signedBn = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + '$' + dvNum(Math.abs(v) / 1e9, 2) + ' mld';
+  const pct = (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '') + dvNum(Math.abs(v), d) + '%';
+  const foot = [];
+
+  const stPill = document.getElementById('lqStPill');
+  if (s) {
+    const ch = s.change7dUsd;
+    stPill.textContent = ch == null ? 'za mało danych' : ch > 0 ? 'napływ' : ch < 0 ? 'odpływ' : 'bez zmian';
+    stPill.className = 'dv-pill' + (ch > 0 ? ' dv-pill--up' : ch < 0 ? ' dv-pill--neg' : '');
+    document.getElementById('lqStValue').textContent = bn(s.supplyUsd);
+    document.getElementById('lqStSub').textContent = ch == null
+      ? 'Zmiana z 7 dni pojawi się, gdy zbierzemy tydzień danych.'
+      : 'W 7 dni: ' + signedBn(ch) + ' (' + pct(s.change7dPct, 2) + ')' + (s.change30dPct != null ? ', w 30 dni: ' + pct(s.change30dPct, 2) : '') + '. ' + (ch > 0 ? 'Do krypto wpływają nowe dolary.' : ch < 0 ? 'Dolary wypływają z krypto.' : '');
+    dvDrawLine({
+      wrapId: 'lqStWrap', noteId: 'lqStNote', series: s.series.map((p) => [p[0] * 1000, p[1]]),
+      minPoints: 5, minSpanMs: 4 * 86400 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej dni (teraz: {n}).',
+      includeZero: false, baseline: null, leftPad: 58, yFmt: (v) => '$' + dvNum(v / 1e9, 0) + 'mld', lineCls: 'dv-line--stables', endCls: 'dv-end--stables',
+      tipHtml: (p) => '<strong>' + bn(p[1]) + '</strong><br>' + DV_DAY_FMT.format(new Date(p[0])),
+    });
+    foot.push('Stablecoiny: DefiLlama, ostatni pełny dzień ' + DV_DAY_FMT.format(new Date(s.day * 1000)) + ', wykres 90 dni');
+  } else {
+    stPill.textContent = '-'; stPill.className = 'dv-pill';
+    document.getElementById('lqStValue').textContent = '-';
+    document.getElementById('lqStSub').textContent = 'Brak danych z DefiLlama.';
+    document.getElementById('lqStWrap').style.display = 'none';
+  }
+
+  const dvPill = document.getElementById('lqDvPill');
+  const dv = o && o.dvol;
+  if (dv) {
+    const up = dv.sma != null && dv.value > dv.sma;
+    dvPill.textContent = dv.sma == null ? 'zbieramy średnią' : up ? 'zmienność rośnie' : 'rynek spokojny';
+    dvPill.className = 'dv-pill' + (dv.sma == null ? '' : up ? ' dv-pill--warm' : ' dv-pill--up');
+    document.getElementById('lqDvValue').innerHTML = dvNum(dv.value, 1) + '<small>% rocznie</small>';
+    document.getElementById('lqDvSub').textContent = dv.sma == null ? 'Średnia z 14 dni pojawi się po zebraniu historii.'
+      : dvNum(Math.abs(dv.distPct), 1) + '% ' + (dv.distPct >= 0 ? 'nad' : 'pod') + ' średnią z 14 dni (' + dvNum(dv.sma, 1) + '). ' + (up ? '„Trend w spokojnym rynku” stoi z boku.' : '„Trend w spokojnym rynku” gra z trendem.');
+    dvDrawLine({
+      wrapId: 'lqDvWrap', noteId: 'lqDvNote', series: dv.series.map((p) => [p[0] * 1000, p[1]]), overlay: dv.smaSeries.map((p) => [p[0] * 1000, p[1]]),
+      minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+      includeZero: false, baseline: null, leftPad: 44, yFmt: (v) => dvNum(v, 0), lineCls: 'dv-line--dvol', endCls: 'dv-end--dvol',
+      tipHtml: (p) => '<strong>DVOL ' + dvNum(p[1], 1) + '</strong><br>' + DV_TIME_FMT.format(new Date(p[0])),
+    });
+  } else {
+    dvPill.textContent = '-'; dvPill.className = 'dv-pill';
+    document.getElementById('lqDvValue').textContent = '-';
+    document.getElementById('lqDvSub').textContent = 'Brak danych o DVOL z Deribit.';
+    document.getElementById('lqDvWrap').style.display = 'none';
+  }
+  const snap = o && o.snapshot;
+  const facts = document.getElementById('lqOpt');
+  if (snap) {
+    const parts = [];
+    if (snap.skew != null) {
+      const band = o.skewBand || 1;
+      const mood = snap.skew > band ? 'puty droższe — rynek zabezpiecza się przed spadkiem' : snap.skew < -band ? 'calle droższe — rynek gra na wzrost' : 'równowaga';
+      parts.push('Skew (' + (snap.skewExpiry || '30 dni') + '): <b>' + (snap.skew > 0 ? '+' : '') + dvNum(snap.skew, 1) + ' pkt</b> · ' + mood);
+    }
+    if (snap.pcOi != null) parts.push('Puty / calle (otwarte pozycje): <b>' + dvNum(snap.pcOi, 2) + '</b>');
+    if (snap.pcVol != null) parts.push('Puty / calle (obrót 24 h): <b>' + dvNum(snap.pcVol, 2) + '</b>');
+    facts.innerHTML = parts.map((x) => '<span>' + x + '</span>').join('');
+    foot.push('opcje: Deribit, migawka ' + DV_TIME_FMT.format(new Date(snap.t)));
+  } else {
+    facts.innerHTML = '<span>Skew i proporcja putów do calli: zbieramy od wdrożenia (Deribit nie udostępnia ich historii).</span>';
+  }
+  if (dv) foot.push('DVOL stan na ' + DV_TIME_FMT.format(new Date(dv.t * 1000)) + ', wykres 30 dni');
+  document.getElementById('lqFoot').textContent = foot.join('; ') + ' (czas polski).';
 }
 
 function renderFreshness() {
@@ -3561,6 +3691,7 @@ renderRegimeCard();
 renderDerivsCard();
 renderMarketCard();
 renderSkillCard();
+renderLiquidityCard();
 buildMainChart(filterCandlesByRange(currentRange));
 buildHistory();
 renderAggregateStats();

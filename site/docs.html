@@ -240,6 +240,8 @@
       <a href="#derivs">Funding &amp; open interest</a>
       <a href="#perp-flow">Aggressors &amp; OI with price</a>
       <a href="#market">BTC &amp; ETH prices</a>
+      <a href="#stables">Stablecoin supply</a>
+      <a href="#options">ETH options (Deribit)</a>
       <a href="#base">Base L2</a>
       <a href="#long-term">Long term (30d) track</a>
       <a href="#automation">Automation &amp; state</a>
@@ -904,8 +906,11 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           and <strong>Przeciw portfelom bez wyczucia</strong> — see
           <a href="#wallet-timing">Wallets with timing</a>. Step 4 adds <strong>Agresorzy
           24 h</strong> and <strong>Trend potwierdzony przez OI</strong> — see
-          <a href="#perp-flow">Aggressors, open interest with price, forced closes</a>. Later
-          steps add more entrants the same way.
+          <a href="#perp-flow">Aggressors, open interest with price, forced closes</a>. Step 6
+          adds <strong>Napływ stablecoinów</strong> and <strong>Trend potwierdzony przez
+          stablecoiny</strong> (see <a href="#stables">Stablecoin supply</a>), step 7
+          <strong>Trend w spokojnym rynku</strong> and <strong>Skew opcji</strong> (see
+          <a href="#options">ETH options</a>) — fifteen entrants in all.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by
@@ -1142,6 +1147,61 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           "BTC i siła ETH" card. If the endpoint is unreachable the run carries on, logs a
           <code>market:</code> warning, and the fields stay <code>null</code>.
         </p>
+        <h3 id="stables">Stablecoin supply (roadmap step 6)</h3>
+        <p>
+          Every run downloads DefiLlama's public daily series of the total supply of all
+          stablecoins on all chains (<code>https://stablecoins.llama.fi/stablecoincharts/all</code>,
+          <code>hydra_signals/data_sources/defillama_stables.py</code>, logic in
+          <code>live/stables.py</code>) into <code>data/stables_history.json</code> as
+          <code>[day_s, supply_usd]</code> pairs (400 days kept; the latest day is overwritten
+          while DefiLlama still updates it). A change in total supply is net minting minus
+          burning: new dollars arriving in crypto, ready to buy, or leaving it. This replaced
+          the original plan of reading USDC/USDT mint and burn logs through Alchemy: the
+          DefiLlama series reaches back years (so the <em>od początku</em> view covers Hydra's
+          whole life), covers every chain, and costs none of the RPC budget the main
+          pipeline shares.
+        </p>
+        <p>
+          A day's value is used only from the end of that day (the last point can still be
+          partial), and data more than 3 days old counts as missing. Each candle stores
+          <code>stablesSupplyUsd</code>, <code>stablesChange7dUsd</code>,
+          <code>stablesChange7dPct</code>, <code>signalStables</code> (LONG when the 7-day
+          change is positive, SHORT when negative) and <code>signalTrendStables</code> (the
+          14-day trend's direction only when the flow agrees with it — uptrend with inflow,
+          downtrend with outflow — otherwise out of the market). Older candles are filled in
+          once (manifest <code>stables_fill</code>). Two race entrants follow:
+          <strong>Napływ stablecoinów</strong> and <strong>Trend potwierdzony przez
+          stablecoiny</strong>. Thresholds were fixed in advance (zero). If DefiLlama is
+          unreachable the run carries on with a <code>stables:</code> warning.
+        </p>
+        <h3 id="options">ETH options from Deribit (roadmap step 7)</h3>
+        <p>
+          Two public Deribit endpoints (<code>hydra_signals/data_sources/deribit.py</code>,
+          logic in <code>live/options.py</code>, stored in <code>data/options_history.json</code>).
+          <strong>DVOL</strong> (<code>get_volatility_index_data</code>, hourly closes,
+          backfilled 200 days on the first run, 220 kept) is the 30-day implied volatility of
+          ETH options in % per year — how big a move the options market is pricing in.
+          <strong>Option book summary</strong> (<code>get_book_summary_by_currency</code>,
+          one snapshot per run, at least 20 minutes apart; no history is available, so it is
+          collected forward from 2026-11-14) gives the put/call ratio of open interest and of
+          24-hour volume, and a skew computed without greeks: the implied volatility of the
+          put struck nearest 90% of the underlying minus that of the call nearest 110%, in the
+          expiry closest to 30 days (7–60 days out). Positive skew means downside protection
+          costs more than upside bets.
+        </p>
+        <p>
+          Candle fields: <code>dvol</code>, <code>dvolSma14</code>, <code>dvolDistPct</code>
+          (the same 14-day rule as the trend, applied to DVOL), <code>signalTrendCalm</code>
+          (the 14-day trend's direction only while DVOL is at or below its own 14-day average;
+          out of the market while expected volatility is jumping), <code>optPutCallOi</code>,
+          <code>optSkew</code> and <code>signalOptSkew</code> (SHORT when the skew is above +1
+          vol point, LONG below −1, otherwise out — following the options market's
+          positioning). A snapshot is used for at most 3 hours. Race entrants:
+          <strong>Trend w spokojnym rynku</strong> (with history from the start) and
+          <strong>Skew opcji</strong> (forward only). Thresholds were fixed in advance. If
+          Deribit is unreachable — including from GitHub's runners — the run carries on with
+          an <code>options:</code> warning and the fields stay <code>null</code>.
+        </p>
       </section>
 
       <section id="base">
@@ -1327,6 +1387,8 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/race_state.json</code></td><td>Strategy race, live part: start candle, last processed block, and per strategy the open position, equity, closed trades and equity curve — see <a href="#race">Strategy race</a></td></tr>
           <tr><td><code>data/market_history.json</code></td><td>Closed 1-hour BTC and ETH candles from Hyperliquid (<code>[close_ms, close]</code>, ~200 days) — see <a href="#market">BTC and ETH hourly prices</a></td></tr>
           <tr><td><code>data/derivs_history.json</code></td><td>ETH-PERP funding rate history (backfilled, hourly) and open-interest snapshots (one per run) from Hyperliquid — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
+          <tr><td><code>data/stables_history.json</code></td><td>Daily total stablecoin supply from DefiLlama (<code>[day_s, usd]</code>, 400 days) — see <a href="#stables">Stablecoin supply</a></td></tr>
+          <tr><td><code>data/options_history.json</code></td><td>Hourly DVOL closes (backfilled, 220 days) and option snapshots (put/call, skew; one per run) from Deribit — see <a href="#options">ETH options</a></td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
           <tr><td><code>data/scoring_state_lt.json</code></td><td>Mainnet EMA state, last signal — same as <code>scoring_state.json</code> but for the parallel 30-day track, see <a href="#long-term">Long term (30d) classification track</a></td></tr>
           <tr><td><code>data/regime_state_lt.json</code></td><td>Regime state machine for the 30-day track</td></tr>
@@ -1843,6 +1905,14 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             1 ETH) with "ETH silniejszy / słabszy od BTC" and the same kind of chart. Built
             from <code>DATA.market</code> (<code>build_site.py::_build_market_summary()</code>);
             "Zbieramy dane" until the first fetch succeeds.</li>
+          <li><strong>Stablecoiny i opcje ETH</strong> (roadmap steps 6–7) — two panels: the
+            total stablecoin supply with a "napływ / odpływ" pill, its 7- and 30-day change and
+            a 90-day chart; and DVOL with a "rynek spokojny / zmienność rośnie" pill, its
+            distance from the 14-day average, a 30-day chart with the average dashed, and the
+            latest skew and put/call ratios in words. Built from <code>DATA.stables</code> and
+            <code>DATA.options</code> (<code>_build_stables_summary()</code>,
+            <code>_build_options_summary()</code>); see <a href="#stables">Stablecoin
+            supply</a> and <a href="#options">ETH options</a>.</li>
           <li><strong>Price chart</strong> — signal-colored bands with a hover crosshair,
             plus a regime ribbon and event markers along the bottom. Since 2026-11-14 it
             also draws the 14-day average as a dashed line (Main tab only; toggle
@@ -1989,6 +2059,9 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
     onchain_rpc.py            JSON-RPC client, batching, Swap-log decoding
     hyperliquid_derivs.py      ETH-PERP funding history + open-interest snapshot (REST)
     hyperliquid_market.py      BTC / ETH closed 1-hour candles (REST candleSnapshot)
+    http_json.py               small JSON GET helper with retries (DefiLlama, Deribit)
+    defillama_stables.py       daily total stablecoin supply (DefiLlama)
+    deribit.py                 ETH DVOL history + option book summary, put/call, skew
 
 live/                      the automated, incremental pipeline
   run_incremental.py         orchestrates one hourly run end-to-end
@@ -1997,6 +2070,8 @@ live/                      the automated, incremental pipeline
   market.py                  BTC / ETH price history, BTC + ETH/BTC trends, per-candle fields
   wallet_timing.py           wallets ranked by timing (24h outcome) + 7-day accumulation
   perp_flow.py               Hyperliquid aggressors, OI-with-price state, forced-close proxy
+  stables.py                 stablecoin supply history + per-candle inflow/outflow fields
+  options.py                 DVOL / option snapshot history + per-candle options fields
   build_site.py               renders site/index.html from template.html
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 

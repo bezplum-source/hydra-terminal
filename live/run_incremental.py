@@ -68,6 +68,10 @@ from live import derivs  # noqa: E402
 from live import market  # noqa: E402
 from live import wallet_timing as wt  # noqa: E402
 from live import perp_flow as pf  # noqa: E402
+from live import stables  # noqa: E402
+from live import options  # noqa: E402
+from hydra_signals.data_sources import defillama_stables as dl_stables  # noqa: E402
+from hydra_signals.data_sources import deribit  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals import strategies as strat  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
@@ -116,6 +120,12 @@ DERIVS_BACKFILL_DAYS = int(os.environ.get("HYDRA_DERIVS_BACKFILL_DAYS", "120"))
 # (trend BTC, ETH/BTC, cena odniesienia ETH do lapania blednych cen z puli) -
 # patrz live/market.py. HYDRA_MARKET_DISABLED=1 wylacza krok (testy).
 MARKET_BACKFILL_DAYS = int(os.environ.get("HYDRA_MARKET_BACKFILL_DAYS", "200"))
+
+# Etap 6 planu "trend": dzienna podaz stablecoinow z DefiLlama (live/stables.py).
+# Etap 7: opcje ETH z Deribit - DVOL (z historia) + migawka put/call i skew
+# (live/options.py). HYDRA_STABLES_DISABLED=1 / HYDRA_OPTIONS_DISABLED=1
+# wylaczaja kroki (testy).
+OPTIONS_BACKFILL_DAYS = int(os.environ.get("HYDRA_OPTIONS_BACKFILL_DAYS", "200"))
 
 # Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - stale CELOWO
 # ostrozne/male w porownaniu z odpowiednikami mainnetowymi wyzej. Powod:
@@ -370,6 +380,10 @@ RACE_STRATEGIES = (
     "skilled7", "antiweak7",
     # Etap 4: agresorzy na Hyperliquid, trend potwierdzony przez open interest
     "taker24", "trendoi",
+    # Etap 6: stablecoiny (naplyw / odplyw nowych dolarow)
+    "stables7", "trendstables",
+    # Etap 7: opcje ETH (Deribit)
+    "trendcalm", "optskew",
 )
 
 
@@ -401,6 +415,14 @@ def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | Non
         "taker24": candle.get("signalTaker"),
         # Etap 4: kierunek z trendu tylko wtedy, gdy open interest rosnie
         "trendoi": candle.get("signalTrendOi"),
+        # Etap 6: LONG, gdy podaz stablecoinow przez 7 dni rosnie, SHORT, gdy spada
+        "stables7": candle.get("signalStables"),
+        # Etap 6: kierunek z trendu tylko, gdy stablecoiny plyna w te sama strone
+        "trendstables": candle.get("signalTrendStables"),
+        # Etap 7: kierunek z trendu tylko, gdy zmiennosc z opcji (DVOL) nie skacze
+        "trendcalm": candle.get("signalTrendCalm"),
+        # Etap 7: za skew opcji (drozsze puty = SHORT, drozsze calle = LONG)
+        "optskew": candle.get("signalOptSkew"),
     }
 
 
@@ -441,6 +463,49 @@ def _update_market_history(manifest: dict, now: datetime.datetime) -> dict:
         + ", ".join(f"{c} +{counters[c]['new']} (razem {counters[c]['total']})" for c in market.COINS if c in counters)
     )
     st.save_market_history(history)
+    return history
+
+
+def _update_stables_history(manifest: dict, now: datetime.datetime) -> dict:
+    """Etap 6: odswieza `data/stables_history.json` (dzienna podaz stablecoinow
+    z DefiLlama). NIGDY nie przerywa uruchomienia."""
+    history = st.load_stables_history()
+    if os.environ.get("HYDRA_STABLES_DISABLED"):
+        manifest["stables"] = {"enabled": False}
+        return history
+    counters = stables.update_history(history, int(now.timestamp() * 1000), fetch=dl_stables.fetch_total)
+    manifest["stables"] = {"enabled": True, **counters}
+    for err in counters.get("errors", []):
+        log(f"UWAGA: stables: {err}")
+        manifest["warnings"].append(f"stables: {err}")
+    log(f"Stablecoiny (DefiLlama): +{counters.get('new', 0)} dni (razem {counters.get('total', 0)}).")
+    st.save_stables_history(history)
+    return history
+
+
+def _update_options_history(manifest: dict, now: datetime.datetime) -> dict:
+    """Etap 7: odswieza `data/options_history.json` (DVOL + migawka opcji z
+    Deribit). NIGDY nie przerywa uruchomienia."""
+    history = st.load_options_history()
+    if os.environ.get("HYDRA_OPTIONS_DISABLED"):
+        manifest["options"] = {"enabled": False}
+        return history
+    counters = options.update_history(
+        history,
+        int(now.timestamp() * 1000),
+        fetch_dvol=lambda start_ms, end_ms: deribit.fetch_dvol(start_ms, end_ms),
+        fetch_summary=deribit.fetch_option_summary,
+        backfill_days=OPTIONS_BACKFILL_DAYS,
+    )
+    manifest["options"] = {"enabled": True, **counters}
+    for err in counters.get("errors", []):
+        log(f"UWAGA: options: {err}")
+        manifest["warnings"].append(f"options: {err}")
+    log(
+        f"Opcje (Deribit): DVOL +{counters.get('dvol_new', 0)} (razem {counters.get('dvol_total', 0)}), "
+        f"migawka {'dodana' if counters.get('snapshot_added') else 'pominieta'}."
+    )
+    st.save_options_history(history)
     return history
 
 
@@ -572,6 +637,20 @@ def main() -> int:
     }
     derivs_history = _update_derivs_history(manifest, run_started_at)
     market_history = _update_market_history(manifest, run_started_at)
+    stables_history = _update_stables_history(manifest, run_started_at)
+    options_history = _update_options_history(manifest, run_started_at)
+    try:
+        stables_series = stables.StablesSeries(stables_history.get("total"))
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: stables: {exc}")
+        manifest["warnings"].append(f"stables: {type(exc).__name__}: {exc}")
+        stables_series = None
+    try:
+        options_lookup = options.OptionsLookup(options_history)
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: options: {exc}")
+        manifest["warnings"].append(f"options: {type(exc).__name__}: {exc}")
+        options_lookup = None
     try:
         market_lookups = market.build_lookups(market_history)
     except Exception as exc:  # noqa: BLE001
@@ -1473,6 +1552,10 @@ def main() -> int:
                 # Etap 4: agresorzy na Hyperliquid, open interest razem z cena,
                 # przyblizone wymuszone zamkniecia (live/perp_flow.py)
                 **pf.features_at(taker_flow, eth_prices, oi_snapshots, ts, trend_sig, derivs_feats["oiChange24h"]),
+                # Etap 6: podaz stablecoinow (DefiLlama) i trend z nia zgodny
+                **stables.features_at(stables_series, ts, trend_sig),
+                # Etap 7: DVOL, put/call i skew opcji ETH (Deribit)
+                **options.features_at(options_lookup, ts, trend_sig),
                 # Etap 5: akumulacja portfeli z wyczuciem / bez wyczucia (7 dni)
                 **(wallet_timing.features_at(ts) if wallet_timing is not None else wt.empty_features()),
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
@@ -1672,6 +1755,47 @@ def main() -> int:
             "forced_close": last.get("forcedClose"),
         }
 
+    # Etap 6 i 7: stablecoiny i opcje dla swiec, ktore tych pol nie maja albo
+    # maja puste (pierwsze uruchomienie po wdrozeniu: historia z DefiLlama i
+    # DVOL z Deribit siega przed pierwsza swiece Hydry; takze swiece z przebiegu,
+    # w ktorym zrodlo nie odpowiedzialo). Tylko pola informacyjne i sygnaly
+    # strategii wyscigu - glowny sygnal swiecy bez zmian.
+    need_st = stables_series is not None and stables_series.days and any(
+        c.get("stablesChange7dPct") is None and c.get("ts") is not None for c in candles_history
+    )
+    need_op = options_lookup is not None and options_lookup.dvol.t and any(
+        c.get("dvol") is None and c.get("ts") is not None for c in candles_history
+    )
+    if need_st or need_op:
+        trend_hist = strat.trend_series(candles_history)
+        st_filled = op_filled = 0
+        for c, tr in zip(candles_history, trend_hist):
+            if c.get("ts") is None:
+                continue
+            if need_st and c.get("stablesChange7dPct") is None:
+                f = stables.features_at(stables_series, c["ts"], tr)
+                if f["stablesChange7dPct"] is not None or "stablesChange7dPct" not in c:
+                    c.update(f)
+                    st_filled += 1 if f["stablesChange7dPct"] is not None else 0
+            if need_op and c.get("dvol") is None:
+                f = options.features_at(options_lookup, c["ts"], tr)
+                if f["dvol"] is not None or "dvol" not in c:
+                    c.update(f)
+                    op_filled += 1 if f["dvol"] is not None else 0
+        manifest["stables_fill"] = st_filled
+        manifest["options_fill"] = op_filled
+    if candles_history:
+        last = candles_history[-1]
+        manifest.setdefault("stables", {})["last"] = {
+            "change7d_pct": last.get("stablesChange7dPct"),
+            "signal": last.get("signalStables"),
+        }
+        manifest.setdefault("options", {})["last"] = {
+            "dvol": last.get("dvol"),
+            "skew": last.get("optSkew"),
+            "put_call_oi": last.get("optPutCallOi"),
+        }
+
     # Etap 5: cechy "portfeli z wyczuciem" dla swiec, ktore ich nie maja
     # (informacyjnie; dla swiec starszych niz bufor transakcji zostaja None).
     if any("walletSkilledNet7d" not in c for c in candles_history):
@@ -1774,6 +1898,8 @@ def main() -> int:
         derivs_history=derivs_history,
         race_state=race_state,
         market_history=market_history,
+        stables_history=stables_history,
+        options_history=options_history,
     )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 

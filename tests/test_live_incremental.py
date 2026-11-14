@@ -233,6 +233,9 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # Etap 1 planu "trend" - dopisane OD RAZU (patrz komentarze wyzej).
     monkeypatch.setattr(st, "RACE_STATE_PATH", tmp_path / "data" / "race_state.json")
     monkeypatch.setattr(st, "MARKET_HISTORY_PATH", tmp_path / "data" / "market_history.json")
+    # Etap 6 i 7 planu "trend" - dopisane OD RAZU (patrz komentarze wyzej).
+    monkeypatch.setattr(st, "STABLES_HISTORY_PATH", tmp_path / "data" / "stables_history.json")
+    monkeypatch.setattr(st, "OPTIONS_HISTORY_PATH", tmp_path / "data" / "options_history.json")
     # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
     # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
     # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
@@ -2282,7 +2285,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi"}
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2344,7 +2347,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi"}
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)
@@ -2532,3 +2535,79 @@ def test_taker_flow_fields_from_hyperliquid_buffer(tmp_path, monkeypatch):
     assert race["strategies"]["taker24"]["position"] == "LONG"
     assert race["strategies"]["trendoi"]["position"] == "HOLD"
     assert st.load_latest_run_manifest()["perp_flow"]["taker_imbalance_24h"] > 0.3
+
+
+# ---------------------------------------------------------------------------
+# Etap 6 i 7 planu "trend": stablecoiny (DefiLlama) i opcje ETH (Deribit).
+# ---------------------------------------------------------------------------
+
+
+def _liquidity_env(monkeypatch, *, fail=False):
+    from hydra_signals.data_sources import defillama_stables as dls
+    from hydra_signals.data_sources import deribit as drb
+    from live import options as opt
+    from live import stables as stb
+
+    monkeypatch.delenv("HYDRA_STABLES_DISABLED", raising=False)
+    monkeypatch.delenv("HYDRA_OPTIONS_DISABLED", raising=False)
+    monkeypatch.setattr(stb, "RETENTION_DAYS", 100_000)  # testowy lancuch ma daty z 2023 r.
+    monkeypatch.setattr(opt, "RETENTION_DAYS", 100_000)
+    day0 = (1_700_000_000 - 30 * 86400) // 86400 * 86400
+
+    def fake_total(*a, **k):
+        if fail:
+            raise OSError("defillama down")
+        return [[day0 + i * 86400, 1.5e11 + i * 1e8] for i in range(35)]
+
+    def fake_dvol(start_ms, end_ms, *a, **k):
+        if fail:
+            raise OSError("deribit down")
+        base = (1_700_000_000 - 20 * 86400) * 1000
+        return [[base + i * 3_600_000, 50.0] for i in range(24 * 21)]
+
+    def fake_summary(*a, **k):
+        if fail:
+            raise OSError("deribit down")
+        return [{"instrument_name": "ETH-27DEC30-2000-P", "open_interest": 300.0, "volume": 1.0,
+                 "mark_iv": 60.0, "underlying_price": 2000.0},
+                {"instrument_name": "ETH-27DEC30-2000-C", "open_interest": 200.0, "volume": 1.0,
+                 "mark_iv": 60.0, "underlying_price": 2000.0}]
+
+    monkeypatch.setattr(dls, "fetch_total", fake_total)
+    monkeypatch.setattr(drb, "fetch_dvol", fake_dvol)
+    monkeypatch.setattr(drb, "fetch_option_summary", fake_summary)
+
+
+def test_stables_and_options_fields_on_candles_and_new_strategies_in_race(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path)
+    _liquidity_env(monkeypatch)
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles
+    for c in candles:
+        # podaz rosnie codziennie -> naplyw, LONG
+        assert c["stablesChange7dPct"] > 0 and c["signalStables"] == "LONG"
+        assert c["signalTrendStables"] in ("HOLD", "LONG")
+        # DVOL staly 50 -> nie wyzej niz srednia -> trend (tu jeszcze HOLD/brak trendu)
+        assert c["dvol"] == 50.0 and c["dvolSma14"] == 50.0
+        assert c["signalTrendCalm"] == c["signalTrend"]
+        # migawka opcji jest z "teraz" (2026), swiece z 2023 -> brak skew
+        assert c["optSkew"] is None and c["signalOptSkew"] is None
+    race = st.load_race_state()
+    assert race["strategies"]["stables7"]["position"] == "LONG"
+    assert race["strategies"]["optskew"]["position"] == "HOLD"
+    m = st.load_latest_run_manifest()
+    assert m["stables"]["enabled"] and m["stables"]["total"] == 35 and not m["stables"]["errors"]
+    assert m["options"]["snapshot_added"] and m["options"]["dvol_total"] == 24 * 21
+    assert st.load_options_history()["snapshots"][0]["pcOi"] == 1.5
+
+
+def test_stables_and_options_outage_only_warns(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path)
+    _liquidity_env(monkeypatch, fail=True)
+    assert ri.main() == 0
+    m = st.load_latest_run_manifest()
+    assert any(w.startswith("stables:") for w in m["warnings"])
+    assert any(w.startswith("options:") for w in m["warnings"])
+    for c in st.load_candles_history():
+        assert c["signalStables"] is None and c["dvol"] is None and c["signalTrendCalm"] is None

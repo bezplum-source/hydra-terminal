@@ -634,7 +634,7 @@ def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
     assert r["live"] is None
     lb = r["lookback"]
     assert lb["fromTime"] is not None and lb["fromPrice"] == 2000.0
-    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi"}
+    assert set(lb["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi", "stables7", "trendstables", "trendcalm", "optskew"}
     # brak pól BTC na świecach -> strategie BTC nigdy nie wchodzą w pozycję
     assert lb["strategies"]["btc14"]["position"] == "HOLD" and lb["strategies"]["btc14"]["trades"] == 0
     # ETH rośnie od startu widoku wstecz -> kup i trzymaj na plusie, trend na plusie
@@ -736,3 +736,50 @@ def test_lookback_has_hybrid_and_pullback():
     assert "hybrid" in lb and "pullback" in lb
     # w _race_candles cena rośnie prosto w górę po LOOKBACK_FROM -> tryb TREND -> hybryda gra z trendem
     assert lb["hybrid"]["position"] == "LONG"
+
+
+# ---------------------------------------------------------------------------
+# Etap 6 i 7 planu "trend": karta "Stablecoiny i opcje ETH".
+# ---------------------------------------------------------------------------
+
+
+def test_stables_summary_skips_the_last_partial_day_and_gives_changes():
+    day0 = 1_789_000_000 // 86400 * 86400
+    rows = [[day0 + i * 86400, 1000.0 + i] for i in range(40)]
+    s = bs._build_stables_summary({"total": rows})
+    assert s["day"] == rows[-2][0] and s["supplyUsd"] == rows[-2][1]
+    assert s["change7dUsd"] == 7.0 and s["change30dPct"] > 0
+    assert s["series"][0][0] >= s["day"] - 90 * 86400 and s["series"][-1] == [rows[-2][0], rows[-2][1]]
+    assert bs._build_stables_summary(None) is None
+    assert bs._build_stables_summary({"total": rows[:1]}) is None
+
+
+def test_options_summary_dvol_with_average_and_latest_snapshot():
+    t0 = 1_789_000_000_000
+    dvol = [[t0 + i * 3_600_000, 60.0 + (i % 5)] for i in range(24 * 40)]
+    snaps = [{"t": t0 + 24 * 40 * 3_600_000, "pcOi": 1.2, "skew": 3.5, "atmIv": 61.0}]
+    o = bs._build_options_summary({"dvol": dvol, "snapshots": snaps})
+    assert o["dvol"]["value"] == dvol[-1][1] and o["dvol"]["sma"] is not None
+    assert o["dvol"]["series"][0][0] >= o["dvol"]["t"] - 30 * 86400
+    assert o["snapshot"]["skew"] == 3.5 and o["skewSeries"] == [[snaps[0]["t"], 3.5]]
+    assert o["skewBand"] > 0
+    only_snap = bs._build_options_summary({"dvol": [], "snapshots": snaps})
+    assert only_snap["dvol"] is None and only_snap["snapshot"]["pcOi"] == 1.2
+    assert bs._build_options_summary(None) is None
+    assert bs._build_options_summary({"dvol": [], "snapshots": []}) is None
+
+
+def test_build_site_embeds_stables_and_options(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
+    day0 = 1_789_000_000 // 86400 * 86400
+    bs.build_site(
+        _sample_candles(),
+        stables_history={"total": [[day0 + i * 86400, 1000.0 - i] for i in range(10)]},
+        options_history={"dvol": [[1_789_000_000_000 + i * 3_600_000, 55.0] for i in range(30)], "snapshots": []},
+    )
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    data = json.loads(html[start : html.index(";", start)])
+    assert data["stables"]["change7dPct"] < 0 and data["options"]["dvol"]["value"] == 55.0
+    assert data["options"]["snapshot"] is None
