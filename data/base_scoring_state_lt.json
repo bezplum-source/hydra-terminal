@@ -1,22 +1,22 @@
 {
-  "good_short": 0.49511312461932444,
-  "good_long": 0.44449602718496795,
-  "bad_short": 0.8141483287262634,
-  "bad_long": 0.6564919264887785,
+  "good_short": 0.49877828115483114,
+  "good_long": 0.4602604691679356,
+  "bad_short": 0.6910370821815659,
+  "bad_long": 0.6599735094978828,
   "prev_signal": "SHORT",
-  "last_scored_window_end": 57353399,
+  "last_scored_window_end": 57398399,
   "last_base_snapshot_lt": {
     "composite": null,
     "is_mature": false,
-    "classified": 16,
-    "good_buyers": 0,
-    "good_sellers": 0,
-    "bad_buyers": 2,
-    "bad_sellers": 0,
-    "good_buy_weight": 0.0,
-    "good_sell_weight": 0.0,
-    "bad_buy_weight": 109.38418796151896,
-    "bad_sell_weight": 0.0
+    "classified": 18,
+    "good_buyers": 1,
+    "good_sellers": 1,
+    "bad_buyers": 3,
+    "bad_sellers": 2,
+    "good_buy_weight": 33.74415856114951,
+    "good_sell_weight": 45.49311802899423,
+    "bad_buy_weight": 233.78466915403624,
+    "bad_sell_weight": 178.0152412935263
   },
-  "updated_at_utc": "2026-11-14T13:04:42.589571+00:00"
+  "updated_at_utc": "2026-11-14T15:39:22.902996+00:00"
 }
