@@ -505,3 +505,98 @@ def test_build_site_streaks_lt_also_cover_full_history(tmp_path, monkeypatch):
     data, _ = json.JSONDecoder().raw_decode(html[start:])
     assert len(data["streaksLt"]) == len(bs._build_streaks(history, signal_key="signalLt"))
     assert data["streaksLt"][-1]["startBlock"] == history[0]["block"]
+
+
+# ---------------------------------------------------------------------------
+# Karta "Rynek kontraktow ETH" (funding + open interest) - podsumowanie dla
+# frontu liczone z data/derivs_history.json, czysto informacyjne.
+# ---------------------------------------------------------------------------
+
+_H = 3_600_000
+_D = 86_400_000
+_T0 = 1_800_000_000_000
+
+
+def _derivs_history(hours=24 * 40, rate=1.25e-05, with_snaps=True):
+    h = {"version": 1, "funding": [], "snapshots": []}
+    h["funding"] = [{"t": _T0 + i * _H, "rate": rate, "premium": 0.0} for i in range(hours)]
+    if with_snaps:
+        h["snapshots"] = [
+            {"t": _T0 + i * _H + 600_000, "funding": rate, "oi": 1000.0 + i, "mark": 2000.0, "premium": 0.0}
+            for i in range(0, hours, 1)
+        ]
+    return h
+
+
+def test_derivs_summary_is_none_without_any_data():
+    assert bs._build_derivs_summary(None) is None
+    assert bs._build_derivs_summary({}) is None
+    assert bs._build_derivs_summary({"funding": [], "snapshots": []}) is None
+
+
+def test_derivs_summary_current_values_state_and_oi_change():
+    s = bs._build_derivs_summary(_derivs_history(hours=72))
+    # stawka bazowa 1,25e-05/h -> ok. 10,95% rocznie, stan "neutral"
+    assert s["funding"]["apr"] == 10.95 and s["funding"]["state"] == "neutral"
+    assert s["baselineApr"] == 10.95
+    last = 71
+    assert s["oi"]["eth"] == 1000.0 + last
+    assert s["oi"]["usd"] == (1000.0 + last) * 2000.0
+    # zmiana 24h wzgledem migawki sprzed doby (71 - 24 = 47)
+    assert s["oi"]["change24h"] == round(((1000.0 + 71) / (1000.0 + 47) - 1) * 100, 2)
+    assert s["asOf"] == _T0 + 71 * _H + 600_000
+
+
+def test_derivs_summary_uses_fresher_snapshot_rate_over_last_closed_interval():
+    h = _derivs_history(hours=10, with_snaps=False)
+    h["snapshots"] = [{"t": h["funding"][-1]["t"] + 1800_000, "funding": -3e-05, "oi": 5.0, "mark": 100.0}]
+    s = bs._build_derivs_summary(h)
+    assert s["funding"]["rate"] == -3e-05 and s["funding"]["state"] == "negative"
+    # ale starsza migawka NIE przebija nowszego wiersza historii
+    h["snapshots"][0]["t"] = h["funding"][-1]["t"] - 1800_000
+    s = bs._build_derivs_summary(h)
+    assert s["funding"]["rate"] == 1.25e-05
+
+
+def test_derivs_summary_oi_change_is_none_without_old_enough_snapshot():
+    h = _derivs_history(hours=10)
+    s = bs._build_derivs_summary(h)
+    assert s["oi"]["change24h"] is None and s["oi"]["eth"] is not None
+
+
+def test_derivs_summary_without_snapshots_has_funding_but_no_oi():
+    s = bs._build_derivs_summary(_derivs_history(hours=48, with_snaps=False))
+    assert s["funding"] is not None and s["oi"] is None and s["oiSeries"] == []
+
+
+def test_derivs_summary_series_cover_only_display_window():
+    s = bs._build_derivs_summary(_derivs_history(hours=24 * 40))
+    assert 24 * bs.DERIVS_DISPLAY_DAYS <= len(s["fundingSeries"]) <= 24 * bs.DERIVS_DISPLAY_DAYS + 1
+    assert s["fundingSeries"][0][0] >= s["asOf"] - bs.DERIVS_DISPLAY_DAYS * _D
+    assert all(len(p) == 2 for p in s["fundingSeries"]) and all(len(p) == 2 for p in s["oiSeries"])
+
+
+def test_funding_state_thresholds():
+    f = bs._funding_state
+    assert f(-0.1) == "negative"
+    assert f(0.0) == "low" and f(4.9) == "low"
+    assert f(5.0) == "neutral" and f(10.95) == "neutral" and f(20.0) == "neutral"
+    assert f(20.1) == "elevated" and f(50.0) == "elevated"
+    assert f(50.1) == "high"
+
+
+def test_build_site_embeds_derivs_summary_or_null(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
+
+    def embedded():
+        html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+        marker = "const DATA = "
+        start = html.index(marker) + len(marker)
+        return json.loads(html[start : html.index(";", start)])
+
+    bs.build_site(_sample_candles())
+    assert embedded()["derivs"] is None  # brak danych: front pokazuje "zbieramy dane"
+
+    bs.build_site(_sample_candles(), derivs_history=_derivs_history(hours=72))
+    d = embedded()["derivs"]
+    assert d["funding"]["state"] == "neutral" and d["oi"]["usd"] > 0 and len(d["fundingSeries"]) > 10
