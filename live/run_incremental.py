@@ -54,6 +54,7 @@ from hydra_signals.data_sources.onchain_rpc import (  # noqa: E402
     batch_call_with_retry,
     fetch_trades_from_chain_batched,
 )
+from hydra_signals.data_sources import hyperliquid_derivs as hl_derivs  # noqa: E402
 from hydra_signals.data_sources import hyperliquid_ws as hl_ws  # noqa: E402
 from hydra_signals.data_sources.pools import BASE_POOLS, POOLS  # noqa: E402
 from hydra_signals.hyperliquid_wallets import (  # noqa: E402
@@ -62,6 +63,7 @@ from hydra_signals.hyperliquid_wallets import (  # noqa: E402
 )
 from hydra_signals.models import Signal  # noqa: E402
 from live import block_time as bt  # noqa: E402
+from live import derivs  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
     ScoringConfig,
@@ -96,6 +98,14 @@ MAX_NEW_BLOCKS_PER_RUN = int(os.environ.get("HYDRA_MAX_NEW_BLOCKS_PER_RUN", "200
 # przez uzytkownika (50/50), do przestrojenia pozniej - patrz
 # hydra_signals.scoring.DEFAULT_PERP_WEIGHT.
 HYPERLIQUID_PERP_WEIGHT = float(os.environ.get("HYDRA_PERP_WEIGHT", "0.5"))
+
+# Faza "funding + open interest" (2026-11) - dane o rynku pochodnych ETH-PERP z
+# Hyperliquid (patrz live/derivs.py). Faza 1 TYLKO ZAPISUJE te dane (plik
+# data/derivs_history.json + pola na swiecach) - nie zmienia sygnalu.
+# HYDRA_DERIVS_DISABLED=1 calkowicie wylacza ten krok (uzywane w testach, zeby
+# nie dotykaly sieci). Glebokosc backfillu historii funding przy pierwszym
+# uruchomieniu (godzinowe wiersze, ~24/dobe).
+DERIVS_BACKFILL_DAYS = int(os.environ.get("HYDRA_DERIVS_BACKFILL_DAYS", "120"))
 
 # Faza "Base L2, etap B0: zbieranie danych" (2026-09-02) - stale CELOWO
 # ostrozne/male w porownaniu z odpowiednikami mainnetowymi wyzej. Powod:
@@ -308,6 +318,38 @@ def fetch_block_timestamps(rpc, blocks: list[int]) -> dict[int, int]:
     return out
 
 
+def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
+    """Odswieza `data/derivs_history.json` (funding + open interest z
+    Hyperliquid). NIGDY nie przerywa uruchomienia: blad sieci tylko trafia do
+    manifestu/ostrzezen, a swiece dostaja wtedy po prostu puste pola derivs."""
+    history = st.load_derivs_history()
+    if os.environ.get("HYDRA_DERIVS_DISABLED"):
+        manifest["derivs"] = {"enabled": False}
+        return history
+    try:
+        counters = derivs.update_history(
+            history,
+            int(now.timestamp() * 1000),
+            fetch_ctx=hl_derivs.fetch_asset_ctx,
+            fetch_funding=lambda start_ms: hl_derivs.fetch_funding_history(start_ms),
+            backfill_days=DERIVS_BACKFILL_DAYS,
+        )
+    except Exception as exc:  # noqa: BLE001 - dodatkowe zabezpieczenie
+        counters = {"errors": [f"{type(exc).__name__}: {exc}"]}
+    manifest["derivs"] = {"enabled": True, **counters}
+    for err in counters.get("errors", []):
+        log(f"UWAGA: derivs: {err}")
+        manifest["warnings"].append(f"derivs: {err}")
+    log(
+        f"Derivs: +{counters.get('funding_new', 0)} wierszy funding "
+        f"(razem {counters.get('funding_total', len(history.get('funding', [])))}), "
+        f"snapshot OI {'dodany' if counters.get('snapshot_added') else 'pominiety'} "
+        f"(razem {counters.get('snapshot_total', len(history.get('snapshots', [])))})."
+    )
+    st.save_derivs_history(history)
+    return history
+
+
 def _finalize_and_save_manifest(manifest: dict, started_at: datetime.datetime) -> None:
     """Domyka manifest tego uruchomienia (czas zakonczenia, czas trwania) i
     zapisuje go na dysk - wywolywane tuz przed KAZDYM `return` z `main()`
@@ -393,10 +435,12 @@ def main() -> int:
             "max_new_blocks_per_run": MAX_NEW_BLOCKS_PER_RUN,
             "backfill_blocks": BACKFILL_BLOCKS,
             "perp_weight": HYPERLIQUID_PERP_WEIGHT,
+            "derivs_backfill_days": DERIVS_BACKFILL_DAYS,
         },
         "warnings": [],
         "lake_objects": [],
     }
+    derivs_history = _update_derivs_history(manifest, run_started_at)
 
     scoring_state = st.load_scoring_state()
     trade_buffer = st.load_trade_buffer()
@@ -1200,6 +1244,9 @@ def main() -> int:
                 # Prawdziwy `ts` doleci pozniej z `repair_missing_timestamps`.
                 "time": fmt_warsaw(ts) if ts is not None else bt.approx_label(s.window_end_block, ts_anchors),
                 "ts": ts,
+                # Faza "funding + open interest" - pola zapisywane NA SWIECY
+                # (puste = None, gdy brak danych); NIE wchodza do composite.
+                **derivs.features_at(derivs_history, ts),
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
                 # Niezalezne od "signal"/"composite" powyzej - osobny,
                 # rownolegly tor, jeszcze BEZ wlasnego BULL/BEAR/NEUTRAL
@@ -1344,6 +1391,22 @@ def main() -> int:
             )
     except Exception as exc:  # noqa: BLE001
         log(f"UWAGA: naprawa znacznikow czasu swiec nie powiodla sie ({exc}) - pomijam.")
+    # Faza "funding + open interest": dopisz pola derivs do swiec, ktore ich
+    # jeszcze nie maja (stare swiece z historii przy pierwszym uruchomieniu po
+    # wdrozeniu - funding jest znany dokladnie w czasie dzieki backfillowi - oraz
+    # swiece, ktore dostaly `ts` dopiero z naprawy znacznikow powyzej). Tylko
+    # DOPISUJE puste (None) pola; zadna istniejaca wartosc, w tym sygnal i
+    # composite, nie jest zmieniana.
+    if derivs_history.get("funding"):
+        derivs_filled = 0
+        for c in candles_history:
+            if c.get("fundingRate") is None and c.get("ts") is not None:
+                feats = derivs.features_at(derivs_history, c["ts"])
+                for k, v in feats.items():
+                    if c.get(k) is None and v is not None:
+                        c[k] = v
+                        derivs_filled += 1 if k == "fundingRate" else 0
+        manifest.setdefault("derivs", {})["candles_filled"] = derivs_filled
     st.save_candles_history(candles_history)
     st.save_regime_state(regime_engine.export_state())
     st.save_signal_state(signal_engine.export_state())
