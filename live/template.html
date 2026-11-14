@@ -1046,6 +1046,10 @@
   .dv-end--skilled { fill: #68D391; }
   .dv-line--unskilled { stroke: #A8A6B0; }
   .dv-end--unskilled { fill: #A8A6B0; }
+
+  /* ---------- Etap 4 planu "trend": panel "Agresorzy (24 h)" w karcie kontraktów. ---------- */
+  .dv-line--taker { stroke: #F6E05E; }
+  .dv-end--taker { fill: #F6E05E; }
 </style>
 <div class="page">
 
@@ -1399,7 +1403,7 @@
       </div>
       <span class="dv-badge">tylko informacyjnie</span>
     </div>
-    <p class="card-subnote">Kontrakty terminowe pozwalają grać na wzrost lub spadek ceny ETH. Te dwa wskaźniki pokazują, jak mocno rynek jest nastawiony w jedną stronę i ile pieniędzy jest w grze. Nie wpływają na sygnał.</p>
+    <p class="card-subnote">Kontrakty terminowe pozwalają grać na wzrost lub spadek ceny ETH. Te wskaźniki pokazują, jak mocno rynek jest nastawiony w jedną stronę, ile pieniędzy jest w grze i kto przejmuje inicjatywę. Nie wpływają na główny sygnał; część z nich gra w wyścigu strategii.</p>
     <div class="dv-empty" id="dvEmpty" style="display:none;">Zbieramy dane — ta karta wypełni się po pierwszym udanym pobraniu z Hyperliquid.</div>
     <div id="dvBody">
       <div class="dv-grid">
@@ -1421,6 +1425,16 @@
           <div class="dv-sub" id="dvOiSub">-</div>
           <div class="chart-wrap dv-chart" id="dvOiWrap"><svg class="dv-svg" role="img" aria-label="Wykres open interest z ostatnich 30 dni"></svg><div class="tooltip"></div></div>
           <p class="dv-chart-note" id="dvOiNote" style="display:none;"></p>
+        </div>
+        <div class="dv-panel">
+          <div class="dv-panel-head">
+            <span class="dv-label">Agresorzy (24 h)<span class="info-tip" tabindex="0" data-tip="Każda transakcja na Hyperliquid ma stronę, która ją zainicjowała: ktoś kupił „po rynku” od czekającego sprzedającego albo sprzedał „po rynku” czekającemu kupującemu. Pokazujemy, która strona przeważała wartością przez ostatnie 24 godziny: −100% to sama agresywna sprzedaż, +100% samo agresywne kupno. Nasłuch działa ok. 50 z każdych 60 minut, więc to próbka.">ⓘ</span></span>
+            <span class="dv-pill" id="tkPill">-</span>
+          </div>
+          <div class="dv-value" id="tkValue">-</div>
+          <div class="dv-sub" id="tkSub">-</div>
+          <div class="chart-wrap dv-chart" id="tkWrap"><svg role="img" aria-label="Przewaga agresywnych kupujących lub sprzedających w czasie"></svg><div class="tooltip"></div></div>
+          <p class="dv-chart-note" id="tkNote" style="display:none;"></p>
         </div>
       </div>
       <details class="dv-explain">
@@ -2341,7 +2355,18 @@ function renderDerivsCard() {
     document.getElementById('dvOiValue').textContent = dvUsd(d.oi.usd);
     const ch = d.oi.change24h;
     const chText = ch == null ? 'zmiana w 24 h: pojawi się po dobie zbierania danych' : 'zmiana w 24 h: ' + (ch > 0 ? '+' : '') + dvNum(ch, 1) + '%';
-    document.getElementById('dvOiSub').textContent = 'Wartość otwartych pozycji na kontrakcie. ' + Math.round(d.oi.eth / 1000).toLocaleString('en-US') + ' tys. ETH, ' + chText + '.';
+    // Etap 4: open interest razem z ceną + przybliżone wymuszone zamknięcia
+    const OI_STATE_TEXT = {
+      NEW_LONGS: 'Cena i OI rosną: nowe pieniądze grają na wzrost.',
+      SHORT_COVER: 'Cena rośnie, OI spada: wzrost z zamykania shortów (słabszy).',
+      NEW_SHORTS: 'Cena spada, OI rośnie: nowe pieniądze grają na spadek.',
+      LONG_EXIT: 'Cena i OI spadają: spadek z zamykania longów.',
+    };
+    const lastState = [...DATA.candles].reverse().find((c) => c.oiPriceState);
+    const lastForced = [...DATA.candles].reverse().find((c) => c.forcedClose && c.ts && (Date.now() / 1000 - c.ts) < 7 * 86400);
+    document.getElementById('dvOiSub').textContent = 'Wartość otwartych pozycji na kontrakcie. ' + Math.round(d.oi.eth / 1000).toLocaleString('en-US') + ' tys. ETH, ' + chText + '.' +
+      (lastState ? ' ' + OI_STATE_TEXT[lastState.oiPriceState] : '') +
+      (lastForced ? ' Fala wymuszonych zamknięć ' + (lastForced.forcedClose === 'LONGS' ? 'longów' : 'shortów') + ': ' + lastForced.time + ' (przybliżenie z OI i ceny).' : '');
   } else {
     document.getElementById('dvOiValue').textContent = '-';
     document.getElementById('dvOiSub').textContent = 'Brak danych o open interest.';
@@ -2355,7 +2380,30 @@ function renderDerivsCard() {
     tipHtml: (p) => '<strong>' + dvUsd(p[1]) + '</strong><br>' + DV_TIME_FMT.format(new Date(p[0])),
   });
 
-  document.getElementById('dvFoot').textContent = 'Dane z Hyperliquid, stan na ' + DV_TIME_FMT.format(new Date(d.asOf)) + ' (czas polski). Wykresy: ostatnie 30 dni.';
+  // Etap 4: agresorzy z ostatnich 24 h (pola świec z bufora Hyperliquid)
+  const tkRows = DATA.candles.filter((c) => c.takerImbalance24h != null && c.ts != null);
+  const tkPill = document.getElementById('tkPill');
+  if (tkRows.length) {
+    const tl = tkRows[tkRows.length - 1];
+    const v = tl.takerImbalance24h;
+    tkPill.textContent = v > 0 ? 'przewaga kupujących' : v < 0 ? 'przewaga sprzedających' : 'równowaga';
+    tkPill.className = 'dv-pill' + (v > 0 ? ' dv-pill--up' : v < 0 ? ' dv-pill--neg' : '');
+    document.getElementById('tkValue').innerHTML = (v > 0 ? '+' : '') + dvNum(v * 100, 0) + '%<small>przewagi</small>';
+    document.getElementById('tkSub').textContent = 'Agresywne kupno ' + dvUsd(tl.takerBuyUsd24h) + ', sprzedaż ' + dvUsd(tl.takerSellUsd24h) +
+      '. Strategia „Agresorzy 24 h” jest teraz: ' + signalLabel(tl.signalTaker) + '.';
+  } else {
+    tkPill.textContent = '-'; tkPill.className = 'dv-pill';
+    document.getElementById('tkValue').textContent = '-';
+    document.getElementById('tkSub').textContent = 'Zbieramy dane z transakcji Hyperliquid (potrzeba pełnych 24 h).';
+  }
+  dvDrawLine({
+    wrapId: 'tkWrap', noteId: 'tkNote', series: tkRows.map((c) => [c.ts * 1000, c.takerImbalance24h * 100]),
+    minPoints: 12, minSpanMs: 6 * 3600 * 1000, emptyText: 'Wykres pojawi się, gdy zbierzemy więcej danych (teraz: {n}).',
+    includeZero: true, baseline: null, yFmt: (v) => Math.round(v) + '%', lineCls: 'dv-line--taker', endCls: 'dv-end--taker',
+    tipHtml: (p) => '<strong>' + (p[1] > 0 ? '+' : '') + dvNum(p[1], 1) + '%</strong> przewagi<br>' + DV_TIME_FMT.format(new Date(p[0])),
+  });
+
+  document.getElementById('dvFoot').textContent = 'Dane z Hyperliquid, stan na ' + DV_TIME_FMT.format(new Date(d.asOf)) + ' (czas polski). Wykresy: ostatnie 30 dni (agresorzy: świece na stronie).';
 }
 
 // Wykresy rysowane są w pikselach kontenera, więc po zmianie szerokości okna
@@ -2380,6 +2428,8 @@ const RC_STRATS = [
   { key: 'pullback', name: 'Trend + wejście z portfelami', sub: 'główny sygnał: kierunek z trendu, wejście z portfeli', color: '#FF8A65', dash: false },
   { key: 'skilled7', name: 'Akumulacja portfeli z wyczuciem', sub: 'LONG, gdy przez 7 dni kupują netto (nowa definicja dobrego portfela)', color: '#68D391', dash: false },
   { key: 'antiweak7', name: 'Przeciw portfelom bez wyczucia', sub: 'SHORT, gdy przez 7 dni kupują netto', color: '#68D391', dash: true },
+  { key: 'taker24', name: 'Agresorzy 24 h', sub: 'LONG, gdy na Hyperliquid przeważają agresywni kupujący', color: '#F6E05E', dash: false },
+  { key: 'trendoi', name: 'Trend potwierdzony przez OI', sub: 'kierunek z trendu tylko, gdy open interest rośnie', color: '#FFC94A', dash: true },
   { key: 'trend14', name: 'Trend 14 dni', sub: 'sam trend', color: '#FFC94A', dash: false },
   { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
   { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
@@ -2387,7 +2437,7 @@ const RC_STRATS = [
   { key: 'ethbtc14', name: 'Trend ETH i BTC zgodne', sub: 'gra tylko, gdy oba trendy się zgadzają', color: '#4FD1C5', dash: false },
   { key: 'hybrid', name: 'Hybryda: trend albo portfele', sub: 'z trendem, gdy rynek ma kierunek; za portfelami, gdy chodzi bokiem', color: '#A78BFA', dash: false },
 ];
-const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe' };
+const RC_SHORT = { trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI' };
 let rcView = null;
 
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }

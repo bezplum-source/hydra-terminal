@@ -2282,7 +2282,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
     race = st.load_race_state()
     assert race["start"]["block"] == run1[0]["block"]
-    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7"}
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi"}
     assert race["strategies"]["eth"]["position"] == "LONG"
     assert race["strategies"]["trend14"]["position"] == "HOLD"
     assert race["lastBlock"] == run1[-1]["block"]
@@ -2344,7 +2344,7 @@ def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkey
     assert "trendEr14" in after[0] and st.load_latest_run_manifest()["er_fill"] >= len(history)
     assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
     manifest = st.load_latest_run_manifest()
-    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7"}
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback", "skilled7", "antiweak7", "taker24", "trendoi"}
 
     # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
     # w testowym lancuchu z 2023 r., wiec lookback = None)
@@ -2502,3 +2502,33 @@ def test_wallet_timing_failure_never_breaks_the_run(tmp_path, monkeypatch):
     m = st.load_latest_run_manifest()
     assert any(w.startswith("wallet_timing: RuntimeError") for w in m["warnings"])
     assert all(c["signalSkilled"] is None for c in st.load_candles_history())
+
+
+# ---------------------------------------------------------------------------
+# Etap 4 planu "trend": agresorzy na Hyperliquid i OI z cena (live/perp_flow.py).
+# ---------------------------------------------------------------------------
+
+
+def test_taker_flow_fields_from_hyperliquid_buffer(tmp_path, monkeypatch):
+    _run_env(monkeypatch, tmp_path, end_block=1000)
+    # bufor Hyperliquid: 2 dni transakcji przed testowymi swiecami (czas z 2023 r.),
+    # 3 z 4 inicjowane przez kupujacych
+    base_ms = (1_700_000_000 - 2 * 86400) * 1000
+    recs = []
+    for i in range(48 * 4):
+        side = hl_ws.AggressorSide.SELL if i % 4 == 0 else hl_ws.AggressorSide.BUY
+        tr = hl_ws.HyperliquidTrade(coin="ETH", aggressor_side=side, price_usd=2000.0, size_eth=1.0,
+                                    buyer=f"b{i}", seller=f"s{i}", ts_ms=base_ms + i * 900_000, tid=i, tx_hash="0x")
+        recs.append(hl_ws.trade_to_json_record(tr))
+    st.save_hyperliquid_trades_buffer(recs)
+    assert ri.main() == 0
+    candles = st.load_candles_history()
+    assert candles
+    for c in candles:
+        assert c["signalTaker"] == "LONG" and c["takerImbalance24h"] > 0.3
+        # bez danych OI (derivs wylaczone w testach) i cen Hyperliquid: pola OI = None
+        assert c["oiPriceState"] is None and c["signalTrendOi"] is None and c["forcedClose"] is None
+    race = st.load_race_state()
+    assert race["strategies"]["taker24"]["position"] == "LONG"
+    assert race["strategies"]["trendoi"]["position"] == "HOLD"
+    assert st.load_latest_run_manifest()["perp_flow"]["taker_imbalance_24h"] > 0.3

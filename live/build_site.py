@@ -305,6 +305,9 @@ def _build_race_summary(race_state: dict | None, candles_history: list[dict]) ->
                     # Etap 5: tylko tam, gdzie bufor transakcji ma dane (None = brak gry)
                     "skilled7": [c.get("signalSkilled") for c in sub],
                     "antiweak7": [c.get("signalVsUnskilled") for c in sub],
+                    # Etap 4: agresorzy (zasieg bufora Hyperliquid) i trend + OI (od 14.11)
+                    "taker24": [c.get("signalTaker") for c in sub],
+                    "trendoi": [c.get("signalTrendOi") for c in sub],
                 },
             )
             lookback = {

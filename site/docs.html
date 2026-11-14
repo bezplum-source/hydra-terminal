@@ -238,6 +238,7 @@
       <a href="#mainnet">Ethereum mainnet</a>
       <a href="#hyperliquid">Hyperliquid (ETH-PERP)</a>
       <a href="#derivs">Funding &amp; open interest</a>
+      <a href="#perp-flow">Aggressors &amp; OI with price</a>
       <a href="#market">BTC &amp; ETH prices</a>
       <a href="#base">Base L2</a>
       <a href="#long-term">Long term (30d) track</a>
@@ -901,8 +902,10 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           holds until the trend turns (the 0.1 is the wallet engine's own exit threshold,
           not a fitted value). Step 5 adds <strong>Akumulacja portfeli z wyczuciem</strong>
           and <strong>Przeciw portfelom bez wyczucia</strong> — see
-          <a href="#wallet-timing">Wallets with timing</a>. Later steps add more entrants the
-          same way.
+          <a href="#wallet-timing">Wallets with timing</a>. Step 4 adds <strong>Agresorzy
+          24 h</strong> and <strong>Trend potwierdzony przez OI</strong> — see
+          <a href="#perp-flow">Aggressors, open interest with price, forced closes</a>. Later
+          steps add more entrants the same way.
         </p>
         <p>
           The <em>live</em> view (<code>data/race_state.json</code>, advanced by
@@ -1083,6 +1086,35 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           normally, logs a <code>derivs:</code> warning in the manifest, and the candle
           fields stay <code>null</code> (the dashboard card keeps showing the last
           stored values).
+        </p>
+        <h3 id="perp-flow">Aggressors, open interest with price, forced closes (roadmap step 4)</h3>
+        <p>
+          <code>live/perp_flow.py</code> (2026-11-14) adds three things from data the
+          pipeline already has. <strong>Aggressors</strong>: every Hyperliquid trade in the
+          listener buffer carries the side that initiated it ("B" = a buyer hit the ask,
+          "A" = a seller hit the bid); each candle stores the USD value of aggressive buying
+          and selling over the previous 24 hours (<code>takerBuyUsd24h</code>,
+          <code>takerSellUsd24h</code>) and the imbalance (buy − sell) / (buy + sell)
+          (<code>takerImbalance24h</code>, −1…+1), with <code>signalTaker</code> = LONG when
+          buyers dominate. The listener hears about 50 of every 60 minutes, so this is a
+          sample, but the same sample for both sides; only trades before the candle count,
+          and the field is <code>null</code> until the buffer covers a full 24 hours (older
+          candles stay <code>null</code> — the buffer reaches back about 30 days).
+          <strong>Open interest with price</strong>: the 24-hour OI change
+          (<code>oiChange24h</code>, from the snapshots) together with the 24-hour ETH price
+          change from Hyperliquid (<code>priceChange24h</code>) gives
+          <code>oiPriceState</code> — NEW_LONGS (price and OI up), SHORT_COVER (price up, OI
+          down), NEW_SHORTS (price down, OI up), LONG_EXIT (price and OI down) — and
+          <code>signalTrendOi</code>: the 14-day trend's direction only while OI is rising,
+          out of the market while it falls. <strong>Forced closes (an approximation)</strong>:
+          Hyperliquid's public API has no market-wide liquidation feed (only per-wallet
+          fills; full feeds are sold by third parties), so <code>forcedClose</code> marks a
+          candle whose latest pair of OI snapshots (at most 2 hours apart) shows OI falling by
+          at least 3% while the price moved at least 1.5% — "LONGS" on a drop, "SHORTS" on a
+          rise. All thresholds were fixed in advance; OI history only starts on 2026-11-14,
+          so there was nothing to fit them to. Two race entrants follow: <strong>Agresorzy
+          24 h</strong> and <strong>Trend potwierdzony przez OI</strong>; the futures-market
+          card gains a third panel and the OI panel describes the state in words.
         </p>
         <h3 id="market">BTC and ETH hourly prices (roadmap step 2)</h3>
         <p>
@@ -1841,8 +1873,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             fixed thresholds around Hyperliquid's ~11% baseline), the current
             <strong>open interest</strong> in USD and ETH with its 24-hour change, and a
             30-day line chart of each (hover crosshair and tooltip; the funding chart
-            has a zero line and a dashed baseline). A collapsed "Co to jest funding i
-            open interest?" section explains both terms for readers who have never met
+            has a zero line and a dashed baseline), and since roadmap step 4 a third panel,
+            "Agresorzy (24 h)", with the aggressive buy/sell imbalance, its pill and chart;
+            the open-interest panel then also says in words what OI and price are doing
+            together and names a forced-close wave from the last 7 days, if any (see
+            <a href="#perp-flow">Aggressors, open interest with price</a>). A collapsed "Co
+            to jest funding i open interest?" section explains both terms for readers who have never met
             them. The card is independent of the Main / Long term tab (it is market data,
             not a wallet classification) and is rendered once at load from
             <code>DATA.derivs</code>, which <code>build_site.py</code> builds from
@@ -1960,6 +1996,7 @@ live/                      the automated, incremental pipeline
   derivs.py                  funding / open-interest history + per-candle derivs fields
   market.py                  BTC / ETH price history, BTC + ETH/BTC trends, per-candle fields
   wallet_timing.py           wallets ranked by timing (24h outcome) + 7-day accumulation
+  perp_flow.py               Hyperliquid aggressors, OI-with-price state, forced-close proxy
   build_site.py               renders site/index.html from template.html
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 

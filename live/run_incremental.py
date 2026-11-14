@@ -67,6 +67,7 @@ from live import block_time as bt  # noqa: E402
 from live import derivs  # noqa: E402
 from live import market  # noqa: E402
 from live import wallet_timing as wt  # noqa: E402
+from live import perp_flow as pf  # noqa: E402
 from hydra_signals import regime  # noqa: E402
 from hydra_signals import strategies as strat  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
@@ -367,6 +368,8 @@ RACE_STRATEGIES = (
     "trend14", "hydra", "eth", "btc14", "ethbtc14", "hybrid", "pullback",
     # Etap 5: nowa definicja dobrego portfela (wyczucie) + akumulacja
     "skilled7", "antiweak7",
+    # Etap 4: agresorzy na Hyperliquid, trend potwierdzony przez open interest
+    "taker24", "trendoi",
 )
 
 
@@ -394,6 +397,10 @@ def _race_signals(candle: dict, race: dict | None = None) -> dict[str, str | Non
         "skilled7": candle.get("signalSkilled"),
         # Etap 5: SHORT, gdy portfele bez wyczucia kupuja netto przez 7 dni
         "antiweak7": candle.get("signalVsUnskilled"),
+        # Etap 4: LONG, gdy przez 24 h przewazaja agresywni kupujacy na Hyperliquid
+        "taker24": candle.get("signalTaker"),
+        # Etap 4: kierunek z trendu tylko wtedy, gdy open interest rosnie
+        "trendoi": candle.get("signalTrendOi"),
     }
 
 
@@ -614,6 +621,15 @@ def main() -> int:
     # jakies okno - dokladnie zgodnie z zasada "dwa niezalezne rurociagi".
     hl_raw_records = st.load_hyperliquid_trades_buffer()
     hl_trades = [hl_ws.json_record_to_trade(r) for r in hl_raw_records]
+    # Etap 4: agresorzy (bufor Hyperliquid), ceny ETH z Hyperliquid, migawki OI
+    try:
+        taker_flow = pf.TakerFlow(hl_trades)
+    except Exception as exc:  # noqa: BLE001
+        log(f"UWAGA: perp_flow: {exc}")
+        manifest["warnings"].append(f"perp_flow: {type(exc).__name__}: {exc}")
+        taker_flow = None
+    eth_prices = pf.EthCloses(((market_history or {}).get("coins") or {}).get("ETH") or [])
+    oi_snapshots = (derivs_history or {}).get("snapshots") or []
 
     last_hl_ts_ms = hyperliquid_scoring_state.get("last_processed_ts_ms")
     if last_hl_ts_ms is None:
@@ -1276,6 +1292,7 @@ def main() -> int:
             )
 
             market_feats = market.features_at(market_lookups, ts)
+            derivs_feats = derivs.features_at(derivs_history, ts)
             price_ok = price_guard.check(s.price_usd, market_feats["ethRefPrice"])
             if ts is not None and price_ok:
                 trend_window.add(ts, s.price_usd)
@@ -1449,10 +1466,13 @@ def main() -> int:
                 "ts": ts,
                 # Faza "funding + open interest" - pola zapisywane NA SWIECY
                 # (puste = None, gdy brak danych); NIE wchodza do composite.
-                **derivs.features_at(derivs_history, ts),
+                **derivs_feats,
                 # Etap 2 planu "trend": BTC, ETH/BTC i cena odniesienia ETH
                 # z Hyperliquid (None, gdy brak danych).
                 **market_feats,
+                # Etap 4: agresorzy na Hyperliquid, open interest razem z cena,
+                # przyblizone wymuszone zamkniecia (live/perp_flow.py)
+                **pf.features_at(taker_flow, eth_prices, oi_snapshots, ts, trend_sig, derivs_feats["oiChange24h"]),
                 # Etap 5: akumulacja portfeli z wyczuciem / bez wyczucia (7 dni)
                 **(wallet_timing.features_at(ts) if wallet_timing is not None else wt.empty_features()),
                 # --- Market regime metrics (Faza 0) - patrz scoring.py.
@@ -1633,6 +1653,24 @@ def main() -> int:
                     c.update(feats)
                     market_filled += 1
         manifest["market_fill"] = market_filled
+
+    # Etap 4: agresorzy / OI z cena dla swiec, ktore ich nie maja (informacyjnie;
+    # agresorzy tylko w zasiegu bufora Hyperliquid ~30 dni, OI od 14.11.2026).
+    if any("takerImbalance24h" not in c for c in candles_history):
+        trend_hist = strat.trend_series(candles_history)
+        pf_filled = 0
+        for c, tr in zip(candles_history, trend_hist):
+            if "takerImbalance24h" not in c:
+                c.update(pf.features_at(taker_flow, eth_prices, oi_snapshots, c.get("ts"), tr, c.get("oiChange24h")))
+                pf_filled += 1
+        manifest["perp_flow_fill"] = pf_filled
+    if candles_history:
+        last = candles_history[-1]
+        manifest["perp_flow"] = {
+            "taker_imbalance_24h": last.get("takerImbalance24h"),
+            "oi_price_state": last.get("oiPriceState"),
+            "forced_close": last.get("forcedClose"),
+        }
 
     # Etap 5: cechy "portfeli z wyczuciem" dla swiec, ktore ich nie maja
     # (informacyjnie; dla swiec starszych niz bufor transakcji zostaja None).
