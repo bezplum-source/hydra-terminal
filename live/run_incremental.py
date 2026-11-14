@@ -65,6 +65,7 @@ from hydra_signals.models import Signal  # noqa: E402
 from live import block_time as bt  # noqa: E402
 from live import derivs  # noqa: E402
 from hydra_signals import regime  # noqa: E402
+from hydra_signals import strategies as strat  # noqa: E402
 from hydra_signals.scoring import (  # noqa: E402
     ScoringConfig,
     ScoringEngine,
@@ -348,6 +349,48 @@ def _update_derivs_history(manifest: dict, now: datetime.datetime) -> dict:
     )
     st.save_derivs_history(history)
     return history
+
+
+RACE_STRATEGIES = ("trend14", "hydra", "eth")
+
+
+def _race_signals(candle: dict) -> dict[str, str]:
+    """Sygnal kazdej strategii wyscigu dla jednej swiecy."""
+    return {
+        "trend14": candle.get("signal", "HOLD"),
+        "hydra": candle.get("signalHydra", "HOLD"),
+        "eth": "LONG",  # punkt odniesienia: po prostu trzymanie ETH
+    }
+
+
+def _update_race(manifest: dict, new_candles: list[dict]) -> dict:
+    """Etap 1 planu "trend": przesuwa "wyscig strategii" (gra na papierze) o
+    swieze swiece z tego uruchomienia i zapisuje `data/race_state.json`.
+    Wyscig startuje przy pierwszym uruchomieniu po wdrozeniu i idzie tylko do
+    przodu. Nigdy nie przerywa uruchomienia."""
+    race = st.load_race_state()
+    try:
+        for c in new_candles:
+            if c.get("signalSource") != "trend14" or not c.get("price") or c.get("priceSuspect"):
+                continue  # bledna cena nie moze ani wycenic pozycji, ani otworzyc transakcji
+            if not race:
+                race = strat.new_race(
+                    RACE_STRATEGIES,
+                    start_block=c["block"],
+                    start_time=c.get("time", ""),
+                    start_ts=c.get("ts"),
+                    start_price=c["price"],
+                )
+            strat.race_step(race, c, _race_signals(c))
+        if race:
+            st.save_race_state(race)
+            manifest["race"] = {
+                name: strat.summarize_book(book)["resultPct"] for name, book in race["strategies"].items()
+            }
+    except Exception as exc:  # noqa: BLE001 - wyscig jest dodatkiem, nie krytyczna sciezka
+        log(f"UWAGA: wyscig strategii nie zostal zaktualizowany ({exc}).")
+        manifest["warnings"].append(f"race: {type(exc).__name__}: {exc}")
+    return race
 
 
 def _finalize_and_save_manifest(manifest: dict, started_at: datetime.datetime) -> None:
@@ -908,6 +951,7 @@ def main() -> int:
     signal_engine_lt = SignalEngine(initial_state=signal_state_lt)
 
     new_scores = []
+    new_candles_this_run: list[dict] = []
     new_scores_lt = []
     if scoreable_trades:
         new_scores = engine.run(scoreable_trades, price_at_block, history_trades=classification_history)
@@ -943,6 +987,25 @@ def main() -> int:
         # udalo sie pobrac znacznika czasu (patrz `live/block_time.py`) -
         # prawdziwe pomiary z tego uruchomienia + ze zapisanej historii.
         ts_anchors = bt.build_anchors(candles_history, extra=list(block_ts.items()))
+
+        # Etap 1 planu "trend" (decyzja Jakuba 14.11.2026): GLOWNY sygnal
+        # (`signal`) to od teraz trend - LONG, gdy cena jest nad srednia z
+        # ostatnich `strat.TREND_DAYS` dni, SHORT, gdy pod nia (patrz
+        # hydra_signals/strategies.py). Dotychczasowy silnik portfeli liczy
+        # sie dalej bez zadnej zmiany i trafia do `signalHydra` (gra w
+        # "wyscigu strategii" obok). Okno cen budowane z calej historii swiec.
+        trend_window = strat.TrendWindow()
+        price_guard = strat.PriceGuard()
+        for hc in candles_history:
+            # ta sama ochrona przed blednymi cenami co w wyscigu (patrz
+            # strat.PriceGuard) - odtwarzana z historii przy kazdym uruchomieniu
+            if price_guard.check(hc.get("price")) and hc.get("ts") is not None:
+                trend_window.add(hc["ts"], hc["price"])
+        last_trend_signal = (
+            candles_history[-1].get("signal", "HOLD")
+            if candles_history and candles_history[-1].get("signalSource") == "trend14"
+            else "HOLD"
+        )
 
         # Faza "Long term (30d)" - `new_scores`/`new_scores_lt` maja
         # GWARANTOWANA identyczna dlugosc i pasujace `window_end_block` na
@@ -1110,10 +1173,31 @@ def main() -> int:
                 composite_spot_combined_lt, threshold=signal_engine_lt.cfg.enter_threshold
             )
 
+            price_ok = price_guard.check(s.price_usd)
+            if ts is not None and price_ok:
+                trend_window.add(ts, s.price_usd)
+                trend_sig, trend_sma, trend_dist = trend_window.signal_at(ts, s.price_usd)
+            else:
+                # Swieca bez znacznika czasu nie ma miejsca w czasie, a swieca z
+                # podejrzana cena (skok > 15% bez potwierdzenia) moze byc
+                # bledem odczytu - zadna z nich nie przesuwa sredniej, obie
+                # dziedzicza poprzedni sygnal trendu.
+                trend_sig, trend_sma, trend_dist = last_trend_signal, None, None
+            last_trend_signal = trend_sig
+
             candle = {
                 "block": s.window_end_block,
                 "price": round(s.price_usd, 2),
-                "signal": final_signal.value,
+                "signal": trend_sig,
+                # Etap 1 planu "trend": skad pochodzi `signal` + dane trendu do
+                # pokazania na stronie, oraz sygnal dotychczasowego silnika
+                # portfeli (ten sam co wczesniej w `signal`), ktory gra dalej
+                # w wyscigu strategii.
+                "signalSource": "trend14",
+                "trendSma": round(trend_sma, 2) if trend_sma is not None else None,
+                "trendDistPct": round(trend_dist, 2) if trend_dist is not None else None,
+                "signalHydra": final_signal.value,
+                "priceSuspect": not price_ok,
                 "composite": round(composite_final, 3),
                 # Faza "sygnał z histerezą" - front-end (template.html) dalej
                 # czyta TO SAMO pole (`signalThreshold`) do kolorowania
@@ -1357,6 +1441,7 @@ def main() -> int:
                 candle[f"{key}Lt"] = value
 
             candles_history.append(candle)
+            new_candles_this_run.append(candle)
 
     new_last_scored_end = max((s.window_end_block for s in new_scores), default=last_scored_end)
 
@@ -1407,6 +1492,25 @@ def main() -> int:
                         c[k] = v
                         derivs_filled += 1 if k == "fundingRate" else 0
         manifest.setdefault("derivs", {})["candles_filled"] = derivs_filled
+    # Etap 1 planu "trend": linia sredniej z 14 dni na wykresie ceny ma byc
+    # widoczna takze dla swiec sprzed przelaczenia - dopisujemy wiec TYLKO pola
+    # informacyjne `trendSma`/`trendDistPct` swiecom, ktore ich nie maja.
+    # Sygnal (`signal`) starych swiec NIE jest zmieniany - historia zostaje taka,
+    # jaka byla.
+    if any("trendSma" not in c for c in candles_history):
+        fill_window = strat.TrendWindow()
+        fill_guard = strat.PriceGuard()
+        trend_filled = 0
+        for c in candles_history:
+            if not fill_guard.check(c.get("price")) or c.get("ts") is None:
+                continue
+            fill_window.add(c["ts"], c["price"])
+            if "trendSma" not in c:
+                _sig, sma_v, dist_v = fill_window.signal_at(c["ts"], c["price"])
+                c["trendSma"] = round(sma_v, 2) if sma_v is not None else None
+                c["trendDistPct"] = round(dist_v, 2) if dist_v is not None else None
+                trend_filled += 1
+        manifest["trend_fill"] = trend_filled
     st.save_candles_history(candles_history)
     st.save_regime_state(regime_engine.export_state())
     st.save_signal_state(signal_engine.export_state())
@@ -1441,14 +1545,24 @@ def main() -> int:
     # (patrz `live/state.py::load_stats_reset_state` docstring). Czysto
     # lokalny odczyt pliku, zero RPC/sieci - bezpieczny tutaj, PRZED blokiem
     # Base L2 nizej, tak jak reszta juz-zaufanej sciezki mainnet+Hyperliquid.
+    race_state = _update_race(manifest, new_candles_this_run)
+    race_start_block = (race_state.get("start") or {}).get("block") if race_state else None
     stats_reset_from_block = st.load_stats_reset_state().get("reset_from_block")
+    # Etap 1 planu "trend": podsumowanie "Historii sygnalow" (wynik, win rate)
+    # liczy od momentu przelaczenia glownego sygnalu na trend - inaczej
+    # mieszaloby transakcje dwoch roznych systemow. Recznie ustawiony, pozniejszy
+    # reset (data/stats_reset_state.json) dalej ma pierwszenstwo.
+    if race_start_block is not None:
+        stats_reset_from_block = max(stats_reset_from_block or 0, race_start_block)
     build_site(
         candles_history,
         meta={
             "lastRunUtc": new_state["updated_at_utc"],
             "statsResetFromBlock": stats_reset_from_block,
+            "signalSwitchBlock": race_start_block,
         },
         derivs_history=derivs_history,
+        race_state=race_state,
     )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 

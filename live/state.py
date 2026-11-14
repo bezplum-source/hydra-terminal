@@ -120,6 +120,9 @@ SPOT_POOL_STATE_PATH = DATA_DIR / "spot_pool_state.json"
 # `live/derivs.py`. Small (hundreds of KB), committed to git like the other
 # state files.
 DERIVS_HISTORY_PATH = DATA_DIR / "derivs_history.json"
+# Etap 1 planu "trend": "wyscig strategii" (gra na papierze od dnia wdrozenia),
+# patrz hydra_signals/strategies.py i live/run_incremental.py::_update_race.
+RACE_STATE_PATH = DATA_DIR / "race_state.json"
 
 # Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
 # liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
@@ -253,6 +256,25 @@ def save_derivs_history(history: dict) -> None:
     DERIVS_HISTORY_PATH.write_text(
         json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
+
+
+def load_race_state() -> dict:
+    """Stan wyscigu strategii; pusty slownik, gdy jeszcze nie wystartowal
+    albo plik jest uszkodzony (wyscig wtedy startuje od nowa)."""
+    if not RACE_STATE_PATH.exists():
+        return {}
+    try:
+        raw = json.loads(RACE_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict) or not isinstance(raw.get("strategies"), dict):
+        return {}
+    return raw
+
+
+def save_race_state(race: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    RACE_STATE_PATH.write_text(json.dumps(race, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def load_regime_state() -> dict:

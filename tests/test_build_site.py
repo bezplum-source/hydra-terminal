@@ -600,3 +600,72 @@ def test_build_site_embeds_derivs_summary_or_null(tmp_path, monkeypatch):
     bs.build_site(_sample_candles(), derivs_history=_derivs_history(hours=72))
     d = embedded()["derivs"]
     assert d["funding"]["state"] == "neutral" and d["oi"]["usd"] > 0 and len(d["fundingSeries"]) > 10
+
+
+# ---------------------------------------------------------------------------
+# Etap 1 planu "trend": dane karty "Wyscig strategii".
+# ---------------------------------------------------------------------------
+
+from hydra_signals import strategies as _strat  # noqa: E402
+
+_LB = int(bs.LOOKBACK_FROM.timestamp())
+
+
+def _race_candles():
+    """30 dni historii godzinowej od 25 dni przed LOOKBACK_FROM; cena stała, potem
+    rośnie. Pierwsza część z sygnałem portfeli w `signal`, ostatnie świece po
+    przełączeniu (signalSource=trend14, portfele w `signalHydra`)."""
+    out = []
+    start = _LB - 25 * 86400
+    for i in range(24 * 30):
+        ts = start + i * 3600
+        price = 2000.0 if ts < _LB else 2000.0 + (ts - _LB) / 3600
+        c = {**_sample_candles()[0], "block": 1000 + i, "ts": ts, "price": price, "time": f"t{i}", "signal": "SHORT"}
+        if i >= 24 * 29:
+            c.update({"signalSource": "trend14", "signal": "LONG", "signalHydra": "HOLD"})
+        out.append(c)
+    return out
+
+
+def test_race_summary_without_race_state_has_no_live_part_but_has_lookback():
+    r = bs._build_race_summary(None, _race_candles())
+    assert r["live"] is None
+    lb = r["lookback"]
+    assert lb["fromTime"] is not None and lb["fromPrice"] == 2000.0
+    assert set(lb["strategies"]) == {"trend14", "hydra", "eth"}
+    # ETH rośnie od startu widoku wstecz -> kup i trzymaj na plusie, trend na plusie
+    assert lb["strategies"]["eth"]["resultPct"] > 0
+    assert lb["strategies"]["trend14"]["position"] == "LONG"
+    # portfele: przed przełączeniem SHORT (z `signal`), po przełączeniu HOLD (z `signalHydra`)
+    assert lb["strategies"]["hydra"]["position"] == "HOLD"
+    assert lb["strategies"]["hydra"]["resultPct"] < 0
+    assert r["feePerSidePct"] == _strat.FEE_PER_SIDE * 100
+
+
+def test_race_summary_lookback_none_when_history_ends_before_lookback_start():
+    old = [{**c, "ts": c["ts"] - 400 * 86400} for c in _race_candles()]
+    assert bs._build_race_summary(None, old)["lookback"] is None
+    assert bs._build_race_summary(None, [])["lookback"] is None
+
+
+def test_race_summary_live_part_from_race_state_with_downsampled_curve():
+    race = _strat.new_race(["trend14", "hydra", "eth"], start_block=1, start_time="t0", start_ts=_LB, start_price=100.0)
+    for i in range(1000):
+        _strat.race_step(race, {"block": 1 + i, "price": 100.0 + i * 0.1, "time": f"t{i}", "ts": _LB + i * 3600},
+                         {"trend14": "LONG", "hydra": "SHORT", "eth": "LONG"})
+    r = bs._build_race_summary(race, [])
+    live = r["live"]
+    assert live["start"]["block"] == 1
+    assert live["strategies"]["trend14"]["resultPct"] > 0 > live["strategies"]["hydra"]["resultPct"]
+    curve = live["strategies"]["eth"]["curve"]
+    assert len(curve) <= bs.RACE_CURVE_POINTS + 1 and all(len(p) == 2 for p in curve)
+
+
+def test_build_site_embeds_race_section(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "SITE_DIR", tmp_path / "site")
+    bs.build_site(_race_candles())
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start = html.index(marker) + len(marker)
+    data = json.loads(html[start : html.index(";", start)])
+    assert data["race"]["live"] is None and data["race"]["lookback"]["strategies"]["eth"]["trades"] == 0

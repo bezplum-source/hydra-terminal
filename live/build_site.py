@@ -9,9 +9,16 @@ Osobny, mały moduł — celowo odseparowany od silnika sygnału
 
 from __future__ import annotations
 
+import datetime
 import json
 import sys
 from pathlib import Path
+
+ROOT_FOR_IMPORT = Path(__file__).resolve().parent.parent
+if str(ROOT_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(ROOT_FOR_IMPORT))
+
+from hydra_signals import strategies as strat  # noqa: E402
 
 MAX_DISPLAY_CANDLES = 500
 
@@ -225,10 +232,66 @@ def _build_daily_balance_candles(candles_history: list[dict]) -> list[dict]:
     ]
 
 
+# Etap 1 planu "trend": widok "wstecz" w karcie "Wyscig strategii" - te same
+# reguly gry na papierze odegrane na zapisanej historii od 12.09.2026 (od tej
+# daty dziala obecna architektura sygnalu portfeli). Tylko orientacyjnie: to
+# historia, na ktorej wybrano trend, wiec nie jest dowodem.
+LOOKBACK_FROM = datetime.datetime(2026, 9, 11, 22, 0, tzinfo=datetime.timezone.utc)  # 12.09.2026 00:00 czasu polskiego
+RACE_CURVE_POINTS = 400
+
+
+def _race_view(race: dict) -> dict:
+    out = {}
+    for name, book in race.get("strategies", {}).items():
+        summary = strat.summarize_book(book)
+        curve = [[p[0], p[2]] for p in book.get("curve", []) if p[0] is not None]
+        summary["curve"] = strat.downsample_curve(curve, RACE_CURVE_POINTS)
+        out[name] = summary
+    return out
+
+
+def _build_race_summary(race_state: dict | None, candles_history: list[dict]) -> dict:
+    """Dane karty "Wyscig strategii": wyscig na zywo (od dnia wdrozenia, z
+    `data/race_state.json`) i orientacyjna powtorka tych samych regul na
+    historii od `LOOKBACK_FROM`."""
+    live = None
+    if race_state and race_state.get("strategies"):
+        live = {
+            "start": race_state.get("start"),
+            "strategies": _race_view(race_state),
+        }
+
+    lookback = None
+    hist = [c for c in candles_history if c.get("price")]
+    if hist:
+        trend = strat.trend_series(hist)
+        from_ts = LOOKBACK_FROM.timestamp()
+        start_i = next((i for i, c in enumerate(hist) if c.get("ts") is not None and c["ts"] >= from_ts), None)
+        if start_i is not None:
+            sub = hist[start_i:]
+            replay = strat.replay_race(
+                sub,
+                {
+                    "trend14": trend[start_i:],
+                    # przed przelaczeniem `signal` BYL sygnalem portfeli; po
+                    # przelaczeniu ten sam sygnal jest w `signalHydra`
+                    "hydra": [c.get("signalHydra", c.get("signal", "HOLD")) if c.get("signalSource") == "trend14" else c.get("signal", "HOLD") for c in sub],
+                    "eth": ["LONG"] * len(sub),
+                },
+            )
+            lookback = {
+                "fromTime": sub[0].get("time"),
+                "fromPrice": sub[0]["price"],
+                "strategies": _race_view(replay),
+            }
+    return {"live": live, "lookback": lookback, "feePerSidePct": strat.FEE_PER_SIDE * 100}
+
+
 def build_site(
     candles_history: list[dict],
     meta: dict | None = None,
     derivs_history: dict | None = None,
+    race_state: dict | None = None,
 ) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
@@ -278,6 +341,8 @@ def build_site(
         # informacyjna; None, gdy jeszcze brak danych (front pokazuje stan
         # "zbieramy dane").
         "derivs": _build_derivs_summary(derivs_history),
+        # Etap 1 planu "trend": karta "Wyscig strategii".
+        "race": _build_race_summary(race_state, candles_history),
     }
     data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
@@ -320,5 +385,6 @@ if __name__ == "__main__":
             "statsResetFromBlock": stats_reset_from_block,
         },
         derivs_history=st.load_derivs_history(),
+        race_state=st.load_race_state(),
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")

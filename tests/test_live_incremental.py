@@ -230,6 +230,8 @@ def _patch_all_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "SPOT_POOL_STATE_PATH", tmp_path / "data" / "spot_pool_state.json")
     # Faza "funding + open interest" - dopisane OD RAZU (patrz komentarze wyzej).
     monkeypatch.setattr(st, "DERIVS_HISTORY_PATH", tmp_path / "data" / "derivs_history.json")
+    # Etap 1 planu "trend" - dopisane OD RAZU (patrz komentarze wyzej).
+    monkeypatch.setattr(st, "RACE_STATE_PATH", tmp_path / "data" / "race_state.json")
     # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
     # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
     # stanu w live/state.py nie trafia od razu do tego helpera): bez tego
@@ -463,7 +465,11 @@ def test_without_hyperliquid_buffer_composite_equals_spot_and_signal_matches_it(
     # Pierwsza (jedyna w tym tescie) swieca - SignalEngine startuje z HOLD i
     # potrzebuje kilku potwierdzajacych swiec pod rzad, wiec NIE wchodzi od
     # razu w LONG/SHORT nawet jesli compositeSpot juz przekracza enter_threshold.
-    assert candles[-1]["signal"] == "HOLD"
+    assert candles[-1]["signalHydra"] == "HOLD"
+    # Etap 1 planu "trend": glowny `signal` to trend 14 dni - przy kilku
+    # godzinach historii (mniej niz TREND_MIN_COVERAGE_DAYS) to HOLD, nie zgadywanie.
+    assert candles[-1]["signal"] == "HOLD" and candles[-1]["signalSource"] == "trend14"
+    assert candles[-1]["trendSma"] is None
     # Stan Hyperliquid nie zostal utworzony - bufor byl pusty, silnik nigdy
     # nie mial "nowego okna" do policzenia (patrz HyperliquidScoringEngine.run).
     assert st.load_hyperliquid_scoring_state() == {}
@@ -734,11 +740,12 @@ def test_stats_reset_from_block_meta_is_embedded_in_generated_site(tmp_path, mon
     assert data["meta"]["statsResetFromBlock"] == 25878499
 
 
-def test_stats_reset_from_block_defaults_to_none_when_no_reset_state_file(tmp_path, monkeypatch):
-    """Bez pliku `data/stats_reset_state.json` (domyslny, dotychczasowy stan
-    kazdego repo sprzed tej fazy) `statsResetFromBlock` musi byc `None` -
-    front-end traktuje to jako "brak filtrowania", identycznie jak przed
-    wprowadzeniem tej fazy."""
+def test_stats_reset_from_block_defaults_to_signal_switch_when_no_reset_state_file(tmp_path, monkeypatch):
+    """Bez pliku `data/stats_reset_state.json` `statsResetFromBlock` bylo
+    kiedys `None`. ZMIANA (Etap 1 planu "trend", 14.11.2026): podsumowanie
+    "Historii sygnalow" liczy od przelaczenia glownego sygnalu na trend, wiec
+    bez recznego resetu `statsResetFromBlock` == blok startu wyscigu
+    (`signalSwitchBlock`), czyli pierwszej swiecy z sygnalem trendu."""
     import json as json_module
 
     _patch_all_paths(monkeypatch, tmp_path)
@@ -758,7 +765,9 @@ def test_stats_reset_from_block_defaults_to_none_when_no_reset_state_file(tmp_pa
     start_idx = html.index(marker) + len(marker)
     end_idx = html.index(";", start_idx)
     data = json_module.loads(html[start_idx:end_idx])
-    assert data["meta"]["statsResetFromBlock"] is None
+    first_block = st.load_candles_history()[0]["block"]
+    assert data["meta"]["signalSwitchBlock"] == first_block
+    assert data["meta"]["statsResetFromBlock"] == first_block
 
 
 def test_signal_threshold_is_exposed_on_every_candle(tmp_path, monkeypatch):
@@ -2247,3 +2256,91 @@ def test_derivs_disabled_by_env_skips_the_step_entirely(tmp_path, monkeypatch):
     monkeypatch.setattr(hd, "fetch_asset_ctx", must_not_be_called)
     assert ri.main() == 0
     assert st.load_latest_run_manifest()["derivs"] == {"enabled": False}
+
+
+# ---------------------------------------------------------------------------
+# Etap 1 planu "trend" (14.11.2026): glowny sygnal = trend 14 dni, dotychczasowy
+# silnik portfeli w `signalHydra`, "wyscig strategii" w data/race_state.json.
+# ---------------------------------------------------------------------------
+
+
+def test_trend_signal_drives_main_signal_and_race_moves_forward(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "1000")
+    monkeypatch.setenv("HYDRA_BLOCKS_PER_CALL", "50")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=1000)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+
+    # Uruchomienie 1: za malo historii na trend -> HOLD; wyscig startuje
+    assert ri.main() == 0
+    run1 = st.load_candles_history()
+    assert run1 and all(c["signal"] == "HOLD" and c["signalSource"] == "trend14" for c in run1)
+    assert all(c["signalHydra"] in ("LONG", "SHORT", "HOLD") for c in run1)
+    race = st.load_race_state()
+    assert race["start"]["block"] == run1[0]["block"]
+    assert set(race["strategies"]) == {"trend14", "hydra", "eth"}
+    assert race["strategies"]["eth"]["position"] == "LONG"
+    assert race["strategies"]["trend14"]["position"] == "HOLD"
+    assert race["lastBlock"] == run1[-1]["block"]
+
+    # Doklejamy przed nimi 20 dni historii po ~2000 USD (realne ceny swiec z
+    # testowego lancucha sa ~3000), zeby trend mial pelne okno 14 dni.
+    template = dict(run1[0])
+    first_ts = run1[0]["ts"]
+    history = []
+    for i in range(24 * 20, 0, -1):
+        h = dict(template)
+        h.update({"ts": first_ts - i * 3600, "price": 2000.0, "block": -i, "time": "historia", "signal": "SHORT"})
+        # swiece sprzed przelaczenia nie mialy pol trendu ani `signalHydra`
+        for k in ("signalSource", "trendSma", "trendDistPct", "signalHydra"):
+            h.pop(k, None)
+        history.append(h)
+    st.save_candles_history(history + run1)
+
+    # Uruchomienie 2: nowe bloki -> trend LONG (cena ~3000 nad srednia), wyscig idzie dalej
+    _seed_wallets(chain, start_block=1000, end_block=1500)
+    assert ri.main() == 0
+    after = st.load_candles_history()
+    new = after[len(history) + len(run1):]
+    assert new
+    for c in new:
+        assert c["signal"] == "LONG" and c["trendSma"] is not None and c["trendDistPct"] > 0
+        assert c["priceSuspect"] is False
+    # stare swiece dostaly tylko informacyjne pola trendu (linia sredniej na
+    # wykresie); ich sygnal zostal taki, jaki byl
+    for old_c, new_c in zip(history, after[: len(history)]):
+        assert new_c["signal"] == "SHORT" and "signalHydra" not in new_c and "signalSource" not in new_c
+        assert "trendSma" in new_c
+    assert after[len(history) - 1]["trendSma"] == 2000.0  # pelne okno 14 dni po 2000
+    assert after[0]["trendSma"] is None  # za malo historii na poczatku
+    race2 = st.load_race_state()
+    assert race2["start"]["block"] == run1[0]["block"]  # start sie nie przesuwa
+    assert race2["strategies"]["trend14"]["position"] == "LONG"
+    assert race2["lastBlock"] == new[-1]["block"]
+    assert len(race2["strategies"]["eth"]["curve"]) == len(run1) + len(new)
+    manifest = st.load_latest_run_manifest()
+    assert set(manifest["race"]) == {"trend14", "hydra", "eth"}
+
+    # strona ma dane wyscigu: na zywo + widok wstecz (tu: brak swiec po 12.09.2026
+    # w testowym lancuchu z 2023 r., wiec lookback = None)
+    html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    marker = "const DATA = "
+    start_idx = html.index(marker) + len(marker)
+    data = json.loads(html[start_idx : html.index(";", start_idx)])
+    assert data["race"]["live"]["strategies"]["trend14"]["position"] == "LONG"
+    assert data["meta"]["signalSwitchBlock"] == run1[0]["block"]
+
+
+def test_corrupted_race_state_does_not_break_the_run(tmp_path, monkeypatch):
+    _patch_all_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("ALCHEMY_RPC_URL", "https://fake-rpc.invalid")
+    monkeypatch.setenv("HYDRA_BACKFILL_BLOCKS", "500")
+    chain = FakeChain()
+    _seed_wallets(chain, start_block=0, end_block=500)
+    monkeypatch.setattr(ri, "JsonRpcClient", lambda url: JsonRpcClient(url, transport=chain.transport))
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "data" / "race_state.json").write_text("{zepsute", encoding="utf-8")
+    assert ri.main() == 0
+    assert st.load_race_state()["strategies"]

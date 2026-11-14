@@ -995,6 +995,38 @@
   .dv-explain summary:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 3px; border-radius: 4px; }
   .dv-explain p { margin: 10px 0 0; max-width: 72ch; }
   .dv-explain strong { color: var(--text-primary); font-weight: 600; }
+
+  /* ---------- Etap 1 planu "trend" (14.11.2026): glowny sygnal = trend 14 dni,
+     karta "Wyscig strategii" (prefiks "rc-") i linia sredniej na wykresie ceny. */
+  .hero-trend { color: var(--text-primary); }
+  .hero-trend b { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hero-wallets-caption { font-size: 12px; color: var(--text-muted); }
+  .hero-wallets-caption b { color: var(--text-secondary); font-weight: 600; }
+  .trend-line { fill: none; stroke: var(--text-secondary); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.9; }
+  #mainChart.legend-hidden-trend-line .trend-line { display: none; }
+
+  .rc-switch { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .rc-note { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin: 0 0 14px; max-width: 75ch; }
+  .rc-table-wrap { overflow-x: auto; margin-bottom: 16px; }
+  .rc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
+  .rc-table th { text-align: left; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); }
+  .rc-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: middle; }
+  .rc-table td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+  .rc-table tr:last-child td { border-bottom: none; }
+  .rc-name { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 600; }
+  .rc-name small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+  .rc-swatch { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .rc-swatch--dash { background: repeating-linear-gradient(90deg, var(--rc-c) 0 4px, transparent 4px 7px) !important; }
+  .rc-pos { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .rc-pos.long { color: var(--good-glow); background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+  .rc-pos.short { color: var(--bad-glow); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
+  .rc-pos.hold { color: var(--text-muted); }
+  .rc-good { color: var(--good-glow) !important; }
+  .rc-bad { color: var(--bad-glow) !important; }
+  .rc-chart svg { display: block; max-width: 100%; }
+  .rc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .rc-empty { font-size: 13px; color: var(--text-muted); padding: 6px 0 2px; }
+  .rc-foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; margin-top: 10px; }
 </style>
 <div class="page">
 
@@ -1031,14 +1063,16 @@
 
   <section class="hero reveal reveal-1">
     <div class="hero-signal">
-      <span class="eyebrow">Aktywny sygnał</span>
+      <span class="eyebrow" id="heroEyebrow">Aktywny sygnał</span>
       <span class="pill" id="heroPill">LONG</span>
+      <span class="hero-meta hero-trend" id="heroTrendNote" style="display:none;"></span>
       <span class="hero-price" id="heroPrice">$0.00</span>
       <span class="hero-meta hero-meta--price">cena z <span id="heroDataTime">-</span> (czas polski) &middot; blok <span id="heroBlock">-</span></span>
       <span class="hero-delta" id="heroDelta">+0.00%</span>
       <span class="hero-meta">sygnał aktywny od <span id="heroStart">-</span> &middot; cena wejścia <span id="heroEntryPrice">-</span></span>
     </div>
     <div style="display:flex; flex-direction:column; gap:14px;">
+      <span class="hero-meta hero-wallets-caption" id="heroWalletsCaption" style="display:none;"></span>
       <div class="composite-grid">
 
         <div class="composite-tile">
@@ -1078,6 +1112,31 @@
            zadecydowalo. Patrz renderHero() w JS. -->
       <span class="hero-meta hero-meta--divergence" id="heroDivergenceNote"></span>
     </div>
+  </section>
+
+  <section class="card reveal reveal-2" id="raceCard">
+    <div class="card-head">
+      <div class="db-title-group">
+        <span class="card-title">Wyścig strategii</span>
+        <span class="info-tip" tabindex="0" data-tip="Kilka strategii gra na papierze na tych samych świecach i według tych samych zasad: cały kapitał LONG albo SHORT albo poza rynkiem, 0,05% prowizji za każde wejście i wyjście. Wyścig „na żywo” liczy się od dnia przełączenia głównego sygnału na trend i idzie tylko do przodu, więc nie da się go dopasować do przeszłości.">ⓘ</span>
+      </div>
+      <div class="rc-switch range-switch" id="rcSwitch" role="group" aria-label="Zakres wyścigu">
+        <button type="button" class="range-btn" data-rc="live">Na żywo</button>
+        <button type="button" class="range-btn" data-rc="lookback">Wstecz od 12.09</button>
+      </div>
+    </div>
+    <p class="rc-note" id="rcNote"></p>
+    <div id="rcBody">
+      <div class="rc-table-wrap">
+        <table class="rc-table">
+          <thead><tr><th>Strategia</th><th>Teraz</th><th>Wynik</th><th>Transakcje</th><th>Wygrane</th><th>Najgorszy spadek</th></tr></thead>
+          <tbody id="rcRows"></tbody>
+        </table>
+      </div>
+      <div class="chart-wrap rc-chart" id="rcChartWrap"><svg role="img" aria-label="Wynik strategii w czasie"></svg><div class="tooltip"></div></div>
+      <p class="rc-empty" id="rcChartNote" style="display:none;"></p>
+    </div>
+    <div class="rc-foot" id="rcFoot"></div>
   </section>
 
   <section class="card reveal reveal-2">
@@ -1268,6 +1327,7 @@
       <button type="button" class="chart-legend-item" data-legend-target="regime-band-neutral" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="6" width="14" height="4" rx="1" fill="var(--regime-neutral)"></rect></svg>wstążka: regime neutralny</button>
       <button type="button" class="chart-legend-item" data-legend-target="marker-special-bull" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bull-glow)"></polygon></svg>możliwe dno</button>
       <button type="button" class="chart-legend-item" data-legend-target="marker-special-bear" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><polygon points="8,2 14,8 8,14 2,8" fill="var(--regime-bear-glow)"></polygon></svg>możliwa wyprzedaż</button>
+      <button type="button" class="chart-legend-item" data-legend-target="trend-line" aria-pressed="true" title="Kliknij, by ukryć/pokazać na wykresie"><svg class="chart-legend-icon" viewBox="0 0 16 16" aria-hidden="true"><line x1="1" y1="8" x2="15" y2="8" stroke="var(--text-secondary)" stroke-width="2" stroke-dasharray="4 3"></line></svg>średnia 14 dni (trend)</button>
     </div>
     <div class="chart-wrap" id="mainChartWrap">
       <svg class="chart" id="mainChart" viewBox="0 0 1000 350" preserveAspectRatio="none">
@@ -1778,8 +1838,34 @@ function renderHero() {
   // naiwnego progu WYLACZNIE przez histereze/potwierdzenie - nazwanie tego
   // "wplywem Hyperliquid" bez zastrzezenia byloby wtedy po prostu falszem,
   // nie tylko niescisloscia.
+  // Etap 1 planu "trend": w zakladce Main glowny sygnal to trend 14 dni, a
+  // kafelki portfeli sa juz tylko informacja (Hydra gra w "Wyscigu strategii").
+  // W zakladce Long term sygnal dalej pochodzi z portfeli (30 dni).
+  const trendMode = CURRENT_TRACK === 'main' && latest && latest.signalSource === 'trend14';
+  const eyebrow = document.getElementById('heroEyebrow');
+  const trendNote = document.getElementById('heroTrendNote');
+  const walletsCaption = document.getElementById('heroWalletsCaption');
+  if (trendMode) {
+    eyebrow.textContent = 'Aktywny sygnał · trend 14 dni';
+    trendNote.style.display = 'block';
+    if (latest.trendSma != null && latest.trendDistPct != null) {
+      const above = latest.trendDistPct >= 0;
+      trendNote.innerHTML = 'Cena <b>' + Math.abs(latest.trendDistPct).toFixed(1).replace('.', ',') + '% ' + (above ? 'nad' : 'pod') +
+        '</b> średnią z 14 dni (<b>' + fmtUsd(latest.trendSma) + '</b>). Sygnał zmieni się, gdy cena przetnie średnią.';
+    } else {
+      trendNote.textContent = 'Za mało historii cen, żeby policzyć średnią z 14 dni.';
+    }
+    walletsCaption.style.display = 'block';
+    walletsCaption.innerHTML = 'Presja portfeli (Hydra) — tylko informacyjnie, nie decyduje o sygnale. Hydra wskazuje teraz: <b>' +
+      signalLabel(latest.signalHydra || 'HOLD') + '</b>.';
+  } else {
+    eyebrow.textContent = CURRENT_TRACK === 'lt' ? 'Aktywny sygnał · portfele 30 dni' : 'Aktywny sygnał';
+    trendNote.style.display = 'none';
+    walletsCaption.style.display = 'none';
+  }
+
   const divNote = document.getElementById('heroDivergenceNote');
-  if (latest && latest.signalSpotCombinedOnly !== undefined && latest.signalSpotCombinedOnly !== latest.signal) {
+  if (!trendMode && latest && latest.signalSpotCombinedOnly !== undefined && latest.signalSpotCombinedOnly !== latest.signal) {
     divNote.style.display = 'block';
     divNote.textContent = 'Uwaga: sam spot (Uniswap+Base) wskazywałby ' + signalLabel(latest.signalSpotCombinedOnly) + ' — o finalnym sygnale zadecydował wpływ Hyperliquid i/lub historia potwierdzeń (nie tylko bieżąca świeca).';
   } else {
@@ -2152,8 +2238,154 @@ window.addEventListener('resize', () => {
   clearTimeout(dvResizeTimer);
   dvResizeTimer = setTimeout(() => {
     const w = window.innerWidth;
-    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); }
+    if (w !== dvLastWidth) { dvLastWidth = w; renderDerivsCard(); renderRaceCard(); }
   }, 150);
+});
+
+// =====================================================================
+// Etap 1 planu "trend": karta "Wyscig strategii" (DATA.race z
+// live/build_site.py::_build_race_summary). Niezalezna od zakladki
+// Main / Long term - renderowana raz przy starcie i po zmianie zakresu.
+// =====================================================================
+const RC_STRATS = [
+  { key: 'trend14', name: 'Trend 14 dni', sub: 'główny sygnał', color: '#FFC94A', dash: false },
+  { key: 'hydra', name: 'Hydra — portfele', sub: 'dotychczasowy sygnał', color: '#6FA8FF', dash: false },
+  { key: 'eth', name: 'ETH kup i trzymaj', sub: 'punkt odniesienia', color: '#A8A6B0', dash: true },
+];
+let rcView = null;
+
+function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
+
+function rcDrawChart(series) {
+  const wrap = document.getElementById('rcChartWrap');
+  const note = document.getElementById('rcChartNote');
+  const svg = wrap.querySelector('svg');
+  const tip = wrap.querySelector('.tooltip');
+  const all = series.filter((s) => s.points.length);
+  const longest = all.reduce((a, s) => Math.max(a, s.points.length), 0);
+  if (longest < 3) {
+    wrap.style.display = 'none';
+    note.style.display = 'block';
+    note.textContent = 'Wykres pojawi się po kilku godzinach wyścigu (jeden punkt na każdą nową świecę).';
+    return;
+  }
+  wrap.style.display = '';
+  note.style.display = 'none';
+  const W = Math.max(260, Math.round(wrap.clientWidth) || 900), H = 220;
+  const L = 52, R = 104, T = 12, B = 24;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  let t0 = Infinity, t1 = -Infinity, lo = 0, hi = 0;
+  all.forEach((s) => s.points.forEach((p) => { t0 = Math.min(t0, p[0]); t1 = Math.max(t1, p[0]); lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }));
+  if (t1 <= t0) t1 = t0 + 1;
+  if (hi - lo < 1) { hi += 0.5; lo -= 0.5; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R);
+  const Y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+  let g = '';
+  const step = dvNiceStep(hi - lo, 4);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    const yy = Y(v);
+    g += '<line class="' + (Math.abs(v) < step / 1000 ? 'dv-zero' : 'dv-grid-line') + '" x1="' + L + '" x2="' + (W - R) + '" y1="' + yy.toFixed(1) + '" y2="' + yy.toFixed(1) + '"></line>';
+    g += '<text class="chart-axis-label" x="' + (L - 6) + '" y="' + (yy + 3.5).toFixed(1) + '" text-anchor="end">' + (v > 0 ? '+' : '') + Math.round(v) + '%</text>';
+  }
+  [[0, 'start'], [0.5, 'middle'], [1, 'end']].forEach((tk) => {
+    const t = t0 + tk[0] * (t1 - t0);
+    g += '<text class="chart-axis-label" x="' + (L + tk[0] * (W - L - R)).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + tk[1] + '">' + DV_DAY_FMT.format(new Date(t * 1000)) + '</text>';
+  });
+  // linie (ETH pod spodem), etykiety na końcach linii, rozsunięte, żeby się nie nakładały
+  const ends = [];
+  all.slice().reverse().forEach((s) => {
+    let d = '';
+    s.points.forEach((p, i) => { d += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); });
+    g += '<path class="rc-line" d="' + d + '" stroke="' + s.color + '"' + (s.dash ? ' stroke-dasharray="5 4"' : '') + '></path>';
+    const last = s.points[s.points.length - 1];
+    g += '<circle cx="' + X(last[0]).toFixed(1) + '" cy="' + Y(last[1]).toFixed(1) + '" r="3.5" fill="' + s.color + '" stroke="var(--bg-elevated)" stroke-width="2"></circle>';
+    ends.push({ y: Y(last[1]), text: rcPct(last[1]), name: s.short, color: s.color });
+  });
+  ends.sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 14) ends[k].y = ends[k - 1].y + 14;
+  ends.forEach((e) => {
+    g += '<text class="chart-axis-label" x="' + (W - R + 8) + '" y="' + (e.y + 3.5).toFixed(1) + '" fill="' + e.color + '" style="fill:' + e.color + '">' + e.name + ' ' + e.text + '</text>';
+  });
+  g += '<line class="dv-cross" y1="' + T + '" y2="' + (H - B) + '" x1="0" x2="0" visibility="hidden"></line>';
+  svg.innerHTML = g;
+  const cross = svg.querySelector('.dv-cross');
+  svg.onpointermove = (ev) => {
+    const r = svg.getBoundingClientRect();
+    if (!r.width) return;
+    const xx = (ev.clientX - r.left) * (W / r.width);
+    const t = t0 + ((xx - L) / (W - L - R)) * (t1 - t0);
+    let html = '';
+    let shownT = null;
+    all.forEach((s) => {
+      const pts = s.points;
+      let a = 0, b = pts.length - 1;
+      while (b - a > 1) { const m = (a + b) >> 1; if (pts[m][0] < t) a = m; else b = m; }
+      const p = Math.abs(pts[a][0] - t) <= Math.abs(pts[b][0] - t) ? pts[a] : pts[b];
+      if (shownT === null) shownT = p[0];
+      html += '<span style="color:' + s.color + '">●</span> ' + s.short + ': <strong>' + rcPct(p[1]) + '</strong><br>';
+    });
+    const px = X(shownT);
+    cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('visibility', 'visible');
+    tip.innerHTML = html + DV_TIME_FMT.format(new Date(shownT * 1000));
+    const left = Math.min(Math.max((px * r.width) / W, 80), r.width - 80);
+    tip.style.left = left + 'px';
+    tip.style.top = (T + 40) + 'px';
+    tip.style.opacity = 1;
+  };
+  svg.onpointerleave = () => { cross.setAttribute('visibility', 'hidden'); tip.style.opacity = 0; };
+}
+
+function renderRaceCard() {
+  const race = DATA.race || {};
+  const live = race.live, lookback = race.lookback;
+  const liveLen = live ? Math.max(0, ...Object.values(live.strategies).map((s) => s.curve.length)) : 0;
+  if (rcView === null) rcView = (live && liveLen >= 6) || !lookback ? 'live' : 'lookback';
+  document.querySelectorAll('#rcSwitch .range-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.rc === rcView);
+    b.disabled = (b.dataset.rc === 'live' && !live) || (b.dataset.rc === 'lookback' && !lookback);
+  });
+  const view = rcView === 'live' ? live : lookback;
+  const note = document.getElementById('rcNote');
+  const body = document.getElementById('rcBody');
+  const fee = race.feePerSidePct != null ? race.feePerSidePct.toFixed(2).replace('.', ',') : '0,05';
+  if (!view) {
+    body.style.display = 'none';
+    note.textContent = 'Wyścig wystartuje przy pierwszej aktualizacji danych po wdrożeniu.';
+    document.getElementById('rcFoot').textContent = '';
+    return;
+  }
+  body.style.display = '';
+  if (rcView === 'live') {
+    note.textContent = 'Od przełączenia głównego sygnału na trend (' + (live.start && live.start.time ? live.start.time : '-') +
+      ', ETH ' + (live.start && live.start.price ? fmtUsd(live.start.price) : '-') + '). Liczy się tylko do przodu. Po 2–3 miesiącach wybierzemy na tej podstawie główny sygnał.' +
+      (liveLen < 6 ? ' Wyścig dopiero wystartował — wyniki nabiorą sensu po kilku dniach.' : '');
+  } else {
+    note.textContent = 'Te same zasady odegrane na historii od ' + (lookback.fromTime || '12.09.2026') +
+      '. Tylko orientacyjnie: na tej historii wybraliśmy trend, więc nie jest to dowód, że będzie działał dalej.';
+  }
+  const rows = RC_STRATS.filter((d) => view.strategies[d.key]).map((d) => {
+    const s = view.strategies[d.key];
+    const posCls = s.position === 'LONG' ? 'long' : s.position === 'SHORT' ? 'short' : 'hold';
+    const res = '<td class="num ' + (s.resultPct > 0 ? 'rc-good' : s.resultPct < 0 ? 'rc-bad' : '') + '">' + rcPct(s.resultPct) + '</td>';
+    const isEth = d.key === 'eth';
+    return '<tr><td><span class="rc-name"><span class="rc-swatch' + (d.dash ? ' rc-swatch--dash' : '') + '" style="--rc-c:' + d.color + ';background:' + d.color + '"></span><span>' + d.name + '<small>' + d.sub + '</small></span></span></td>' +
+      '<td><span class="rc-pos ' + posCls + '">' + signalLabel(s.position) + '</span></td>' + res +
+      '<td class="num">' + (isEth ? '–' : s.trades) + '</td>' +
+      '<td class="num">' + (isEth || !s.trades ? '–' : s.wins + ' (' + Math.round((100 * s.wins) / s.trades) + '%)') + '</td>' +
+      '<td class="num">' + rcPct(s.maxDrawdownPct) + '</td></tr>';
+  });
+  document.getElementById('rcRows').innerHTML = rows.join('');
+  rcDrawChart(RC_STRATS.filter((d) => view.strategies[d.key]).map((d) => ({
+    color: d.color, dash: d.dash, short: d.key === 'trend14' ? 'Trend' : d.key === 'hydra' ? 'Hydra' : 'ETH',
+    points: view.strategies[d.key].curve,
+  })));
+  document.getElementById('rcFoot').textContent = 'Prowizja ' + fee + '% za każde wejście i wyjście. Wynik bez dźwigni, cały kapitał w jednej pozycji. Najgorszy spadek = największa strata od szczytu kapitału.';
+}
+document.querySelectorAll('#rcSwitch .range-btn').forEach((b) => {
+  b.addEventListener('click', () => { if (!b.disabled) { rcView = b.dataset.rc; renderRaceCard(); } });
 });
 
 function renderFreshness() {
@@ -2396,6 +2628,22 @@ function buildMainChart(candlesParam) {
   svg.appendChild(el('path', { d: areaPath, class: 'price-area' }));
   const lineEl = el('path', { d: linePath, class: 'price-line' });
   svg.appendChild(lineEl);
+
+  // Etap 1 planu "trend": przerywana linia sredniej z 14 dni - glowny sygnal to
+  // po prostu "cena nad nia = LONG, pod nia = SHORT". Rysowana tylko tam, gdzie
+  // swieca ja ma (od przelaczenia na trend), i tylko w zakladce Main.
+  if (CURRENT_TRACK === 'main') {
+    let tp = '';
+    let drawing = false;
+    for (let k = 0; k < n; k++) {
+      const v = candles[k].trendSma;
+      if (v == null) { drawing = false; continue; }
+      const yy = Math.min(Math.max(y(v), PAD_T), PAD_T + plotH);
+      tp += (drawing ? ' L ' : ' M ') + x(k).toFixed(2) + ',' + yy.toFixed(2);
+      drawing = true;
+    }
+    if (tp) svg.appendChild(el('path', { d: tp.trim(), class: 'trend-line' }));
+  }
 
   if (!REDUCE_MOTION && lineEl.getTotalLength) {
     const len = lineEl.getTotalLength();
@@ -3019,6 +3267,7 @@ document.addEventListener('click', () => {
 });
 
 renderHero();
+renderRaceCard();
 renderRegimeCard();
 renderDerivsCard();
 buildMainChart(filterCandlesByRange(currentRange));
