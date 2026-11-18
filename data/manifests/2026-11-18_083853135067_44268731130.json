@@ -1,0 +1,142 @@
+{
+  "run_id": "44268731130",
+  "trigger": "workflow_run",
+  "commit_sha": "b7256a3a0bad263d75dab050253c7283c2f4e5bd",
+  "started_at_utc": "2026-11-18T08:38:53.135067+00:00",
+  "finished_at_utc": "2026-11-18T08:41:34.688299+00:00",
+  "duration_s": 161.6,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26440545,
+    "to_block": 26440801,
+    "new_trades": 502,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 58998426,
+    "to_block": 59002425,
+    "new_trades": 83,
+    "capped": true,
+    "fast_forward": {
+      "from_block": 58986723,
+      "to_block": 58998425,
+      "skipped_blocks": 11703,
+      "lag_blocks_before": 17703
+    }
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 3769
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 4000,
+    "base_max_lag_blocks": 10800,
+    "base_fastforward_keep_blocks": 6000,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5,
+    "derivs_backfill_days": 120,
+    "market_backfill_days": 200
+  },
+  "warnings": [
+    "base: przeskok zaleglosci - pominieto bloki 58986723-58998425 (11703 blokow)"
+  ],
+  "lake_objects": [
+    {
+      "source": "hyperliquid",
+      "key": "trades/source=hyperliquid/date=2026-11-18/part-44268731130.parquet",
+      "rows": 3769
+    },
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-11-18/part-44268731130.parquet",
+      "rows": 502
+    },
+    {
+      "source": "base",
+      "key": "trades/source=base/date=2026-11-18/part-44268731130.parquet",
+      "rows": 83
+    }
+  ],
+  "derivs": {
+    "enabled": true,
+    "funding_new": 1,
+    "funding_total": 2977,
+    "snapshot_added": true,
+    "snapshot_total": 127,
+    "errors": [],
+    "candles_filled": 0
+  },
+  "market": {
+    "enabled": true,
+    "errors": [],
+    "BTC": {
+      "new": 1,
+      "total": 4895
+    },
+    "ETH": {
+      "new": 1,
+      "total": 4895
+    }
+  },
+  "stables": {
+    "enabled": true,
+    "errors": [],
+    "new": 2877,
+    "total": 400,
+    "last": {
+      "change7d_pct": -1.353,
+      "signal": "SHORT"
+    }
+  },
+  "options": {
+    "enabled": true,
+    "errors": [],
+    "dvol_new": 1,
+    "snapshot_added": true,
+    "dvol_total": 4895,
+    "snapshot_total": 111,
+    "last": {
+      "dvol": 57.79,
+      "skew": 5.37,
+      "put_call_oi": 0.55
+    }
+  },
+  "ts_repair": {
+    "missing_before": 0,
+    "fetched": 0,
+    "still_missing": 0,
+    "estimated": 0
+  },
+  "market_fill": 0,
+  "perp_flow": {
+    "taker_imbalance_24h": 0.0153,
+    "oi_price_state": "NEW_SHORTS",
+    "forced_close": null
+  },
+  "wallet_timing": {
+    "skilled": 338,
+    "skilled_net7d": -12769.32,
+    "unskilled_net7d": 5842.02
+  },
+  "trend_fill": 0,
+  "race": {
+    "trend14": 4.04,
+    "hydra": 0.0,
+    "eth": -4.8,
+    "btc14": 4.13,
+    "ethbtc14": 4.13,
+    "hybrid": 4.47,
+    "pullback": -0.67,
+    "skilled7": 4.47,
+    "antiweak7": 4.47,
+    "taker24": 2.68,
+    "trendoi": -1.11,
+    "stables7": 4.47,
+    "trendstables": 4.47,
+    "trendcalm": 0.92,
+    "optskew": 4.47,
+    "vote": 4.26
+  }
+}
