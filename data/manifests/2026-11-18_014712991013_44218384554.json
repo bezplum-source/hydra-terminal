@@ -1,33 +1,33 @@
 {
-  "run_id": "43996809323",
+  "run_id": "44218384554",
   "trigger": "workflow_run",
-  "commit_sha": "c5f524953f5b6bc9ced7a62323f9b2e122749955",
-  "started_at_utc": "2026-11-17T01:36:34.163936+00:00",
-  "finished_at_utc": "2026-11-17T01:38:38.667182+00:00",
-  "duration_s": 124.5,
+  "commit_sha": "586f1213e530aaf2ba90c1896e18cacbc64218bb",
+  "started_at_utc": "2026-11-18T01:47:12.991013+00:00",
+  "finished_at_utc": "2026-11-18T01:50:32.221890+00:00",
+  "duration_s": 199.2,
   "mainnet": {
     "enabled": true,
-    "from_block": 26431271,
-    "to_block": 26431526,
-    "new_trades": 664,
+    "from_block": 26438498,
+    "to_block": 26438750,
+    "new_trades": 326,
     "capped": false
   },
   "base": {
     "enabled": true,
-    "from_block": 58439571,
-    "to_block": 58443570,
+    "from_block": 58874943,
+    "to_block": 58878942,
     "new_trades": 0,
     "capped": true,
     "fast_forward": {
-      "from_block": 58428205,
-      "to_block": 58439570,
-      "skipped_blocks": 11366,
-      "lag_blocks_before": 17366
+      "from_block": 58863375,
+      "to_block": 58874942,
+      "skipped_blocks": 11568,
+      "lag_blocks_before": 17568
     }
   },
   "hyperliquid": {
     "enabled": true,
-    "new_trades": 3298
+    "new_trades": 3746
   },
   "config_snapshot": {
     "base_max_new_blocks_per_run": 4000,
@@ -40,26 +40,26 @@
     "market_backfill_days": 200
   },
   "warnings": [
-    "base: przeskok zaleglosci - pominieto bloki 58428205-58439570 (11366 blokow)"
+    "base: przeskok zaleglosci - pominieto bloki 58863375-58874942 (11568 blokow)"
   ],
   "lake_objects": [
     {
       "source": "hyperliquid",
-      "key": "trades/source=hyperliquid/date=2026-11-17/part-43996809323.parquet",
-      "rows": 3298
+      "key": "trades/source=hyperliquid/date=2026-11-18/part-44218384554.parquet",
+      "rows": 3746
     },
     {
       "source": "uniswap_mainnet",
-      "key": "trades/source=uniswap_mainnet/date=2026-11-17/part-43996809323.parquet",
-      "rows": 664
+      "key": "trades/source=uniswap_mainnet/date=2026-11-18/part-44218384554.parquet",
+      "rows": 326
     }
   ],
   "derivs": {
     "enabled": true,
     "funding_new": 1,
-    "funding_total": 2946,
+    "funding_total": 2970,
     "snapshot_added": true,
-    "snapshot_total": 88,
+    "snapshot_total": 118,
     "errors": [],
     "candles_filled": 0
   },
@@ -68,20 +68,20 @@
     "errors": [],
     "BTC": {
       "new": 1,
-      "total": 4864
+      "total": 4888
     },
     "ETH": {
       "new": 1,
-      "total": 4864
+      "total": 4888
     }
   },
   "stables": {
     "enabled": true,
     "errors": [],
-    "new": 2877,
+    "new": 2878,
     "total": 400,
     "last": {
-      "change7d_pct": -1.419,
+      "change7d_pct": -1.353,
       "signal": "SHORT"
     }
   },
@@ -90,12 +90,12 @@
     "errors": [],
     "dvol_new": 1,
     "snapshot_added": true,
-    "dvol_total": 4864,
-    "snapshot_total": 74,
+    "dvol_total": 4888,
+    "snapshot_total": 103,
     "last": {
-      "dvol": 58.26,
-      "skew": 5.19,
-      "put_call_oi": 0.542
+      "dvol": 57.89,
+      "skew": 5.06,
+      "put_call_oi": 0.551
     }
   },
   "ts_repair": {
@@ -106,32 +106,32 @@
   },
   "market_fill": 0,
   "perp_flow": {
-    "taker_imbalance_24h": 0.0304,
+    "taker_imbalance_24h": 0.0209,
     "oi_price_state": "NEW_LONGS",
     "forced_close": null
   },
   "wallet_timing": {
-    "skilled": 336,
-    "skilled_net7d": -14721.34,
-    "unskilled_net7d": 5885.01
+    "skilled": 340,
+    "skilled_net7d": -12959.74,
+    "unskilled_net7d": 5988.94
   },
   "trend_fill": 0,
   "race": {
-    "trend14": 4.1,
+    "trend14": 4.34,
     "hydra": 0.0,
-    "eth": -4.74,
-    "btc14": 4.18,
-    "ethbtc14": 4.18,
-    "hybrid": 4.53,
-    "pullback": -0.62,
-    "skilled7": 4.53,
-    "antiweak7": 4.53,
-    "taker24": 1.31,
-    "trendoi": -0.65,
-    "stables7": 4.53,
-    "trendstables": 4.53,
+    "eth": -5.07,
+    "btc14": 4.43,
+    "ethbtc14": 4.43,
+    "hybrid": 4.78,
+    "pullback": -0.38,
+    "skilled7": 4.78,
+    "antiweak7": 4.78,
+    "taker24": 2.68,
+    "trendoi": -0.82,
+    "stables7": 4.78,
+    "trendstables": 4.78,
     "trendcalm": 0.92,
-    "optskew": 4.53,
-    "vote": 4.32
+    "optskew": 4.78,
+    "vote": 4.56
   }
 }
