@@ -11,3 +11,4 @@ __pycache__/
 # GitHub Actions cache miedzy uruchomieniami (patrz
 # .github/workflows/hyperliquid-update.yml) - nigdy nie trafia do gita.
 data/hyperliquid_trades_buffer.jsonl
+Claude outputs/

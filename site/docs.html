@@ -1522,6 +1522,26 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           run's numbers" is a direct lookup, not a guess.
         </p>
 
+        <h3 id="report-card">Daily and weekly picture reports</h3>
+        <p>
+          Since 2026-11-20 the project owner gets a picture instead of a long text: two
+          scheduled Claude tasks (Monday–Saturday ~19:40, Sunday ~19:40 the weekly edition)
+          clone this repository and run <code>live/report_card.py</code>
+          (<code>--mode daily</code> or <code>--mode weekly</code>), which only reads
+          <code>data/</code> and the automation's commits in <code>git log</code> and draws one
+          phone-shaped PNG card: a status line ("wszystko działa" or the alarms — last data
+          commit or candle older than 2 hours, an hourly source older than 3 hours, the
+          stablecoin series older than 3 days, a warning other than the known Base lag skip in
+          the last day's manifests), the headline signal with its entry and result, the vote
+          bar, the ETH price with the signal as background (7 days; 30 in the weekly card, price
+          glitches filtered by <code>PriceGuard</code>), the live race as bars (the weekly card
+          adds the week's change, the live equity of the vote vs the previous headline and ETH,
+          and six market tiles: funding, open interest, stablecoins, DVOL, skew and put/call,
+          wallets with timing) and the state of every data source. It also prints two or three
+          lines of text for the notification. The calculations (<code>collect()</code>) are
+          tested without matplotlib (<code>tests/test_report_card.py</code>); matplotlib is not
+          a pipeline dependency and is only imported to draw.
+        </p>
         <h3 id="stats-reset">Resetting the win-rate counter</h3>
         <p>
           The "Signal history" card's compounded result / win-rate summary (see
@@ -2107,6 +2127,7 @@ live/                      the automated, incremental pipeline
   stables.py                 stablecoin supply history + per-candle inflow/outflow fields
   options.py                 DVOL / option snapshot history + per-candle options fields
   build_site.py               renders site/index.html from template.html
+  report_card.py             daily / weekly PNG report card for the scheduled reports
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 
 data/                      pipeline state (mostly auto-generated, committed to git)
