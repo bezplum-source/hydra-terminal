@@ -1,0 +1,147 @@
+{
+  "run_id": "44818161527",
+  "trigger": "workflow_run",
+  "commit_sha": "74d8ac9e14d0b4a53bf934a67d35f4cb150321d4",
+  "started_at_utc": "2026-11-20T21:12:28.498145+00:00",
+  "finished_at_utc": "2026-11-20T21:15:26.586239+00:00",
+  "duration_s": 178.1,
+  "mainnet": {
+    "enabled": true,
+    "from_block": 26458622,
+    "to_block": 26458919,
+    "new_trades": 493,
+    "capped": false
+  },
+  "base": {
+    "enabled": true,
+    "from_block": 60088604,
+    "to_block": 60092603,
+    "new_trades": 216,
+    "capped": true,
+    "fast_forward": {
+      "from_block": 60074154,
+      "to_block": 60088603,
+      "skipped_blocks": 14450,
+      "lag_blocks_before": 20450
+    }
+  },
+  "hyperliquid": {
+    "enabled": true,
+    "new_trades": 17732
+  },
+  "config_snapshot": {
+    "base_max_new_blocks_per_run": 4000,
+    "base_max_lag_blocks": 10800,
+    "base_fastforward_keep_blocks": 6000,
+    "max_new_blocks_per_run": 20000,
+    "backfill_blocks": 42500,
+    "perp_weight": 0.5,
+    "derivs_backfill_days": 120,
+    "market_backfill_days": 200
+  },
+  "warnings": [
+    "options: dvol: HTTPError: HTTP Error 503: Service Unavailable",
+    "options: opcje: HTTPError: HTTP Error 503: Service Unavailable",
+    "base: przeskok zaleglosci - pominieto bloki 60074154-60088603 (14450 blokow)"
+  ],
+  "lake_objects": [
+    {
+      "source": "hyperliquid",
+      "key": "trades/source=hyperliquid/date=2026-11-20/part-44818161527.parquet",
+      "rows": 17732
+    },
+    {
+      "source": "uniswap_mainnet",
+      "key": "trades/source=uniswap_mainnet/date=2026-11-20/part-44818161527.parquet",
+      "rows": 493
+    },
+    {
+      "source": "base",
+      "key": "trades/source=base/date=2026-11-20/part-44818161527.parquet",
+      "rows": 216
+    }
+  ],
+  "derivs": {
+    "enabled": true,
+    "funding_new": 1,
+    "funding_total": 3038,
+    "snapshot_added": true,
+    "snapshot_total": 203,
+    "errors": [],
+    "candles_filled": 0
+  },
+  "market": {
+    "enabled": true,
+    "errors": [],
+    "BTC": {
+      "new": 1,
+      "total": 4956
+    },
+    "ETH": {
+      "new": 1,
+      "total": 4956
+    }
+  },
+  "stables": {
+    "enabled": true,
+    "errors": [],
+    "new": 2879,
+    "total": 400,
+    "last": {
+      "change7d_pct": -1.33,
+      "signal": "SHORT"
+    }
+  },
+  "options": {
+    "enabled": true,
+    "errors": [
+      "dvol: HTTPError: HTTP Error 503: Service Unavailable",
+      "opcje: HTTPError: HTTP Error 503: Service Unavailable"
+    ],
+    "dvol_new": 0,
+    "snapshot_added": false,
+    "dvol_total": 4954,
+    "snapshot_total": 180,
+    "last": {
+      "dvol": 64.89,
+      "skew": 8.93,
+      "put_call_oi": 0.537
+    }
+  },
+  "ts_repair": {
+    "missing_before": 0,
+    "fetched": 0,
+    "still_missing": 0,
+    "estimated": 0
+  },
+  "market_fill": 0,
+  "perp_flow": {
+    "taker_imbalance_24h": -0.1073,
+    "oi_price_state": "NEW_SHORTS",
+    "forced_close": null
+  },
+  "wallet_timing": {
+    "skilled": 332,
+    "skilled_net7d": -5487.03,
+    "unskilled_net7d": 4183.39
+  },
+  "trend_fill": 0,
+  "race": {
+    "trend14": 17.76,
+    "hydra": -0.88,
+    "eth": -16.3,
+    "btc14": 17.86,
+    "ethbtc14": 17.86,
+    "hybrid": 18.25,
+    "pullback": 12.43,
+    "skilled7": 18.25,
+    "antiweak7": 18.25,
+    "taker24": 7.54,
+    "trendoi": 12.32,
+    "stables7": 18.25,
+    "trendstables": 18.25,
+    "trendcalm": 0.92,
+    "optskew": 18.25,
+    "vote": 18.01
+  }
+}
