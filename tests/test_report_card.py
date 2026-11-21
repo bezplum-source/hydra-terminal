@@ -84,3 +84,10 @@ def test_render_png_daily_and_weekly(tmp_path):
         out = tmp_path / f"{mode}.png"
         rc.render(rc.collect(_raw(), NOW, mode), str(out))
         assert out.stat().st_size > 10_000
+
+
+def test_transient_source_errors_are_not_alarms_when_data_is_fresh():
+    s = rc.collect(_raw(warnings=["options: dvol: HTTPError: HTTP Error 503", "options: opcje: HTTPError 502"]), NOW)
+    assert s["alarms"] == [] and s["stats"]["transient"] == {"Opcje": 2}
+    stale = rc.collect(_raw(stale=True, warnings=["options: dvol: HTTPError 503"]), NOW)
+    assert any("options: dvol" in a for a in stale["alarms"])

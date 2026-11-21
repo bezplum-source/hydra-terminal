@@ -50,6 +50,10 @@ MAX_CANDLE_AGE = 2 * HOUR
 MAX_HOURLY_SOURCE_AGE = 3 * HOUR
 MAX_STABLES_DAY_AGE = 3 * DAY
 KNOWN_WARNINGS = ("base: przeskok zaleglosci",)
+# ostrzeżenie źródła danych jest alarmem tylko wtedy, gdy to źródło jest teraz
+# nieświeże; inaczej to przejściowy błąd (np. Deribit 503), który sam minął
+WARNING_SOURCE = {"options:": "options", "derivs:": "derivs", "market:": "eth", "stables:": "stables",
+                  "perp_flow:": "taker", "wallet_timing:": "wallets"}
 
 NAMES = {
     "vote": "GŁOSOWANIE (główny)",
@@ -217,11 +221,17 @@ def health(raw: dict, now: float) -> tuple[list[str], dict[str, bool], dict]:
     # manifesty z ostatniej doby: błędy w sekcjach źródeł i nieznane ostrzeżenia
     recent = [m for ts, m in raw.get("manifests") or [] if now - ts <= DAY]
     known = 0
+    transient: dict[str, int] = {}
     other: dict[str, int] = {}
     for m in recent:
         for w in m.get("warnings") or []:
             if any(w.startswith(k) for k in KNOWN_WARNINGS):
                 known += 1
+                continue
+            src = next((v for k, v in WARNING_SOURCE.items() if w.startswith(k)), None)
+            if src is not None and ok.get(src):
+                label = dict(SOURCES)[src]
+                transient[label] = transient.get(label, 0) + 1
             else:
                 other[w[:90]] = other.get(w[:90], 0) + 1
     for w, n in sorted(other.items(), key=lambda x: -x[1])[:3]:
@@ -230,6 +240,7 @@ def health(raw: dict, now: float) -> tuple[list[str], dict[str, bool], dict]:
         "runs24h": len(recent),
         "maxDuration": max((m.get("duration_s") or 0 for m in recent), default=None),
         "knownWarnings": known,
+        "transient": transient,
         "commits24h": sum(1 for t in commits if now - t <= DAY),
         "lastCommit": commits[-1] if commits else None,
     }
@@ -415,7 +426,7 @@ def render(s: dict, out: str) -> None:
         px += 275 + 215
     H = px / 100
     fig = plt.figure(figsize=(10.8, H), dpi=100, facecolor=C["bg"])
-    plt.rcParams["font.family"] = _font()
+    plt.rcParams["font.family"] = [_font(), "DejaVu Sans"]  # DejaVu: znaki ✓ ✕ ●
 
     def ytop(px_from_top):  # pozycja od góry w px -> ułamek figury
         return 1 - px_from_top / (H * 100)
@@ -434,8 +445,12 @@ def render(s: dict, out: str) -> None:
     fig.text(0.05, ytop(110), st_txt, color=st_col, fontsize=14, fontweight="bold", va="center",
              bbox=dict(boxstyle="round,pad=0.45", facecolor=C["panel"], edgecolor=st_col, linewidth=1.2))
     stx = s["stats"]
-    fig.text(0.33, ytop(110), f"{stx['runs24h']} przebiegów w 24 h · ostatnia aktualizacja {fmt_time(stx['lastCommit'])}",
-             color=C["text2"], fontsize=11.5, va="center")
+    line = f"{stx['runs24h']} przebiegów w 24 h · ostatnia aktualizacja {fmt_time(stx['lastCommit'])}"
+    fig.text(0.33, ytop(100), line, color=C["text2"], fontsize=11.5, va="center")
+    if stx.get("transient"):
+        tr = ", ".join(f"{k} ×{n}" for k, n in stx["transient"].items())
+        fig.text(0.33, ytop(122), f"przejściowe błędy (dane już świeże): {tr}", color=C["muted"], fontsize=10.5,
+                 va="center")
     y = 150
     for a in s["alarms"][:4]:
         fig.text(0.05, ytop(y), "• " + a, color=C["bad"], fontsize=11.5, va="center")
