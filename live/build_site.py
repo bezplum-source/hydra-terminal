@@ -247,6 +247,13 @@ def _race_view(race: dict) -> dict:
     out = {}
     for name, book in race.get("strategies", {}).items():
         summary = strat.summarize_book(book)
+        # czas otwarcia biezacej pozycji (unix s) - z punktu krzywej kapitalu
+        # na swiecy wejscia; do kolumny "Czas" (ile pozycja jest aktywna)
+        summary["openSinceTs"] = None
+        if book.get("position") != strat.HOLD and book.get("entryBlock") is not None:
+            summary["openSinceTs"] = next(
+                (p[0] for p in book.get("curve", []) if p[1] == book["entryBlock"] and p[0] is not None), None
+            )
         curve = [[p[0], p[2]] for p in book.get("curve", []) if p[0] is not None]
         summary["curve"] = strat.downsample_curve(curve, RACE_CURVE_POINTS)
         out[name] = summary

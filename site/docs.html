@@ -958,8 +958,12 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           from the beginning of Hydra (for a few hours it started at 2026-09-12). It is shown
           for orientation only, because it is the very history the strategies were chosen
           on; the forward-only <em>na żywo</em> view is the real test. Suspect prices (see above) are skipped in both. For each strategy the card
-          shows the current position, result, number of closed trades, winners, and the
-          worst drawdown from its own equity peak, plus an equity chart with all of them.
+          shows the current position, the entry price of the open position and how long it
+          has been open (since 2026-11-21, at the owner's request; e.g. "1d 17h", counted to
+          the viewer's clock from the entry candle's time, <code>openSinceTs</code> from
+          <code>build_site._race_view()</code>; "–" when out of the market), result, number of
+          closed trades, winners, and the worst drawdown from its own equity peak, plus an
+          equity chart with all of them.
           The "Historia sygnałów" win-rate summary counts the whole history as well — the
           automatic reset at each change of the headline signal's source (tried for a few
           hours on 2026-11-14) was removed, and the hand-set reset in
@@ -1944,7 +1948,8 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
             candle so the page doesn't balloon in size as history grows.</li>
           <li><strong>Wyścig strategii (strategy race)</strong> — placed right under the
             hero; see <a href="#race">Strategy race</a>. A "Na żywo / Od początku" (default)
-            switch, a table (position, result, trades, winners, worst drawdown) and one
+            switch, a table (position, entry price, time open, result, trades, winners, worst
+            drawdown) and one
             equity chart with direct end labels and a shared hover tooltip; drawn in
             container pixels and redrawn on resize like the futures-market card.</li>
           <li><strong>Portfele z wyczuciem</strong> — two panels: net ETH the wallets with

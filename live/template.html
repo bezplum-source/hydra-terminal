@@ -1008,7 +1008,7 @@
   .rc-switch { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .rc-note { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; margin: 0 0 14px; max-width: 75ch; }
   .rc-table-wrap { overflow-x: auto; margin-bottom: 16px; }
-  .rc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
+  .rc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
   .rc-table th { text-align: left; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border); }
   .rc-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: middle; }
   .rc-table td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
@@ -1165,7 +1165,7 @@
     <div id="rcBody">
       <div class="rc-table-wrap">
         <table class="rc-table">
-          <thead><tr><th>Strategia</th><th>Teraz</th><th>Wynik</th><th>Transakcje</th><th>Wygrane</th><th>Najgorszy spadek</th></tr></thead>
+          <thead><tr><th>Strategia</th><th>Teraz</th><th>Cena wejścia</th><th>Czas</th><th>Wynik</th><th>Transakcje</th><th>Wygrane</th><th>Najgorszy spadek</th></tr></thead>
           <tbody id="rcRows"></tbody>
         </table>
       </div>
@@ -2517,6 +2517,15 @@ const VOTE_NAMES = { trend14: 'trend 14 dni', hydra: 'Hydra (portfele)', btc14: 
 const RC_SHORT = { vote: 'Głosowanie', trend14: 'Trend', hydra: 'Hydra', eth: 'ETH', btc14: 'BTC', ethbtc14: 'ETH+BTC', hybrid: 'Hybryda', pullback: 'T+portfele', skilled7: 'Wyczucie', antiweak7: 'Vs słabe', taker24: 'Agresorzy', trendoi: 'Trend+OI', stables7: 'Stable', trendstables: 'T+stable', trendcalm: 'Trend+DVOL', optskew: 'Skew' };
 let rcView = null;
 
+// "1d 17h" / "5h 12min" / "40 min" - ile czasu pozycja jest otwarta
+function rcDuration(sinceTs) {
+  if (sinceTs == null) return '–';
+  const min = Math.max(0, Math.floor((Date.now() / 1000 - sinceTs) / 60));
+  const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'min';
+  return m + ' min';
+}
 function rcPct(v) { return (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + '%'; }
 
 function rcDrawChart(series) {
@@ -2642,7 +2651,10 @@ function renderRaceCard() {
     const lateStart = rcView === 'live' && s.startTime && live.start && s.startTime !== live.start.time;
     const sub = d.sub + (lateStart ? ' · gra od ' + s.startTime.slice(0, 5) : '');
     return '<tr><td><span class="rc-name"><span class="rc-swatch' + (d.dash ? ' rc-swatch--dash' : '') + '" style="--rc-c:' + d.color + ';background:' + d.color + '"></span><span>' + d.name + '<small>' + sub + '</small></span></span></td>' +
-      '<td><span class="rc-pos ' + posCls + '">' + signalLabel(s.position) + '</span></td>' + res +
+      '<td><span class="rc-pos ' + posCls + '">' + signalLabel(s.position) + '</span></td>' +
+      // cena wejścia i czas trwania bieżącej pozycji (neutralny = brak pozycji)
+      '<td class="num"' + (s.openSince ? ' title="wejście ' + s.openSince + '"' : '') + '>' + (s.position !== 'HOLD' && s.openEntryPrice ? fmtUsd(s.openEntryPrice) : '–') + '</td>' +
+      '<td class="num"' + (s.openSince ? ' title="od ' + s.openSince + '"' : '') + '>' + (s.position !== 'HOLD' ? rcDuration(s.openSinceTs) : '–') + '</td>' + res +
       '<td class="num">' + (isEth ? '–' : s.trades) + '</td>' +
       '<td class="num">' + (isEth || !s.trades ? '–' : s.wins + ' (' + Math.round((100 * s.wins) / s.trades) + '%)') + '</td>' +
       '<td class="num">' + rcPct(s.maxDrawdownPct) + '</td></tr>';

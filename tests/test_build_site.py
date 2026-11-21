@@ -783,3 +783,17 @@ def test_build_site_embeds_stables_and_options(tmp_path, monkeypatch):
     data = json.loads(html[start : html.index(";", start)])
     assert data["stables"]["change7dPct"] < 0 and data["options"]["dvol"]["value"] == 55.0
     assert data["options"]["snapshot"] is None
+
+
+def test_race_view_has_entry_price_and_open_since_timestamp():
+    race = _strat.new_race(["vote", "eth"], start_block=1, start_time="t0", start_ts=_LB, start_price=100.0)
+    for i, (sig, price) in enumerate([("HOLD", 100.0), ("SHORT", 101.0), ("SHORT", 99.0)]):
+        c = {"block": 10 + i, "price": price, "time": f"t{i}", "ts": _LB + i * 3600}
+        _strat.race_step(race, c, {"vote": sig, "eth": "LONG"})
+    v = bs._race_view(race)
+    assert v["vote"]["position"] == "SHORT" and v["vote"]["openEntryPrice"] == 101.0
+    assert v["vote"]["openSinceTs"] == _LB + 3600 and v["vote"]["openSince"] == "t1"
+    assert v["eth"]["openSinceTs"] == _LB
+    flat = _strat.new_race(["x"], start_block=1, start_time="t0", start_ts=_LB, start_price=100.0)
+    _strat.race_step(flat, {"block": 5, "price": 100.0, "time": "t", "ts": _LB}, {"x": "HOLD"})
+    assert bs._race_view(flat)["x"]["openSinceTs"] is None
