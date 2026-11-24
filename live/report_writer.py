@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
 
 from live import market_analysis as ma  # noqa: E402
 from live import report_card as rc  # noqa: E402
+from live import report_rules as rules  # noqa: E402
 from live import state as st  # noqa: E402
 
 API = "https://api.anthropic.com/v1"
@@ -127,30 +128,10 @@ def call_claude(stats: dict, mode: str, previous: list[dict], key: str, http: Po
     return parse_analysis(text), model
 
 
-def rule_analysis(stats: dict, mode: str) -> dict:
-    """Ocena bez AI (brak klucza albo błąd API): etap i prognoza z prostych reguł."""
-    e = stats.get("eth") or {}
-    sig = (stats.get("signal") or {}).get("now")
-    d14, slope, rsi = e.get("dist_sma14d_pct"), e.get("sma14d_slope_7d_pct"), e.get("rsi14d")
-    if d14 is not None and slope is not None and d14 < 0 and slope < 0:
-        stage = "trend spadkowy"
-    elif d14 is not None and slope is not None and d14 > 0 and slope > 0:
-        stage = "trend wzrostowy"
-    else:
-        stage = "bez wyraźnego trendu"
-    if rsi is not None and rsi < 30:
-        stage += " · wyprzedanie"
-    elif rsi is not None and rsi > 70:
-        stage += " · wykupienie"
-    ch = e.get("change_pct") or {}
-    parts = [f"ETH: {rc.fmt_pct(ch.get('24h'))} w 24 h, {rc.fmt_pct(ch.get('7d'))} w 7 dni, {rc.fmt_pct(ch.get('30d'))} w 30 dni."]
-    parts += [h[0].upper() + h[1:] + "." for h in (stats.get("hints") or [])[:3]]
-    f7 = {"LONG": ma.UP, "SHORT": ma.DOWN}.get(sig, ma.FLAT)
-    sc = (stats.get("forecast_score") or {}).get("24h") or {}
-    track = (f"Prognozy 24 h: {sc['trafione']}/{sc['rozliczone']} trafione." if sc.get("rozliczone")
-             else "Brak rozliczonych prognoz.")
-    return {"stage": stage, "title": f"Ocena automatyczna (reguły): {stage}", "text": " ".join(parts),
-            "f24": ma.FLAT, "f7": f7, "conf": "niska", "track": track}
+def rule_analysis(stats: dict, mode: str, previous: dict | None = None) -> dict:
+    """Ocena bez AI (brak klucza albo błąd API): wiele czynników z wagami -
+    patrz `live/report_rules.py`."""
+    return rules.analyze(stats, mode, previous)
 
 
 def build_entry(s: dict, stats: dict, analysis: dict, mode: str, source: str, now: float) -> dict:
@@ -175,6 +156,8 @@ def build_entry(s: dict, stats: dict, analysis: dict, mode: str, source: str, no
         "signalPnl": ma._r(sig.get("pnlPct")),
         "votes": (s.get("votes") or {}).get("now"),
         **{k: analysis.get(k) for k in ("stage", "title", "text", "f24", "f7", "conf", "track")},
+        # ocena z reguł: bilans czynników (−1…+1) i same czynniki
+        **({k: analysis[k] for k in ("score24", "score7", "factors") if k in analysis}),
         "source": source,
         "alarms": s.get("alarms") or [],
         "stats": {
@@ -229,9 +212,23 @@ def main(argv: list[str] | None = None, *, http: PostFn = _http) -> int:
     else:
         print("Brak sekretu ANTHROPIC_API_KEY - ocena z reguł.")
     if analysis is None:
-        analysis = rule_analysis(stats, mode)
+        prev_same = next((r for r in reversed(reports) if r.get("type") == mode), None)
+        analysis = rule_analysis(stats, mode, prev_same)
     entry = build_entry(s, stats, analysis, mode, source, now)
     reports = [r for r in reports if r.get("id") != entry["id"]] + [entry]
+    # test wsteczny reguł od pierwszej świecy Hydry (zasada Jakuba: liczyć od
+    # początku), odświeżany przy każdym raporcie; osobny element archiwum,
+    # strona pokazuje go obok trafności prognoz na żywo
+    try:
+        first = next((c["ts"] for c in raw.get("candles") or [] if c.get("ts")), None)
+        if first is not None:
+            start = (int(first) // 86400) * 86400 + 18 * 3600 + 40 * 60
+            bt = rules.backtest(raw, start if start >= first else start + 86400, now)
+            if bt:
+                reports = [r for r in reports if r.get("type") != "backtest"]
+                reports.insert(0, {"id": "backtest", "type": "backtest", "ts": int(now), **bt})
+    except Exception as exc:  # noqa: BLE001 - test wsteczny nie może zatrzymać raportu
+        print(f"UWAGA: test wsteczny reguł nie powiódł się ({type(exc).__name__}: {exc}).")
     st.save_reports(reports[-MAX_ENTRIES:])
     print(f"Raport {mode} ({source}): {entry['stage']} · 24 h {entry['f24']} · 7 dni {entry['f7']} ({entry['conf']}).")
     print(entry["text"])

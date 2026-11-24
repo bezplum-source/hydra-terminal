@@ -1586,7 +1586,24 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <code>HYDRA_REPORT_MODEL</code> if set, otherwise the newest "sonnet" model from the
           API's model list. Without the secret, or if the API fails or answers in the wrong
           shape, the entry is still written with a rule-based assessment and marked
-          "reguły". The workflow commits only <code>data/reports.json</code> (rebasing on the
+          "reguły". The owner chose not to set up an API account (2026-11-24), so in practice
+          the archive uses the rule-based assessment of <code>live/report_rules.py</code>:
+          up to twelve factors each vote up or down with a weight fixed in advance (14-day
+          average and its slope, 30-day change, 50/100-day averages, the strategy vote, RSI,
+          stretch from the average, funding, aggressors, stablecoins, wallets with timing,
+          option skew), separately for 7 days (trend, flows) and 24 hours (stretch and
+          positioning weigh more); the weighted balance (−1…+1) gives the call ("bok" below
+          0.2), its size the confidence (0.55 / 0.75), lowered one step when DVOL jumps above
+          1.1× its average. The text names the stage, the changes over several periods and
+          since the previous report, the strongest factors for and against, and the price level
+          that would change the picture. Every report also replays the same rules once a day
+          over Hydra's whole history (<code>report_rules.backtest()</code>, only data known at
+          each moment) and stores the result as the archive element of type "backtest", shown
+          under the accuracy tiles next to the headline-signal and "always sideways"
+          baselines. The first replay (23.08–24.11.2026, 93 days) was honest about it: the
+          rules hit 28% of 24-hour calls (signal 43%, "always sideways" 40%) and 40% of 7-day
+          calls (signal 43%, sideways 47%) — no better than the baselines; the weights were not
+          re-fitted to that history (project rule), the live record decides. The workflow commits only <code>data/reports.json</code> (rebasing on the
           hourly data commits if needed), and <code>update.yml</code> runs right after it
           (<code>workflow_run</code>) and rebuilds the site: <code>build_site.py</code> renders
           <code>live/reports_template.html</code> with every entry settled against the ETH price

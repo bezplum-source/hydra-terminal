@@ -68,16 +68,22 @@ def test_claude_analysis_is_archived_with_newest_sonnet_and_key_only_in_header(e
 def test_dedup_within_6h_and_force(env):
     assert rw.main(["--mode", "daily", "--now", str(NOW)]) == 0
     assert rw.main(["--mode", "daily", "--now", str(NOW + 3600)]) == 0
-    assert len(st.load_reports()) == 1
+    reps = lambda: [r for r in st.load_reports() if r["type"] != "backtest"]  # noqa: E731
+    assert len(reps()) == 1
     assert rw.main(["--mode", "weekly", "--now", str(NOW + 3600)]) == 0  # inny typ - osobno
-    assert len(st.load_reports()) == 2
+    assert len(reps()) == 2
+    # test wsteczny: jeden element, odświeżany przy każdym raporcie
+    bts = [r for r in st.load_reports() if r["type"] == "backtest"]
+    assert len(bts) == 1 and bts[0]["days"] >= 1 and "24h" in bts[0] and "flat_pct" in bts[0]
 
 
 def test_no_key_or_bad_answer_falls_back_to_rules(env, monkeypatch):
     assert rw.main(["--mode", "daily", "--now", str(NOW)]) == 0
     e = st.load_reports()[-1]
-    assert e["source"] == "reguły" and e["f24"] in ("wzrost", "spadek", "bok") and e["text"].startswith("ETH:")
-    assert "." not in e["text"].split("w 24 h")[0].split(":")[1]  # polski przecinek dziesiętny
+    assert e["source"] == "reguły" and e["f24"] in ("wzrost", "spadek", "bok") and e["text"].startswith("ETH ")
+    assert "Za spadkiem" in e["text"] and "Prognoza z reguł" in e["text"]
+    assert "." not in e["text"].split("w dobę")[0].split(":")[1]  # polski przecinek dziesiętny
+    assert e["factors"] and e["score7"] is not None
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     calls = []
     assert rw.main(["--mode", "weekly", "--now", str(NOW)], http=_fake_http('{"f24": "w górę"}', calls)) == 0

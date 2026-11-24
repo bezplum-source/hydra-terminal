@@ -440,13 +440,17 @@ def _build_reports_page_data(reports: list | None, market_history: dict | None) 
     eth = ma.Series(((market_history or {}).get("coins") or {}).get("ETH"))
     now = eth.t[-1] if eth.t else 0
     entries = []
+    backtest = None
     for e in reports or []:
         if not isinstance(e, dict) or not e.get("ts"):
+            continue
+        if e.get("type") == "backtest":
+            backtest = e
             continue
         entries.append({**e, "outcome": ma.forecast_outcome(e, eth, now) if e.get("f24") else None})
     score = ma.score_forecasts(ma.rows_from_reports(entries), eth, now) if entries else None
     as_of = datetime.datetime.fromtimestamp(now, _WARSAW).strftime("%d.%m.%Y %H:%M") if now else None
-    return {"entries": entries, "score": score, "asOf": as_of}
+    return {"entries": entries, "score": score, "asOf": as_of, "backtest": backtest}
 
 
 def _compose(template_path: Path, data: dict) -> str:

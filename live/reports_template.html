@@ -89,6 +89,8 @@
   .alarm { color: var(--bad-glow); font-size: 12.5px; }
   .src { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; }
   .empty { color: var(--text-secondary); font-size: 14px; padding: 24px 16px; background: var(--bg-elevated); border: 1px dashed var(--border-strong); border-radius: 12px; }
+  .bt { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; margin: -6px 0 0; max-width: 90ch; }
+  .bt b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
   .foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); line-height: 1.6; }
 
   @media (max-width: 640px) {
@@ -112,6 +114,7 @@
     <button type="button" class="tab" role="tab" id="tab-weekly" data-type="weekly" aria-selected="false">Tygodniowe<b id="n-weekly">0</b></button>
   </div>
   <section class="score" id="score" aria-label="Trafność prognoz"></section>
+  <p class="bt" id="backtest"></p>
   <section class="list" id="list" role="tabpanel"></section>
   <p class="foot" id="foot"></p>
 </div>
@@ -185,6 +188,16 @@ function render() {
     b.setAttribute('aria-selected', String(t === current));
   });
   document.getElementById('score').innerHTML = scoreHtml(DATA.score);
+  const bt = DATA.backtest;
+  const btEl = document.getElementById('backtest');
+  if (bt && bt['24h'] && bt['7d']) {
+    const d = new Date(bt.from_ts * 1000);
+    const from = String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0');
+    btEl.innerHTML = 'Test wsteczny reguł od ' + from + ' (' + bt.days + ' dni, te same reguły odegrane na historii Hydry): ' +
+      '24 h <b>' + bt['24h'].trafnosc_pct + '%</b> trafień (kierunek sygnału ' + bt['24h'].punkt_odniesienia_sygnal_trafnosc_pct + '%, „zawsze bok” ' + bt.flat_pct['24h'] + '%) · ' +
+      '7 dni <b>' + bt['7d'].trafnosc_pct + '%</b> (sygnał ' + bt['7d'].punkt_odniesienia_sygnal_trafnosc_pct + '%, „zawsze bok” ' + bt.flat_pct['7d'] + '%). ' +
+      'Przy trzech możliwych odpowiedziach zgadywanie daje ok. 33%.';
+  } else { btEl.textContent = ''; }
   const rows = all.filter((e) => e.type === current);
   document.getElementById('list').innerHTML = rows.length
     ? rows.map((e, i) => entryHtml(e, i === 0)).join('')

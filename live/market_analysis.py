@@ -150,7 +150,8 @@ def analysis_stats(raw: dict, now: float) -> dict:
     """Wszystkie liczby, na których opiera się słowna analiza (słownik JSON)."""
     coins = (raw.get("market") or {}).get("coins") or {}
     eth, btc = Series(coins.get("ETH")), Series(coins.get("BTC"))
-    candles = [c for c in raw.get("candles") or [] if c.get("ts") is not None and c.get("price")]
+    # tylko to, co było znane w chwili `now` (pozwala też liczyć wstecz)
+    candles = [c for c in raw.get("candles") or [] if c.get("ts") is not None and c.get("price") and c["ts"] <= now]
     first_ts = candles[0]["ts"] if candles else None
     last = candles[-1] if candles else {}
     st: dict = {"generated_ts": int(now), "eth": price_block(eth, now, first_ts), "btc": price_block(btc, now, first_ts)}
@@ -188,13 +189,13 @@ def analysis_stats(raw: dict, now: float) -> dict:
 
     # rynek kontraktów (Hyperliquid)
     d = raw.get("derivs") or {}
-    fund = d.get("funding") or []
+    fund = [r for r in d.get("funding") or [] if r["t"] / 1000 <= now]
 
     def fund_avg(days):
         rows = [r["rate"] for r in fund if r["t"] / 1000 >= now - days * DAY]
         return _r(sum(rows) / len(rows) * 24 * 365 * 100, 1) if rows else None
 
-    snaps = [s for s in d.get("snapshots") or [] if s.get("oi")]
+    snaps = [s for s in d.get("snapshots") or [] if s.get("oi") and s["t"] / 1000 <= now]
     oi = Series([[s["t"], s["oi"]] for s in snaps])
     oi_now = oi.at(now, 6 * HOUR)
     wk = [c for c in candles if c["ts"] >= now - 7 * DAY]
@@ -214,7 +215,8 @@ def analysis_stats(raw: dict, now: float) -> dict:
     }
 
     # stablecoiny (ostatni pełny dzień = przedostatni punkt)
-    tot = sorted((raw.get("stables") or {}).get("total") or [], key=lambda r: r[0])[:-1]
+    # tylko pełne dni znane w chwili `now` (dzień D jest pełny od D + 24 h)
+    tot = sorted((r for r in (raw.get("stables") or {}).get("total") or [] if r[0] + DAY <= now), key=lambda r: r[0])
     by_day = {int(r[0]): r[1] for r in tot}
     sb: dict = {}
     if tot:
@@ -229,7 +231,7 @@ def analysis_stats(raw: dict, now: float) -> dict:
     dv = Series(o.get("dvol"))
     dv_now = dv.at(now)
     dv200 = dv.window(now - 200 * DAY, now)
-    osn = sorted(o.get("snapshots") or [], key=lambda s: s["t"])
+    osn = sorted((s for s in o.get("snapshots") or [] if s["t"] / 1000 <= now), key=lambda s: s["t"])
     skew = Series([[s["t"], s["skew"]] for s in osn if s.get("skew") is not None])
     st["options"] = {
         "dvol_now": _r(dv_now, 1),
@@ -240,7 +242,7 @@ def analysis_stats(raw: dict, now: float) -> dict:
         "skew_now": _r(skew.at(now, 6 * HOUR), 1),
         "skew_24h_ago": _r(skew.at(now - DAY, 6 * HOUR), 1),
         "skew_7d_ago": _r(skew.at(now - 7 * DAY, 6 * HOUR), 1),
-        "put_call_oi_now": osn[-1].get("pcOi") if osn else None,
+        "put_call_oi_now": osn[-1].get("pcOi") if osn and now - osn[-1]["t"] / 1000 <= 6 * HOUR else None,
     }
 
     # portfele z wyczuciem (akumulacja 7 dni, ETH)
