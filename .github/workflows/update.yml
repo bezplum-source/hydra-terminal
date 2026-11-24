@@ -52,7 +52,9 @@ on:
     - cron: "7 * * * *"
   workflow_dispatch: {}
   workflow_run:
-    workflows: ["Aktualizacja danych Hyperliquid ETH-PERP"]
+    # "Raporty Hydry" (24.11.2026): strona z archiwum raportow (site/reports.html)
+    # odswieza sie zaraz po dopisaniu nowego raportu, bez czekania do pelnej godziny.
+    workflows: ["Aktualizacja danych Hyperliquid ETH-PERP", "Raporty Hydry"]
     types: [completed]
     branches: [main]
 
