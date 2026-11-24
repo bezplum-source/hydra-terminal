@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from hydra_signals import strategies as strat  # noqa: E402
+from live import market_analysis as ma  # noqa: E402
 
 try:
     from zoneinfo import ZoneInfo
@@ -390,6 +391,17 @@ SIG_COLOR = {"LONG": C["good"], "SHORT": C["bad"], "HOLD": C["text2"]}
 SIG_LABEL = {"LONG": "LONG", "SHORT": "SHORT", "HOLD": "NEUTRALNY"}
 
 
+def _analysis_lines(an: dict | None) -> list[str]:
+    import textwrap
+
+    if not an or not an.get("text"):
+        return []
+    lines: list[str] = []
+    for para in str(an["text"]).split("\n"):
+        lines += textwrap.wrap(para.strip(), width=92) or [""]
+    return lines[:9]
+
+
 def _font():
     from matplotlib import font_manager
 
@@ -421,7 +433,9 @@ def render(s: dict, out: str) -> None:
 
     weekly = s["mode"] == "weekly"
     n_rows = len((s.get("race") or {}).get("rows") or [])
-    px = 158 + 26 * min(len(s["alarms"]), 4) + 205 + 165 + (315 if weekly else 305) + 85 + 27 * n_rows + 80
+    an_lines = _analysis_lines(s.get("analysis"))
+    an_px = (135 + 22 * len(an_lines)) if s.get("analysis") else 0
+    px = 158 + 26 * min(len(s["alarms"]), 4) + 205 + an_px + 165 + (315 if weekly else 305) + 85 + 27 * n_rows + 80
     if weekly:
         px += 275 + 215
     H = px / 100
@@ -484,6 +498,33 @@ def render(s: dict, out: str) -> None:
         fig.text(0.925, ytop(y + 160), f"{fmt_pct(p['distPct'], plus=False).lstrip('−')} {'nad' if p['distPct'] >= 0 else 'pod'} średnią 14 dni",
                  ha="right", va="center", fontsize=12, color=C["text2"])
     y += 205
+
+    # --- ocena rynku (pisana przez Claude'a w zaplanowanym zadaniu) ---
+    an = s.get("analysis")
+    if an:
+        _panel(fig, (0.04, ytop(y + an_px - 15), 0.92, (an_px - 15) / (H * 100)), "Ocena rynku")
+        if an.get("stage"):
+            fig.text(0.925, ytop(y + 12), an["stage"], color=C["accent"], fontsize=11, va="top", ha="right",
+                     fontweight="bold")
+        arrows = {"wzrost": ("↑", C["good"]), "spadek": ("↓", C["bad"]), "bok": ("→", C["text2"])}
+        cx = 0.075
+        for lab, key in (("24 h", "f24"), ("7 dni", "f7")):
+            val = an.get(key)
+            if val in arrows:
+                ar, col = arrows[val]
+                t = fig.text(cx, ytop(y + 68), f"{lab}: {ar} {val}", color=col, fontsize=13, fontweight="bold",
+                             va="center", bbox=dict(boxstyle="round,pad=0.35", facecolor=C["bg"], edgecolor=col,
+                                                    linewidth=1))
+                cx += 0.2
+        if an.get("conf"):
+            fig.text(cx, ytop(y + 68), f"pewność: {an['conf']}", color=C["text2"], fontsize=11.5, va="center")
+        yy = y + 105
+        for ln in an_lines:
+            fig.text(0.075, ytop(yy), ln, color=C["text"], fontsize=12, va="center")
+            yy += 22
+        if an.get("track"):
+            fig.text(0.075, ytop(yy + 4), an["track"], color=C["muted"], fontsize=10.5, va="center")
+        y += an_px
 
     # --- głosy ---
     v = s["votes"]["now"]
@@ -656,10 +697,48 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--mode", choices=("daily", "weekly"), default="daily")
     ap.add_argument("--out", default="hydra_raport.png")
     ap.add_argument("--now", type=float, default=None, help="unix s (domyślnie teraz)")
+    ap.add_argument("--stats-json", default=None,
+                    help="zapisz statystyki rynku z wielu okresów (+ rozliczenie prognoz) do JSON - podstawa analizy")
+    ap.add_argument("--forecast-log", default=None,
+                    help="plik z dziennikiem prognoz (tabela z claude/hydrav2-prognozy.md) do rozliczenia")
+    ap.add_argument("--analysis", default=None,
+                    help='JSON z oceną rynku: {"stage", "text", "f24", "f7", "conf", "track"} - rysowany na karcie')
+    ap.add_argument("--no-render", action="store_true", help="tylko statystyki, bez obrazka")
+    ap.add_argument("--from-archive", action="store_true",
+                    help="ocena rynku z dzisiejszego wpisu w data/reports.json (napisanego przez Claude'a w "
+                         "GitHub Actions); kod wyjścia 3, gdy takiego wpisu nie ma (brak klucza API albo błąd)")
     args = ap.parse_args(argv)
     raw = load(Path(args.repo))
-    s = collect(raw, args.now or dt.datetime.now(dt.timezone.utc).timestamp(), args.mode)
-    render(s, args.out)
+    now = args.now or dt.datetime.now(dt.timezone.utc).timestamp()
+    s = collect(raw, now, args.mode)
+    if args.stats_json:
+        stats = ma.analysis_stats(raw, now)
+        if args.forecast_log:
+            try:
+                rows = ma.parse_forecasts(Path(args.forecast_log).read_text(encoding="utf-8"))
+            except OSError:
+                rows = []
+            coins = (raw.get("market") or {}).get("coins") or {}
+            stats["forecast_score"] = ma.score_forecasts(rows, ma.Series(coins.get("ETH")), now)
+        stats["race_live"] = [{k: r[k] for k in ("key", "name", "result", "change", "position", "trades")}
+                              for r in (s.get("race") or {}).get("rows", [])]
+        Path(args.stats_json).write_text(json.dumps(stats, ensure_ascii=False, indent=1), encoding="utf-8")
+    if args.from_archive:
+        reports = _load_json(Path(args.repo) / "data" / "reports.json", [])
+        entry = next((e for e in reversed(reports if isinstance(reports, list) else [])
+                      if e.get("type") == args.mode and now - e.get("ts", 0) <= 4 * HOUR), None)
+        if not entry or not str(entry.get("source", "")).startswith("Claude"):
+            print("BRAK_ANALIZY_Z_ARCHIWUM: " + ("tylko ocena z reguł" if entry else "brak dzisiejszego wpisu"),
+                  file=sys.stderr)
+            return 3
+        s["analysis"] = {k: entry.get(k) for k in ("stage", "text", "f24", "f7", "conf", "track")}
+    if args.analysis:
+        try:
+            s["analysis"] = json.loads(Path(args.analysis).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"(nie udało się wczytać oceny rynku: {exc})", file=sys.stderr)
+    if not args.no_render:
+        render(s, args.out)
     print(text_summary(s))
     return 0
 

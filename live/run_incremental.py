@@ -1936,6 +1936,7 @@ def main() -> int:
         market_history=market_history,
         stables_history=stables_history,
         options_history=options_history,
+        reports=st.load_reports(),
     )
     log(f"Strona wygenerowana: site/index.html ({len(candles_history)} swiec w pelnej historii).")
 

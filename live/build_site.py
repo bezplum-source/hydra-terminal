@@ -22,6 +22,7 @@ from hydra_signals import strategies as strat  # noqa: E402
 from live import market as mkt  # noqa: E402
 from live import options as opt  # noqa: E402
 from live import stables as stb  # noqa: E402
+from live import market_analysis as ma  # noqa: E402
 
 MAX_DISPLAY_CANDLES = 500
 
@@ -126,6 +127,13 @@ def _build_derivs_summary(derivs_history: dict | None) -> dict | None:
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = Path(__file__).resolve().parent / "template.html"
+REPORTS_TEMPLATE_PATH = Path(__file__).resolve().parent / "reports_template.html"
+try:
+    from zoneinfo import ZoneInfo
+
+    _WARSAW = ZoneInfo("Europe/Warsaw")
+except Exception:  # noqa: BLE001
+    _WARSAW = datetime.timezone(datetime.timedelta(hours=1))
 SITE_DIR = ROOT / "site"
 
 
@@ -425,6 +433,43 @@ def _build_options_summary(options_history: dict | None) -> dict | None:
     }
 
 
+def _build_reports_page_data(reports: list | None, market_history: dict | None) -> dict:
+    """Dane strony "Raporty" (site/reports.html): wpisy archiwum z rozliczeniem
+    prognoz według cen ETH z Hyperliquid. "Teraz" = ostatnia znana cena (a nie
+    zegar), więc wynik jest deterministyczny."""
+    eth = ma.Series(((market_history or {}).get("coins") or {}).get("ETH"))
+    now = eth.t[-1] if eth.t else 0
+    entries = []
+    for e in reports or []:
+        if not isinstance(e, dict) or not e.get("ts"):
+            continue
+        entries.append({**e, "outcome": ma.forecast_outcome(e, eth, now) if e.get("f24") else None})
+    score = ma.score_forecasts(ma.rows_from_reports(entries), eth, now) if entries else None
+    as_of = datetime.datetime.fromtimestamp(now, _WARSAW).strftime("%d.%m.%Y %H:%M") if now else None
+    return {"entries": entries, "score": score, "asOf": as_of}
+
+
+def _compose(template_path: Path, data: dict) -> str:
+    data_json = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    template = template_path.read_text(encoding="utf-8")
+    if "__DATA_JSON__" not in template:
+        raise RuntimeError(f"Szablon {template_path.name} nie zawiera placeholdera __DATA_JSON__")
+    html = template.replace("__DATA_JSON__", data_json)
+    marker = "</style>"
+    idx = html.find(marker)
+    if idx == -1:
+        raise RuntimeError("Szablon nie zawiera znacznika </style> — nie da się złożyć pełnego dokumentu HTML")
+    return (
+        "<!doctype html>\n<html lang=\"pl\">\n<head>\n"
+        "<meta charset=\"UTF-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+        + html[: idx + len(marker)]
+        + "\n</head>\n<body>\n"
+        + html[idx + len(marker):]
+        + "\n</body>\n</html>\n"
+    )
+
+
 def build_site(
     candles_history: list[dict],
     meta: dict | None = None,
@@ -433,6 +478,7 @@ def build_site(
     market_history: dict | None = None,
     stables_history: dict | None = None,
     options_history: dict | None = None,
+    reports: list | None = None,
 ) -> None:
     display_candles = candles_history[-MAX_DISPLAY_CANDLES:]
     # Streaki (tabela "Historia sygnalow" + podsumowanie wynik/win rate) sa
@@ -516,6 +562,10 @@ def build_site(
 
     SITE_DIR.mkdir(parents=True, exist_ok=True)
     (SITE_DIR / "index.html").write_text(full_html, encoding="utf-8")
+    # Archiwum raportów (24.11.2026): osobna strona z zakładkami Dzienne / Tygodniowe.
+    (SITE_DIR / "reports.html").write_text(
+        _compose(REPORTS_TEMPLATE_PATH, _build_reports_page_data(reports, market_history)), encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
@@ -535,5 +585,6 @@ if __name__ == "__main__":
         market_history=st.load_market_history(),
         stables_history=st.load_stables_history(),
         options_history=st.load_options_history(),
+        reports=st.load_reports(),
     )
     print(f"site/index.html zaktualizowany ({len(st.load_candles_history())} świec w historii).")

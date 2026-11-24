@@ -1,0 +1,267 @@
+name: Aktualizacja danych Hydra Terminal
+
+# Uruchamia sie co godzine (o minucie 7, nie 0 - zeby nie trafic w
+# najbardziej zatloczony moment infrastruktury GitHub Actions) i pobiera
+# nowe transakcje Swap z Uniswap V3, przelicza sygnal, commituje
+# zaktualizowana strone z powrotem do repo, i publikuje ja na GitHub Pages.
+#
+# UWAGA: Netlify (dawniej podpiety jako "continuous deployment") zostal
+# porzucony jako hosting - jego model rozliczen "credits" (od 2026: darmowy
+# plan = 300 kredytow/miesiac, ~15 kredytow/deploy produkcyjny) nie ma
+# szans pokryc cyklu co godzine (do ~720 deployow/miesiac). GitHub Pages
+# jest darmowy i bez limitu liczby deployow - pasuje do tego cyklu.
+# WYMAGA jednorazowej reczonej konfiguracji w repo (Settings -> Pages ->
+# Build and deployment -> Source: "GitHub Actions") - bez tego krok
+# "actions/deploy-pages" ponizej zwroci blad przy pierwszym uruchomieniu.
+#
+# "workflow_dispatch" pozwala odpalic to recznie z zakladki Actions w
+# GitHub - przydatne przy pierwszym uruchomieniu, zeby nie czekac do
+# najblizszej pelnej godziny.
+#
+# "workflow_run" (dodane w Fazie "wyscig harmonogramu z Hyperliquid",
+# zgloszenie uzytkownika 2026-09-11: "strona odswiezyla sie bez
+# Hyperliquid, bo Hyperliquid nadal bylo w trakcie aktualizacji - Actions
+# dla hyperliquid zakonczylo sie 2 minuty po aktualizacji strony").
+#
+# PRZYCZYNA: ten workflow czyta bufor Hyperliquid z GitHub Actions cache
+# (patrz krok "Przywroc bufor..." nizej), zapisywany PRZEZ
+# "hyperliquid-update.yml" dopiero PO zakonczeniu ~50-minutowego nasluchu
+# WS. Ten workflow odpala sie o minucie 7, "hyperliquid-update.yml" o
+# minucie 20 + ~50 min nasluchu = konczy sie kolo minuty 10 NASTEPNEJ
+# godziny - czyli 3 minuty PO tym, jak ten workflow juz przeczytal
+# (nieuchronnie starszy o ~godzine) cache. Oba offsety (7 i 20) zostaly
+# dobrane wylacznie zeby joby nie rywalizowaly o runnery w tej samej
+# minucie (patrz komentarze w obu plikach) - nikt nie liczyl wtedy, ze
+# 20+50=70 wypycha koniec nasluchu ZA nastepny cykl tego workflow'a.
+# Przesuniecie samego crona byloby kruche (dalej zaklada STALY czas
+# nasluchu, ktory moze sie wahac, plus GitHub czasem opoznia start
+# zaplanowanych workflow'ow pod obciazeniem) - zamiast zgadywac offset,
+# ten workflow odpala sie DODATKOWO natychmiast po KAZDYM zakonczeniu
+# "hyperliquid-update.yml" (sukces czy porazka - kroki nizej i tak
+# bezpiecznie czytaja NAJNOWSZY dostepny cache przez "restore-keys", wiec
+# uruchomienie po nieudanym nasluchu nie szkodzi, tylko czyta to, co bylo
+# wczesniej). Efekt: obok cogodzinnego crona (zapasowy, np. gdyby
+# "hyperliquid-update.yml" zostal kiedys wylaczony), strona dostaje DRUGI,
+# samonaprawiajacy sie przebieg zaraz po kazdym Hyperliquid - jesli
+# zaplanowany przebieg o minucie 7 zlapal stare dane, ten kolejny (kolo
+# minuty 10-15) je koryguje, bez czekania na pelna godzine. Tanie i
+# bezpieczne - GitHub Actions jest bezplatny bez limitu dla repo
+# publicznych (patrz komentarz na gorze pliku).
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch: {}
+  workflow_run:
+    # "Raporty Hydry" (24.11.2026): strona z archiwum raportow (site/reports.html)
+    # odswieza sie zaraz po dopisaniu nowego raportu, bez czekania do pelnej godziny.
+    workflows: ["Aktualizacja danych Hyperliquid ETH-PERP", "Raporty Hydry"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: hydra-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Ustaw Pythona
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zainstaluj zaleznosci
+        run: pip install -r requirements.txt
+
+      - name: Uruchom testy jednostkowe (nie commituj, jesli cos nie dziala)
+        run: python -m pytest tests/ -q
+
+      - name: Wyczysc ewentualne pozostalosci po testach
+        # Zabezpieczenie dodane 2026-08-24 przy okazji naprawy analogicznego
+        # problemu w "hyperliquid-update.yml": bug w izolacji jednego z
+        # testow (naprawiony w tej samej dostawie) potrafil zostawic w
+        # drzewie roboczym niezacommitowane zmiany w plikach data/*.json
+        # (pisal do prawdziwych sciezek zamiast do tmp_path). Tutaj ponizszy
+        # krok "run_incremental.py" i tak nadpisuje te pliki poprawnymi
+        # danymi PRZED commitem, wiec to byla nieszkodliwa usterka - ale
+        # ten krok to tania, dodatkowa warstwa bezpieczenstwa na wypadek
+        # podobnego bledu izolacji w przyszlym tescie.
+        run: git checkout -- .
+
+      - name: Przywroc bufor transakcji Hyperliquid z cache (tylko odczyt)
+        # NAPRAWA (Faza "bufor poza git", zgloszenie uzytkownika 2026-09-02:
+        # "na stronie nic sie nie odswiezylo w zwiazku z hyperliquid - tyle
+        # samo sledzonych portfeli, takie same decyzje good/bad", mimo ze
+        # "hyperliquid-update.yml" przeszedl 7x w nocy bez bledu).
+        #
+        # PRZYCZYNA: data/hyperliquid_trades_buffer.jsonl przestal byc
+        # sledzony przez git w tej samej fazie (patrz .gitignore) - dobre
+        # dla "hyperliquid-update.yml" (ktory dostal wlasny krok
+        # actions/cache/restore+save), ale ten workflow ("update.yml",
+        # ktory faktycznie liczy composite_perp/klasyfikacje przez
+        # run_incremental.py -> HyperliquidScoringEngine, patrz Faza H2)
+        # NIE dostal ZADNEGO odpowiednika - jego "actions/checkout" po
+        # prostu juz nie znajdowal tego pliku wsrod sledzonych, wiec
+        # `load_hyperliquid_trades_buffer()` (defensywnie, patrz jej
+        # docstring) cicho zwracal pusta liste PRZY KAZDYM URUCHOMIENIU -
+        # HyperliquidScoringEngine.run() na pustej liscie nowych transakcji
+        # nie aktualizuje EMA/stanu (ten sam mechanizm co "dust filter":
+        # "jesli PO odsianiu dustu nie zostaje zadna transakcja w
+        # new_trades, silnik zwraca None") - stad calkowicie zamrozone
+        # liczby sledzonych/sklasyfikowanych portfeli perp, mimo ze
+        # "hyperliquid-update.yml" naprawde zbieral nowe dane w tle.
+        #
+        # NAPRAWA: identyczny krok cache restore co w
+        # "hyperliquid-update.yml" (ten sam "restore-keys" prefiks - cache
+        # jest wspoldzielony miedzy wszystkimi workflow w tym repo, wiec
+        # zawsze zlapie najnowszy wpis zapisany PRZEZ TAMTEN workflow).
+        # Ten workflow NIE zapisuje wlasnego wpisu do cache (nigdy nie
+        # modyfikuje tego pliku, tylko go czyta do klasyfikacji) - stad
+        # tylko "restore", bez odpowiadajacego kroku "save".
+        uses: actions/cache/restore@v4
+        with:
+          path: data/hyperliquid_trades_buffer.jsonl
+          key: hyperliquid-buffer-v1-readonly-${{ github.run_id }}
+          restore-keys: |
+            hyperliquid-buffer-v1-
+
+      - name: Pobierz nowe dane on-chain i przelicz sygnal
+        env:
+          ALCHEMY_RPC_URL: ${{ secrets.ALCHEMY_RPC_URL }}
+          # Faza "Base L2, etap B0" - opcjonalny. Jesli ten sekret nie
+          # istnieje w repo, ${{ secrets.ALCHEMY_BASE_RPC_URL }} rozwija sie
+          # po prostu do pustego stringa - run_incremental.py wykrywa to i
+          # SAM pomija zbieranie danych z Base (patrz komentarz w kodzie),
+          # bez zadnego bledu calego kroku. Zeby wlaczyc: Settings -> Secrets
+          # and variables -> Actions -> dodaj sekret ALCHEMY_BASE_RPC_URL
+          # (URL RPC dla sieci Base, ta sama aplikacja Alchemy co dla
+          # mainnetu, z wlaczona siecia "Base").
+          ALCHEMY_BASE_RPC_URL: ${{ secrets.ALCHEMY_BASE_RPC_URL }}
+          # Faza "jezioro danych" (Etap B, R2 + Parquet) - dokladnie ten sam
+          # wzorzec co ALCHEMY_BASE_RPC_URL wyzej: te trzy sekrety sa
+          # OPCJONALNE. Jesli ktorykolwiek z nich nie istnieje w repo,
+          # live/lake.py wykrywa to i SAM pomija archiwizacje transakcji do
+          # R2 (patrz komentarz w kodzie), bez zadnego bledu calego kroku.
+          # Zeby wlaczyc: zalozyc bucket R2 w Cloudflare, wygenerowac token
+          # API scoped do tego bucketu, dodac ponizsze trzy sekrety w
+          # Settings -> Secrets and variables -> Actions.
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python live/run_incremental.py
+
+      - name: Zacommituj zaktualizowane dane i strone
+        run: |
+          git config user.name "hydra-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ site/
+
+          if git diff --cached --quiet; then
+            echo "Brak zmian do zacommitowania."
+            exit 0
+          fi
+
+          git commit -m "Automatyczna aktualizacja danych ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+
+          # Jesli w miedzyczasie ktos recznie zmienil cos w repo (np. edycja
+          # pliku przez przegladarke GitHub w tym samym momencie), zwykly
+          # "git push" zostanie odrzucony ("! [rejected] ... fetch first"),
+          # bo zdalna galaz "main" przesunela sie do przodu. Zamiast od razu
+          # poddawac caly job, probujemy kilka razy: pobierz najnowszy stan,
+          # przenies nasz commit na wierzch (rebase), sprobuj wyslac ponownie.
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "Push udany (proba $i)."
+              exit 0
+            fi
+            echo "Push nieudany (proba $i) - ktos inny zapisal zmiany w miedzyczasie. Sprawdzam kto..."
+            git fetch origin main
+
+            # NAPRAWA (2026-09-17, zgloszenie uzytkownika: "od niedawna sporo
+            # action Hydra nie przechodzi"): odkad "update.yml" odpala sie
+            # DODATKOWO przez "workflow_run" zaraz po kazdym zakonczeniu
+            # "hyperliquid-update.yml" (Faza "wyscig harmonogramu z
+            # Hyperliquid", 2026-09-11), przebiegow tego workflow jest ~2x
+            # wiecej niz wczesniej - co realnie podnioslo szanse, ze DWA
+            # osobne uruchomienia "update" wystartuja od tego samego stanu i
+            # oba policza WLASNE, niezaleznie swieze dane (nowe swiece,
+            # zaktualizowane EMA) z nakladajacego sie zakresu blokow, zanim
+            # ktorekolwiek zdazy zapushowac. Gdy tak sie stanie, `git rebase`
+            # probuje polaczyc DWIE fizycznie rozne, ale obie poprawne wersje
+            # tego samego pliku stanu (candles_history.json,
+            # scoring_state*.json, trade_buffer.csv, site/index.html) linia po
+            # linii - to nigdy nie moze sie udac sensownie (nie jest to
+            # konflikt w stylu "dwie osoby edytowaly rozne akapity", tylko dwa
+            # NIEZALEZNE przeliczenia tego samego stanu), stad prawdziwy
+            # konflikt tresci i przerwany job (dokladnie ten scenariusz, ktory
+            # oryginalny retry-loop z Fazy "utwardzenie workflow" swiadomie
+            # traktowal jako blad do zgloszenia, nie do automatycznego
+            # naprawienia - patrz komentarz w gorze pliku).
+            #
+            # Rozroznienie: jesli zdalny czubek to inny automatyczny przebieg
+            # DANYCH ("Automatyczna aktualizacja danych..."), nie ma sensu
+            # probowac REBASE'owac/laczyc dwoch niezaleznie policzonych stanow
+            # - drugi przebieg juz zapisal swiezsze dane (ten sam lancuch
+            # blokow, o krok dalej lub przynajmniej rownie aktualny), wiec
+            # WLASNY, teraz juz nieaktualny lokalny commit jest bezpiecznie
+            # porzucany (`git reset --hard origin/main`) i job konczy sie
+            # CZYSTO (exit 0, nie exit 1) - bez utraty danych: kazdy blok,
+            # ktory ten przebieg przetworzyl, a drugi przebieg jeszcze nie,
+            # zostanie po prostu ponownie pobrany i doliczony w NASTEPNYM
+            # uruchomieniu (bloki wciaz sa na lancuchu, nic nie ginie
+            # bezpowrotnie - ten sam mechanizm bezpieczenstwa co przy
+            # wyczerpaniu prob `eth_blockNumber`, patrz Faza "niezawodnosc
+            # odswiezania"). Jesli zdalny czubek to NATOMIAST prawdziwa, RECZNA
+            # zmiana uzytkownika (np. edycja docs.html przez przegladarke
+            # GitHub) - zachowanie bez zmian: probuj rebase, a przy
+            # prawdziwym konflikcie plikow przerwij job jawnym bledem, tak
+            # jak dotychczas.
+            REMOTE_TIP_MSG="$(git log -1 --format=%s origin/main)"
+            case "$REMOTE_TIP_MSG" in
+              "Automatyczna aktualizacja danych"*)
+                echo "Zdalna galaz ma juz swiezsze dane z INNEGO automatycznego przebiegu ($REMOTE_TIP_MSG) - odrzucam wlasny, teraz nieaktualny commit. Brakujace bloki dolicza kolejne uruchomienie. Konczie bez bledu."
+                git reset --hard origin/main
+                exit 0
+                ;;
+            esac
+
+            if ! git rebase origin/main; then
+              echo "Rebase nie powiodl sie (prawdziwy konflikt plikow, nie inny automatyczny przebieg) - przerywam."
+              git rebase --abort || true
+              exit 1
+            fi
+            sleep $((RANDOM % 8 + 3))
+          done
+
+          echo "Nie udalo sie zapisac zmian po kilku probach."
+          exit 1
+
+      - name: Skonfiguruj GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Przygotuj artefakt strony (folder site/)
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Opublikuj na GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1427,6 +1427,7 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           <tr><td><code>data/derivs_history.json</code></td><td>ETH-PERP funding rate history (backfilled, hourly) and open-interest snapshots (one per run) from Hyperliquid — see <a href="#derivs">Funding rate &amp; open interest</a></td></tr>
           <tr><td><code>data/stables_history.json</code></td><td>Daily total stablecoin supply from DefiLlama (<code>[day_s, usd]</code>, 400 days) — see <a href="#stables">Stablecoin supply</a></td></tr>
           <tr><td><code>data/options_history.json</code></td><td>Hourly DVOL closes (backfilled, 220 days) and option snapshots (put/call, skew; one per run) from Deribit — see <a href="#options">ETH options</a></td></tr>
+          <tr><td><code>data/reports.json</code></td><td>Archive of daily and weekly reports (assessment, direction calls, key numbers), written by <code>live/report_writer.py</code> — see <a href="#reports-archive">Report archive page</a></td></tr>
           <tr><td><code>data/stats_reset_state.json</code></td><td>Optional, hand-edited (not pipeline-managed) — see <a href="#stats-reset">Resetting the win-rate counter</a> below</td></tr>
           <tr><td><code>data/scoring_state_lt.json</code></td><td>Mainnet EMA state, last signal — same as <code>scoring_state.json</code> but for the parallel 30-day track, see <a href="#long-term">Long term (30d) classification track</a></td></tr>
           <tr><td><code>data/regime_state_lt.json</code></td><td>Regime state machine for the 30-day track</td></tr>
@@ -1545,6 +1546,54 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           lines of text for the notification. The calculations (<code>collect()</code>) are
           tested without matplotlib (<code>tests/test_report_card.py</code>); matplotlib is not
           a pipeline dependency and is only imported to draw.
+        </p>
+        <p>
+          Since 2026-11-24 every report also carries a short written <strong>market
+          assessment</strong> ("Ocena rynku" panel): the stage of the market, what is going on,
+          and a direction call for the next 24 hours and 7 days (rise / fall / sideways, with a
+          confidence word). The numbers behind it come from <code>live/market_analysis.py</code>
+          (<code>report_card.py --stats-json</code>): ETH and BTC change over 24 h, 3, 7, 14,
+          30 and 90 days and since Hydra's first candle (Hyperliquid hourly closes), distance
+          from the 14-, 50- and 100-day averages and the 14-day average's slope, daily RSI(14),
+          the 30-day range, realized volatility, ETH versus BTC, the vote now and 1, 3 and 7
+          days ago, funding (now, 24 h, 7 d, 30 d), open interest change, forced closes,
+          aggressors, stablecoin supply change (7, 30, 90 days), DVOL against its average and
+          its 200-day percentile, option skew now / a day / a week ago, wallets with timing, and
+          a few rule-based hints. The scheduled task writes the assessment from these numbers
+          and draws it on the card (<code>--analysis</code>). Every call is logged in the
+          project document <code>claude/hydrav2-prognozy.md</code>;
+          <code>score_forecasts()</code> settles each one after its horizon against the ETH
+          price (sideways = within ±1% for 24 h, ±3% for 7 days) next to a plain baseline —
+          "the headline signal's direction" — so the card shows whether the written calls add
+          anything. These are paper-system forecasts, not investment advice.
+        </p>
+        <h3 id="reports-archive">Report archive page (site/reports.html)</h3>
+        <p>
+          Since 2026-11-24 the reports are also kept on the site, on the <strong>Raporty</strong>
+          page (link in the top bar), as short entries that expand, with two tabs:
+          <em>Dzienne</em> and <em>Tygodniowe</em>. They are written by the GitHub Actions
+          workflow <code>.github/workflows/reports.yml</code> ("Raporty Hydry", every day at
+          18:40 UTC = 19:40 Polish winter time; on a Polish Sunday the weekly report instead
+          of the daily one; also runnable by hand with a mode). It runs
+          <code>live/report_writer.py</code>, which computes the same statistics as the picture
+          report (<code>market_analysis.analysis_stats()</code>, the vote, the live race), asks
+          Claude through the Anthropic API for the assessment (stage, a one-line title, the
+          text, the 24-hour and 7-day direction call and confidence, a sentence on forecast
+          accuracy) and appends one entry to <code>data/reports.json</code> (newest 1,500 kept;
+          a second report of the same type within 6 hours is skipped). The API key is the
+          repository secret <code>ANTHROPIC_API_KEY</code>, added by the owner; it only goes into
+          the request header and is never logged. The model is the repository variable
+          <code>HYDRA_REPORT_MODEL</code> if set, otherwise the newest "sonnet" model from the
+          API's model list. Without the secret, or if the API fails or answers in the wrong
+          shape, the entry is still written with a rule-based assessment and marked
+          "reguły". The workflow commits only <code>data/reports.json</code> (rebasing on the
+          hourly data commits if needed), and <code>update.yml</code> runs right after it
+          (<code>workflow_run</code>) and rebuilds the site: <code>build_site.py</code> renders
+          <code>live/reports_template.html</code> with every entry settled against the ETH price
+          (✓ hit, ✕ miss, … pending, for 24 h and 7 days) and the accuracy tiles at the top,
+          next to the headline-signal baseline. Forecasts are settled from this archive; the
+          scheduled Claude tasks that send the picture report to the owner's phone reuse the
+          day's archived assessment.
         </p>
         <h3 id="stats-reset">Resetting the win-rate counter</h3>
         <p>
@@ -2133,6 +2182,9 @@ live/                      the automated, incremental pipeline
   options.py                 DVOL / option snapshot history + per-candle options fields
   build_site.py               renders site/index.html from template.html
   report_card.py             daily / weekly PNG report card for the scheduled reports
+  market_analysis.py         multi-period market statistics + settling logged forecasts
+  report_writer.py           daily / weekly report into data/reports.json (Claude API or rules)
+  reports_template.html      the "Raporty" archive page (site/reports.html)
   template.html                the dashboard's HTML/CSS/JS, with a data placeholder
 
 data/                      pipeline state (mostly auto-generated, committed to git)

@@ -128,6 +128,8 @@ MARKET_HISTORY_PATH = DATA_DIR / "market_history.json"
 # Etap 6 i 7 planu "trend": podaż stablecoinów (DefiLlama) i opcje ETH (Deribit).
 STABLES_HISTORY_PATH = DATA_DIR / "stables_history.json"
 OPTIONS_HISTORY_PATH = DATA_DIR / "options_history.json"
+# Archiwum raportow dziennych i tygodniowych (live/report_writer.py, od 24.11.2026).
+REPORTS_PATH = DATA_DIR / "reports.json"
 
 # Faza "Long term (30d)" (2026-09-14, zgloszenie uzytkownika: "moglibysmy
 # liczyc i to i to - sygnal dla 7d oraz sygnal dla 30d?") - DRUGI, w pelni
@@ -339,6 +341,20 @@ def load_options_history() -> dict:
 def save_options_history(history: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     OPTIONS_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def load_reports() -> list:
+    """Archiwum raportow (najstarsze pierwsze); pusta lista, gdy brak/uszkodzony plik."""
+    try:
+        raw = json.loads(REPORTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return raw if isinstance(raw, list) else []
+
+
+def save_reports(reports: list) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_PATH.write_text(json.dumps(reports, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def load_regime_state() -> dict:

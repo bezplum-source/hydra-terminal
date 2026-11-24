@@ -236,6 +236,7 @@ def _patch_all_paths(monkeypatch, tmp_path):
     # Etap 6 i 7 planu "trend" - dopisane OD RAZU (patrz komentarze wyzej).
     monkeypatch.setattr(st, "STABLES_HISTORY_PATH", tmp_path / "data" / "stables_history.json")
     monkeypatch.setattr(st, "OPTIONS_HISTORY_PATH", tmp_path / "data" / "options_history.json")
+    monkeypatch.setattr(st, "REPORTS_PATH", tmp_path / "data" / "reports.json")
     # Faza "Long term (30d)" - dopisane OD RAZU (patrz wszystkie komentarze
     # wyzej - dokladnie ta sama klasa bledu za kazdym razem, gdy nowa sciezka
     # stanu w live/state.py nie trafia od razu do tego helpera): bez tego

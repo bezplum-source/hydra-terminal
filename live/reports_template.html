@@ -1,0 +1,201 @@
+<title>Hydra · Raporty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Archiwum raportów (prośba Jakuba z 24.11.2026). Te same tokeny co
+     terminal (live/template.html) - strona jest ciemna, jednym motywem. */
+  :root {
+    --bg: #0C0C10;
+    --bg-elevated: #131318;
+    --bg-elevated-2: #1A1A21;
+    --border: #2A2A33;
+    --border-strong: #3A3A45;
+    --text-primary: #F3F1EC;
+    --text-secondary: #A8A6B0;
+    --text-muted: #6E6C78;
+    --accent: #C4821E;
+    --accent-glow: #FFC94A;
+    --accent-soft: rgba(196, 130, 30, 0.16);
+    --good: #1FA65F;
+    --good-glow: #3DFF9B;
+    --good-soft: rgba(31, 166, 95, 0.16);
+    --bad: #B8253F;
+    --bad-glow: #FF3B5C;
+    --bad-soft: rgba(184, 37, 63, 0.16);
+    --font-display: 'Bebas Neue', 'Oswald', system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text-primary); font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased; }
+  .page { max-width: 980px; margin: 0 auto; padding-block: 28px 64px; padding-inline: 16px; display: flex; flex-direction: column; gap: 20px; }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand-mark { font-family: var(--font-display); font-size: 40px; letter-spacing: 0.04em; color: var(--accent-glow); line-height: 1; }
+  .brand-sub { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); letter-spacing: 0.03em; }
+  .links { display: flex; gap: 18px; }
+  .links a { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em; color: var(--text-secondary); text-decoration: none; padding: 6px 2px; border-bottom: 1px solid transparent; }
+  .links a:hover, .links a:focus-visible { color: var(--accent-glow); border-bottom-color: var(--accent-glow); outline: none; }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 34px; letter-spacing: 0.04em; margin: 4px 0 0; }
+  .lead { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin: 0; max-width: 72ch; }
+
+  .tabs { display: inline-flex; gap: 6px; padding: 4px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; align-self: flex-start; }
+  .tab { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary);
+    background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 8px 14px; cursor: pointer; }
+  .tab b { color: var(--text-muted); font-weight: 500; margin-left: 6px; }
+  .tab[aria-selected="true"] { color: var(--accent-glow); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .tab:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 2px; }
+
+  .score { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .score-tile { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .score-tile .lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+  .score-tile .val { font-family: var(--font-mono); font-size: 22px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .score-tile .sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  details.entry { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; }
+  details.entry[open] { border-color: var(--border-strong); }
+  summary { list-style: none; cursor: pointer; padding: 14px 16px; display: grid; gap: 8px 14px;
+    grid-template-columns: 112px 1fr auto; align-items: center; }
+  summary::-webkit-details-marker { display: none; }
+  summary:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: -2px; border-radius: 12px; }
+  .date { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .date b { display: block; color: var(--text-primary); font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+  .head { min-width: 0; }
+  .stage { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-glow); }
+  .title { font-size: 14.5px; line-height: 1.45; margin-top: 3px; color: var(--text-primary); }
+  .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .pill { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; color: var(--text-secondary); }
+  .pill.short { color: var(--bad-glow); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
+  .pill.long { color: var(--good-glow); background: var(--good-soft); border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+  .fc { font-family: var(--font-mono); font-size: 11.5px; white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .fc .ok { color: var(--good-glow); }
+  .fc .no { color: var(--bad-glow); }
+  .fc .wait { color: var(--text-muted); }
+  .chev { color: var(--text-muted); font-size: 12px; transition: transform 0.15s ease; }
+  details[open] .chev { transform: rotate(90deg); }
+
+  .body { padding: 2px 16px 18px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 14px; }
+  .text { font-size: 14.5px; line-height: 1.65; color: var(--text-primary); max-width: 72ch; margin: 14px 0 0; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 16px; }
+  .fact { font-size: 12px; color: var(--text-muted); }
+  .fact b { display: block; font-family: var(--font-mono); font-size: 14px; color: var(--text-primary); font-weight: 500; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .up { color: var(--good-glow) !important; }
+  .down { color: var(--bad-glow) !important; }
+  .line { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; }
+  .line b { color: var(--text-primary); font-weight: 600; }
+  .alarm { color: var(--bad-glow); font-size: 12.5px; }
+  .src { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.03em; }
+  .empty { color: var(--text-secondary); font-size: 14px; padding: 24px 16px; background: var(--bg-elevated); border: 1px dashed var(--border-strong); border-radius: 12px; }
+  .foot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); line-height: 1.6; }
+
+  @media (max-width: 640px) {
+    summary { grid-template-columns: 1fr auto; }
+    .head { grid-column: 1 / -1; order: 3; }
+    .brand-mark { font-size: 34px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+</style>
+<div class="page">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">HYDRA</span><span class="brand-sub">raporty · ETH/USD on-chain signal</span></div>
+    <nav class="links"><a href="./index.html">Terminal</a><a href="./docs.html">Docs</a></nav>
+  </header>
+  <div>
+    <h1>Raporty</h1>
+    <p class="lead">Codziennie ok. 19:40 (w niedzielę raport tygodniowy): etap rynku, co się dzieje i prognoza kierunku ETH na 24 godziny i 7 dni. Każda prognoza jest rozliczana z ceną po upływie swojego czasu, obok prostego punktu odniesienia — kierunku głównego sygnału. Papierowy system, nie porada inwestycyjna.</p>
+  </div>
+  <div class="tabs" role="tablist" aria-label="Rodzaj raportu">
+    <button type="button" class="tab" role="tab" id="tab-daily" data-type="daily" aria-selected="true">Dzienne<b id="n-daily">0</b></button>
+    <button type="button" class="tab" role="tab" id="tab-weekly" data-type="weekly" aria-selected="false">Tygodniowe<b id="n-weekly">0</b></button>
+  </div>
+  <section class="score" id="score" aria-label="Trafność prognoz"></section>
+  <section class="list" id="list" role="tabpanel"></section>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const DATA = __DATA_JSON__;
+const ARROW = { 'wzrost': '↑', 'spadek': '↓', 'bok': '→' };
+const STATUS = { 'trafiona': ['ok', '✓'], 'chybiona': ['no', '✕'], 'czeka': ['wait', '…'] };
+function num(v, d) { return v == null ? '–' : Number(v).toFixed(d).replace('.', ','); }
+function pct(v, d) { if (v == null) return '–'; return (v > 0 ? '+' : '') + num(v, d == null ? 1 : d) + '%'; }
+function usd(v) { return v == null ? '–' : Math.round(v).toLocaleString('pl-PL') + ' $'; }
+function cls(v) { return v == null ? '' : v > 0 ? 'up' : v < 0 ? 'down' : ''; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+const DAYS = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'];
+
+function fcHtml(e, hz, key) {
+  const o = (e.outcome || {})[hz] || { status: 'czeka' };
+  const st = STATUS[o.status] || STATUS['czeka'];
+  const tip = o.status === 'czeka' ? 'jeszcze nie rozliczona' : o.status + ' · ETH ' + pct(o.change_pct);
+  return '<span class="fc" title="' + esc(tip) + '">' + (hz === '24h' ? '24 h ' : '7 d ') + (ARROW[e[key]] || '?') + ' <span class="' + st[0] + '">' + st[1] + '</span></span>';
+}
+
+function entryHtml(e, open) {
+  const d = new Date(e.ts * 1000);
+  const day = DAYS[d.getDay()] + ' ' + e.time.slice(0, 5);
+  const sigCls = e.signal === 'SHORT' ? 'short' : e.signal === 'LONG' ? 'long' : '';
+  const v = e.votes || {};
+  const s = e.stats || {};
+  const race = e.race || {};
+  const facts = [
+    ['ETH', usd(e.price)], ['24 h', pct(s.chg24h), cls(s.chg24h)], ['7 dni', pct(s.chg7d), cls(s.chg7d)], ['30 dni', pct(s.chg30d), cls(s.chg30d)],
+    ['od średniej 14 d', pct(s.distSma14), cls(s.distSma14)], ['RSI 14 d', num(s.rsi14, 0)],
+    ['funding (rocznie, 24 h)', pct(s.fundingApr24h)], ['open interest 24 h', pct(s.oiChg24h), cls(s.oiChg24h)],
+    ['stablecoiny 7 d', pct(s.stables7d, 2), cls(s.stables7d)], ['DVOL / średnia', num(s.dvol, 1) + ' / ' + num(s.dvolSma, 1)],
+    ['skew opcji', num(s.skew, 1)], ['portfele z wyczuciem 7 d', s.skilled7d == null ? '–' : num(s.skilled7d / 1000, 1) + ' tys. ETH', cls(s.skilled7d)],
+  ];
+  const o24 = (e.outcome || {})['24h'] || {}, o7 = (e.outcome || {})['7d'] || {};
+  const outLine = 'Prognoza 24 h: <b>' + esc(e.f24) + '</b>' + (o24.status && o24.status !== 'czeka' ? ' (' + o24.status + ', ETH ' + pct(o24.change_pct) + ')' : ' (czeka)') +
+    ' · 7 dni: <b>' + esc(e.f7) + '</b>' + (o7.status && o7.status !== 'czeka' ? ' (' + o7.status + ', ETH ' + pct(o7.change_pct) + ')' : ' (czeka)') + ' · pewność: ' + esc(e.conf);
+  return '<details class="entry"' + (open ? ' open' : '') + '><summary>' +
+    '<span class="date"><b>' + day + '</b>' + e.time.slice(11) + '</span>' +
+    '<span class="head"><span class="stage">' + esc(e.stage) + '</span><div class="title">' + esc(e.title || '') + '</div></span>' +
+    '<span class="meta"><span class="pill ' + sigCls + '">' + esc(e.signal === 'HOLD' ? 'NEUTRALNY' : e.signal) + (v.SHORT != null ? ' ' + v.SHORT + '/' + v.LONG + '/' + v.HOLD : '') + '</span>' +
+    fcHtml(e, '24h', 'f24') + fcHtml(e, '7d', 'f7') + '<span class="chev" aria-hidden="true">▶</span></span></summary>' +
+    '<div class="body"><p class="text">' + esc(e.text).replace(/\n/g, '<br>') + '</p>' +
+    '<div class="line">' + outLine + '</div>' +
+    (e.track ? '<div class="line">' + esc(e.track) + '</div>' : '') +
+    '<div class="facts">' + facts.map((f) => '<div class="fact">' + f[0] + '<b class="' + (f[2] || '') + '">' + f[1] + '</b></div>').join('') + '</div>' +
+    '<div class="line">Główny sygnał <b>' + esc(e.signal) + '</b>' + (e.signalEntry ? ' od ' + usd(e.signalEntry) + ' (' + pct(e.signalPnl) + ')' : '') +
+    ' · wyścig na żywo: głosowanie <b>' + pct(race.vote) + '</b>, ETH kup i trzymaj ' + pct(race.eth) + (e.raceBest ? ', najlepsza: ' + esc(e.raceBest.name) + ' ' + pct(e.raceBest.result) : '') + '</div>' +
+    (e.alarms && e.alarms.length ? '<div class="alarm">⚠ ' + e.alarms.map(esc).join(' · ') + '</div>' : '') +
+    '<div class="src">ocena: ' + esc(e.source) + ' · ' + esc(e.time) + '</div></div></details>';
+}
+
+function scoreHtml(sc) {
+  if (!sc) return '';
+  const tile = (lab, o) => {
+    if (!o || !o.rozliczone) return '<div class="score-tile"><div class="lab">' + lab + '</div><div class="val">–</div><div class="sub">jeszcze nic nie rozliczono</div></div>';
+    return '<div class="score-tile"><div class="lab">' + lab + '</div><div class="val">' + o.trafione + '/' + o.rozliczone + ' <span style="font-size:14px;color:var(--text-secondary)">(' + o.trafnosc_pct + '%)</span></div>' +
+      '<div class="sub">kierunek głównego sygnału: ' + (o.punkt_odniesienia_sygnal_trafnosc_pct == null ? '–' : o.punkt_odniesienia_sygnal_trafnosc_pct + '%') + ' · ostatnie 10: ' + (o.ostatnie_10 || '–') + '</div></div>';
+  };
+  return tile('Trafność prognoz 24 h', sc['24h']) + tile('Trafność prognoz 7 dni', sc['7d']) +
+    '<div class="score-tile"><div class="lab">Czeka na rozliczenie</div><div class="val">' + (sc.oczekujace || 0) + '</div><div class="sub">„bok” = ±1% w 24 h, ±3% w 7 dni</div></div>';
+}
+
+let current = 'daily';
+function render() {
+  const all = (DATA.entries || []).slice().sort((a, b) => b.ts - a.ts);
+  ['daily', 'weekly'].forEach((t) => {
+    document.getElementById('n-' + t).textContent = all.filter((e) => e.type === t).length;
+    const b = document.getElementById('tab-' + t);
+    b.setAttribute('aria-selected', String(t === current));
+  });
+  document.getElementById('score').innerHTML = scoreHtml(DATA.score);
+  const rows = all.filter((e) => e.type === current);
+  document.getElementById('list').innerHTML = rows.length
+    ? rows.map((e, i) => entryHtml(e, i === 0)).join('')
+    : '<div class="empty">' + (current === 'weekly' ? 'Pierwszy raport tygodniowy pojawi się w niedzielę wieczorem.' : 'Pierwszy raport dzienny pojawi się dziś lub jutro ok. 19:40.') + '</div>';
+  document.getElementById('foot').textContent = DATA.asOf ? 'Rozliczenie prognoz według cen ETH z Hyperliquid, stan na ' + DATA.asOf + ' (czas polski).' : '';
+}
+document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+  current = b.dataset.type;
+  try { localStorage.setItem('hydraReportsTab', current); } catch (e) { /* bez pamięci zakładki */ }
+  render();
+}));
+try { const saved = localStorage.getItem('hydraReportsTab'); if (saved === 'weekly' || saved === 'daily') current = saved; } catch (e) { /* ignore */ }
+render();
+</script>

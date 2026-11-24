@@ -1,0 +1,78 @@
+name: Raporty Hydry
+
+# Archiwum raportow dziennych i tygodniowych (prosba Jakuba z 24.11.2026:
+# "zakladka na stronie, gdzie raporty beda dostepne historycznie, jako krotkie
+# wpisy, ktore mozna rozwinac, z podzialem na TYGODNIOWE i DZIENNE").
+#
+# Codziennie o 18:40 UTC (19:40 czasu polskiego zima, 20:40 latem) pisze raport
+# do data/reports.json - w niedziele (czas polski) raport TYGODNIOWY zamiast
+# dziennego. Ocene rynku pisze Claude przez API Anthropic, jesli w repo jest
+# sekret ANTHROPIC_API_KEY (Settings -> Secrets and variables -> Actions ->
+# New repository secret); bez sekretu raport i tak powstaje, z ocena z regul.
+# Strone (site/reports.html) przebudowuje "update.yml", ktory odpala sie zaraz
+# po tym workflow (workflow_run). Szczegoly: live/report_writer.py.
+on:
+  schedule:
+    - cron: "40 18 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto (niedziela = tygodniowy) / daily / weekly"
+        required: false
+        default: "auto"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hydra-reports
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo (z historia - raport sprawdza commity automatu)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 300
+
+      - name: Ustaw Pythona
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zainstaluj zaleznosci
+        run: pip install -r requirements.txt
+
+      - name: Napisz raport
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HYDRA_REPORT_MODEL: ${{ vars.HYDRA_REPORT_MODEL }}
+        run: python live/report_writer.py --mode "${{ github.event.inputs.mode || 'auto' }}"
+
+      - name: Zacommituj raport
+        run: |
+          git config user.name "hydra-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/reports.json
+          if git diff --cached --quiet; then
+            echo "Brak nowego raportu."
+            exit 0
+          fi
+          git commit -m "Raport Hydry ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          # ten commit zmienia TYLKO data/reports.json, ktorego nie dotyka
+          # "update.yml" - rebase na nowsze automatyczne commity danych zawsze
+          # sie uda, wystarczy ponowic
+          for i in 1 2 3 4 5 6; do
+            if git push; then
+              echo "Push udany (proba $i)."
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort || true; exit 1; }
+            sleep $((RANDOM % 8 + 3))
+          done
+          echo "Nie udalo sie zapisac raportu po kilku probach."
+          exit 1
