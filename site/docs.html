@@ -1591,9 +1591,10 @@ composite_final         = blend(composite_spot_combined, composite_perp, weight=
           (<code>workflow_run</code>) and rebuilds the site: <code>build_site.py</code> renders
           <code>live/reports_template.html</code> with every entry settled against the ETH price
           (✓ hit, ✕ miss, … pending, for 24 h and 7 days) and the accuracy tiles at the top,
-          next to the headline-signal baseline. Forecasts are settled from this archive; the
-          scheduled Claude tasks that send the picture report to the owner's phone reuse the
-          day's archived assessment.
+          next to the headline-signal baseline. Forecasts are settled from this archive. Since
+          2026-11-24 (owner's request) the reports live only here: the scheduled Claude tasks
+          that used to send the picture report to the owner's phone are switched off
+          (<code>live/report_card.py</code> stays for drawing a card by hand).
         </p>
         <h3 id="stats-reset">Resetting the win-rate counter</h3>
         <p>
