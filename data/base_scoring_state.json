@@ -1,21 +1,21 @@
 {
-  "good_short": 0.4724596110120567,
-  "good_long": 0.4876489162770453,
-  "bad_short": 0.6255991873245528,
-  "bad_long": 0.5534490632039053,
+  "good_short": 0.48622980550602835,
+  "good_long": 0.48954908300365374,
+  "bad_short": 0.5627995936622764,
+  "bad_long": 0.5452261304033045,
   "prev_signal": "HOLD",
-  "last_scored_window_end": 63503999,
+  "last_scored_window_end": 63543599,
   "last_base_snapshot": {
     "composite": null,
     "is_mature": false,
     "tracked": 7757,
-    "active": 3,
+    "active": 1,
     "classified": 8,
     "good_buyers": 0,
     "good_sellers": 0,
     "bad_buyers": 0,
     "bad_sellers": 0,
-    "window_time": "28.11.2026, 19:39",
+    "window_time": "28.11.2026, 21:51",
     "good_buy_weight": 0.0,
     "good_sell_weight": 0.0,
     "bad_buy_weight": 0.0,
@@ -25,5 +25,5 @@
     "bad_buy_usd": 0.0,
     "bad_sell_usd": 0.0
   },
-  "updated_at_utc": "2026-11-28T18:51:21.550886+00:00"
+  "updated_at_utc": "2026-11-28T21:05:58.328880+00:00"
 }
